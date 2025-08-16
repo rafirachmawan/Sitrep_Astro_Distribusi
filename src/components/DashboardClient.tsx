@@ -101,10 +101,13 @@ type SpartaState = {
 
 type AgendaEntry = {
   id: string;
-  date: string; // YYYY-MM-DD
-  plan: string[]; // list item
-  realisasi: string[]; // list item
+  date: string; // YYYY-MM-DD (unik per tanggal)
+  plan: string[];
+  realisasi: string[];
+  planSubmitted?: boolean;
+  realSubmitted?: boolean;
   createdAt: string;
+  updatedAt: string;
 };
 type AgendaState = { entries: AgendaEntry[] };
 
@@ -1283,19 +1286,6 @@ function SpartaTracking({
       </div>
 
       <div className="p-3 sm:p-6 space-y-6">
-        <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
-          <div className="flex items-start gap-2 text-rose-700">
-            <AlertTriangle className="h-5 w-5 mt-0.5" />
-            <div className="text-sm">
-              <div className="font-semibold mb-1">Ketentuan:</div>
-              <ul className="list-disc pl-5 space-y-1">
-                <li>Tidak boleh jawaban copy-paste</li>
-                <li>Tidak boleh jawaban generik maupun kurang detail</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
         <div className="rounded-2xl border">
           <div className="px-3 sm:px-4 py-3 border-b bg-slate-50 flex flex-wrap items-center justify-between gap-3">
             <div className="font-semibold text-slate-800">
@@ -1423,7 +1413,10 @@ function SpartaTracking({
 }
 
 /* =========================================================================
-   AGENDA & JADWAL (baru)
+   AGENDA & JADWAL
+   - Plan submit di form atas
+   - Realisasi diisi & submit dari kartu bawah (inline)
+   - Hapus plan/realisasi/entri
    ========================================================================= */
 function AgendaJadwal({
   data,
@@ -1637,7 +1630,6 @@ function AgendaJadwal({
                 </span>
               )}
             </div>
-            {/* tampilkan ringkas (read-only) */}
             {current?.realisasi?.length ? (
               <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
                 {current.realisasi.map((r, i) => (
@@ -1719,7 +1711,6 @@ function AgendaEntryCard({
   );
 
   useEffect(() => {
-    // refresh draft bila entry berubah
     setPlanDraft(entry.plan.length ? entry.plan : [""]);
     setRealDraft(entry.realisasi.length ? entry.realisasi : [""]);
   }, [entry.id, entry.plan.join("|"), entry.realisasi.join("|")]);
@@ -1893,7 +1884,7 @@ function AgendaEntryCard({
 }
 
 /* =========================================================================
-   LAMPIRAN (Arsip + TTD + PDF)
+   LAMPIRAN (Arsip + TTD + PDF) — PDF sudah termasuk "Agenda & Jadwal (hari ini)"
    ========================================================================= */
 type Archive = {
   date: string;
@@ -1939,7 +1930,7 @@ function Lampiran({
     arr.push(archive);
     writeArchives(arr);
     setArchives(arr);
-    generatePdf(archive, true);
+    generatePdf(archive, true); // <-- PDF mencakup Agenda & Jadwal untuk 'date'
     onArchivedAndReset();
   };
   const download = (a: Archive) => generatePdf(a, true);
@@ -2023,7 +2014,8 @@ function Lampiran({
             <div className="flex items-center gap-2 text-xs text-slate-500">
               <FileText className="h-4 w-4" />
               PDF bernama{" "}
-              <span className="font-medium">SITREP-YYYY-MM-DD.pdf</span>
+              <span className="font-medium">SITREP-YYYY-MM-DD.pdf</span> dan
+              sudah mencakup Agenda & Jadwal (untuk tanggal arsip).
             </div>
           </div>
         )}
@@ -2431,7 +2423,7 @@ function generatePdf(
     y = y + 30 + lines.length * 12 + 10;
   }
 
-  // AGENDA (hanya yang tanggalnya = date arsip)
+  // AGENDA & JADWAL (khusus entri dengan tanggal = tanggal arsip)
   sectionTitle("Agenda & Jadwal (hari ini)");
   const todays = state.agenda?.entries?.filter((e) => e.date === date) ?? [];
   if (todays.length) {
@@ -2440,7 +2432,7 @@ function generatePdf(
       startY: y,
       head: [["Plan", "Realisasi"]],
       body: todays.map((e) => [
-        "• " + e.plan.join("\n• "),
+        e.plan.length ? "• " + e.plan.join("\n• ") : "—",
         e.realisasi.length ? "• " + e.realisasi.join("\n• ") : "—",
       ]),
       columnStyles: { 0: { cellWidth: 260 }, 1: { cellWidth: "auto" } },
