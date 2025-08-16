@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ClipboardList,
   Target as TargetIcon,
@@ -15,8 +15,14 @@ import {
   Download,
   FilePlus2,
   FileText,
+  X,
+  Eraser,
+  Lock,
+  Plus,
+  Trash2,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
 
 /* =========================== TOP TABS =========================== */
 const TABS = [
@@ -24,14 +30,15 @@ const TABS = [
   { key: "evaluasi", label: "Evaluasi Tim", icon: Users2 },
   { key: "target", label: "Target & Achievement", icon: TargetIcon },
   { key: "sparta", label: "Project Tracking (SPARTA)", icon: ListChecks },
-  { key: "lampiran", label: "Lampiran", icon: Paperclip },
   { key: "agenda", label: "Agenda & Jadwal", icon: CalendarCheck },
+  { key: "lampiran", label: "Lampiran", icon: Paperclip },
   { key: "achievement", label: "Achievement", icon: Trophy },
 ] as const;
 
 type TabDef = (typeof TABS)[number]["key"];
+const todayISO = () => new Date().toISOString().slice(0, 10);
 
-/* =========================== APP STATE (untuk Lampiran) =========================== */
+/* =========================== TYPES =========================== */
 type SectionKey =
   | "kas"
   | "buku"
@@ -58,14 +65,12 @@ type RowValue =
 type ChecklistState = Record<
   SectionKey,
   {
-    // key: slug label
     [rowKey: string]: RowValue;
   }
 >;
 
 type EvaluasiAttitude = {
   hari: 1 | 2 | 3 | 4 | 5 | 6;
-  // H,E,B,A,T skor & catatan
   scores: Record<string, number>;
   notes: Record<string, string>;
 };
@@ -94,52 +99,64 @@ type SpartaState = {
   nextAction: string;
 };
 
+type AgendaEntry = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  plan: string[]; // list item
+  realisasi: string[]; // list item
+  createdAt: string;
+};
+type AgendaState = { entries: AgendaEntry[] };
+
 type AppState = {
   header: { leader: string; target: string; depo: string };
   checklist: ChecklistState;
-  evaluasi: {
-    attitude: EvaluasiAttitude;
-    kompetensi: EvaluasiKompetensi;
-  };
+  evaluasi: { attitude: EvaluasiAttitude; kompetensi: EvaluasiKompetensi };
   target: TargetState;
   sparta: SpartaState;
+  agenda: AgendaState;
 };
 
-const todayISO = () => new Date().toISOString().slice(0, 10);
+/* ======= Initializers ======= */
+function initChecklist(): ChecklistState {
+  return {
+    kas: {},
+    buku: {},
+    ar: {},
+    klaim: {},
+    pengiriman: {},
+    setoran: {},
+    pembelian: {},
+    faktur: {},
+    retur: {},
+    marketing: {},
+  };
+}
+function initEvaluasi(): AppState["evaluasi"] {
+  return {
+    attitude: { hari: 1, scores: {}, notes: {} },
+    kompetensi: {
+      namaKasir: "",
+      namaSalesAdmin: "",
+      kesalahanMingguIni: "",
+      scores: {},
+      notes: {},
+    },
+  };
+}
 
 /* =========================== ROOT =========================== */
 export default function DashboardClient() {
   const [active, setActive] = useState<TabDef>("checklist");
 
-  // ============ Global state untuk Lampiran ============
   const [state, setState] = useState<AppState>({
     header: {
       leader: "(Auto-fill from user)",
       target: "(Auto-fill)",
       depo: "(Auto-fill)",
     },
-    checklist: {
-      kas: {},
-      buku: {},
-      ar: {},
-      klaim: {},
-      pengiriman: {},
-      setoran: {},
-      pembelian: {},
-      faktur: {},
-      retur: {},
-      marketing: {},
-    },
-    evaluasi: {
-      attitude: { hari: 1, scores: {}, notes: {} },
-      kompetensi: {
-        namaKasir: "",
-        namaSalesAdmin: "",
-        kesalahanMingguIni: "",
-        scores: {},
-        notes: {},
-      },
-    },
+    checklist: initChecklist(),
+    evaluasi: initEvaluasi(),
     target: {
       targetSelesai: "",
       klaimSelesai: { FRI: false, SPJ: false, APA: false, WPL: false },
@@ -157,11 +174,19 @@ export default function DashboardClient() {
       progressText: "",
       nextAction: "",
     },
+    agenda: { entries: [] },
   });
 
-  // helper: update path
   const update = <K extends keyof AppState>(k: K, v: AppState[K]) =>
     setState((s) => ({ ...s, [k]: v }));
+
+  const resetAfterArchive = () =>
+    setState((s) => ({
+      ...s,
+      checklist: initChecklist(),
+      evaluasi: initEvaluasi(),
+      // target, sparta, agenda tetap; hanya form harian yang direset
+    }));
 
   return (
     <div className="min-h-screen bg-slate-100">
@@ -197,12 +222,16 @@ export default function DashboardClient() {
               onChange={(payload) => update("sparta", payload)}
             />
           )}
-          {active === "lampiran" && <Lampiran appState={state} />}
-          {["agenda", "achievement"].includes(active) && (
-            <SimpleTab
-              title={TABS.find((t) => t.key === active)?.label || ""}
+          {active === "agenda" && (
+            <AgendaJadwal
+              data={state.agenda}
+              onChange={(payload) => update("agenda", payload)}
             />
           )}
+          {active === "lampiran" && (
+            <Lampiran appState={state} onArchivedAndReset={resetAfterArchive} />
+          )}
+          {active === "achievement" && <SimpleTab title="Achievement" />}
         </section>
       </main>
     </div>
@@ -321,7 +350,7 @@ function RoleTabs({
 }
 
 /* =========================================================================
-   CHECKLIST AREA (Controlled, agar bisa direkap)
+   CHECKLIST AREA (controlled)
    ========================================================================= */
 type RowDef =
   | { kind: "options"; key: string; label: string; options: string[] }
@@ -348,8 +377,6 @@ const SECTION_TABS: { key: SectionKey; label: string }[] = [
   { key: "marketing", label: "Marketing" },
 ];
 
-const SLUG = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-
 function ChecklistArea({
   data,
   onChange,
@@ -357,7 +384,6 @@ function ChecklistArea({
   data: ChecklistState;
   onChange: (v: ChecklistState) => void;
 }) {
-  // definisi rows per seksi
   const SECTION_MAP: Record<SectionKey, { title: string; rows: RowDef[] }> =
     useMemo(
       () => ({
@@ -485,7 +511,6 @@ function ChecklistArea({
 
   const [secActive, setSecActive] = useState<SectionKey>("kas");
   const section = SECTION_MAP[secActive];
-
   const patch = (sec: SectionKey, key: string, v: RowValue) =>
     onChange({ ...data, [sec]: { ...data[sec], [key]: v } });
 
@@ -573,9 +598,7 @@ function ChecklistRow({
   onChange: (v: RowValue) => void;
 }) {
   const [note, setNote] = useState(value?.note || "");
-
   useEffect(() => {
-    // sinkron note ke parent
     if (value && value.note !== note) onChange({ ...(value as any), note });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note]);
@@ -592,7 +615,7 @@ function ChecklistRow({
           <OptionsGroup
             options={row.options}
             value={(value as any)?.value ?? null}
-            onChange={(v) => onChange({ kind: "options", value: v })}
+            onChange={(v) => onChange({ kind: "options", value: v, note })}
           />
         )}
 
@@ -601,7 +624,7 @@ function ChecklistRow({
             suffix={row.suffix}
             value={(value as any)?.value ?? ""}
             onChange={(v) =>
-              onChange({ kind: "number", value: v, suffix: row.suffix })
+              onChange({ kind: "number", value: v, suffix: row.suffix, note })
             }
           />
         )}
@@ -609,7 +632,7 @@ function ChecklistRow({
         {row.kind === "score" && (
           <ScoreSelect
             value={(value as any)?.value ?? 3}
-            onChange={(v) => onChange({ kind: "score", value: v })}
+            onChange={(v) => onChange({ kind: "score", value: v, note })}
           />
         )}
 
@@ -622,6 +645,7 @@ function ChecklistRow({
                 onChange({
                   kind: "compound",
                   value: v,
+                  note,
                   extras: {
                     text: (value as any)?.extras?.text,
                     currency: (value as any)?.extras?.currency,
@@ -637,6 +661,7 @@ function ChecklistRow({
                   onChange({
                     kind: "compound",
                     value: (value as any)?.value ?? null,
+                    note,
                     extras: {
                       text: e.target.value,
                       currency: (value as any)?.extras?.currency,
@@ -652,6 +677,7 @@ function ChecklistRow({
                   onChange({
                     kind: "compound",
                     value: (value as any)?.value ?? null,
+                    note,
                     extras: {
                       text: (value as any)?.extras?.text,
                       currency: e.target.value,
@@ -772,7 +798,7 @@ function ScoreSelect({
 }
 
 /* =========================================================================
-   EVALUASI TIM (Controlled)
+   EVALUASI TIM (controlled)
    ========================================================================= */
 type Theme = "attitude" | "kompetensi" | "prestasi" | "kepatuhan" | "kosong";
 const DAY_THEME: Record<1 | 2 | 3 | 4 | 5 | 6, Theme> = {
@@ -819,12 +845,10 @@ function EvaluasiTim({
 
   const setHari = (h: 1 | 2 | 3 | 4 | 5 | 6) =>
     onChange({ ...data, attitude: { ...data.attitude, hari: h } });
-
   const setAtt = (
     scores: Record<string, number>,
     notes: Record<string, string>
   ) => onChange({ ...data, attitude: { ...data.attitude, scores, notes } });
-
   const setKom = (payload: Partial<EvaluasiKompetensi>) =>
     onChange({ ...data, kompetensi: { ...data.kompetensi, ...payload } });
 
@@ -974,7 +998,6 @@ function FormKompetensiControlled({
       : Object.fromEntries(KOMPETENSI_ITEMS.map((i) => [i.key, 3]))
   );
   const [notes, setNotes] = useState<Record<string, string>>(data.notes || {});
-
   useEffect(() => onChange({ scores, notes }), [scores, notes]); // sinkron
 
   const avg =
@@ -1061,7 +1084,7 @@ function FormKompetensiControlled({
 }
 
 /* =========================================================================
-   TARGET & ACHIEVEMENT (Controlled)
+   TARGET & ACHIEVEMENT (controlled)
    ========================================================================= */
 function TargetAchievement({
   data,
@@ -1219,7 +1242,7 @@ function TargetAchievement({
 }
 
 /* =========================================================================
-   SPARTA (Controlled)
+   SPARTA (controlled)
    ========================================================================= */
 const UDI_STEPS = [
   "menyelesaikan Q3 2024",
@@ -1227,7 +1250,6 @@ const UDI_STEPS = [
   "menyelesaikan Q1 2025 termasuk reward Q1 2025",
   "menyelesaikan Q2 2025 termasuk reward proporsional Q2 2025",
 ] as const;
-
 function daysLeft(deadline: string) {
   if (!deadline) return null;
   const d = new Date(deadline);
@@ -1239,7 +1261,6 @@ function daysLeft(deadline: string) {
   ).getTime();
   return Math.ceil((d.getTime() - base) / (1000 * 60 * 60 * 24));
 }
-
 function SpartaTracking({
   data,
   onChange,
@@ -1247,9 +1268,7 @@ function SpartaTracking({
   data: SpartaState;
   onChange: (v: SpartaState) => void;
 }) {
-  const percent = Math.round(
-    (data.steps.filter(Boolean).length / UDI_STEPS.length) * 100
-  );
+  const percent = Math.round((data.steps.filter(Boolean).length / 4) * 100);
   const sisa = daysLeft(data.deadline);
 
   return (
@@ -1404,13 +1423,484 @@ function SpartaTracking({
 }
 
 /* =========================================================================
-   LAMPIRAN (Arsip harian + PDF)
+   AGENDA & JADWAL (baru)
    ========================================================================= */
+function AgendaJadwal({
+  data,
+  onChange,
+}: {
+  data: AgendaState;
+  onChange: (v: AgendaState) => void;
+}) {
+  const [date, setDate] = useState(todayISO());
 
-type Archive = { date: string; state: AppState };
+  // entri aktif utk tanggal yang dipilih
+  const current = useMemo(
+    () => data.entries.find((e) => e.date === date),
+    [data.entries, date]
+  );
 
+  // local state form atas
+  const [plans, setPlans] = useState<string[]>(current?.plan ?? [""]);
+  const [reals, setReals] = useState<string[]>(current?.realisasi ?? [""]);
+
+  useEffect(() => {
+    setPlans(current?.plan ?? [""]);
+    setReals(current?.realisasi ?? [""]);
+  }, [current?.id, date]);
+
+  const planLocked = !!current?.planSubmitted;
+  const realLocked = !!current?.realSubmitted;
+
+  const addRow = (which: "plan" | "real") => {
+    if (which === "plan" && !planLocked) setPlans((p) => [...p, ""]);
+    if (which === "real" && !realLocked) setReals((p) => [...p, ""]);
+  };
+  const setRow = (which: "plan" | "real", i: number, val: string) =>
+    which === "plan"
+      ? setPlans((p) => p.map((v, idx) => (idx === i ? val : v)))
+      : setReals((p) => p.map((v, idx) => (idx === i ? val : v)));
+
+  // upsert by date (untuk submit form atas)
+  const upsertByDate = (patch: Partial<AgendaEntry>) => {
+    const now = new Date().toISOString();
+    const cur = data.entries.find((e) => e.date === date);
+    if (!cur) {
+      const fresh: AgendaEntry = {
+        id: crypto.randomUUID(),
+        date,
+        plan: [],
+        realisasi: [],
+        planSubmitted: false,
+        realSubmitted: false,
+        createdAt: now,
+        updatedAt: now,
+        ...patch,
+      };
+      onChange({ entries: [...data.entries, fresh] });
+    } else {
+      const updated: AgendaEntry = { ...cur, ...patch, updatedAt: now };
+      onChange({
+        entries: data.entries.map((e) => (e.id === cur.id ? updated : e)),
+      });
+    }
+  };
+
+  // SUBMIT FORM ATAS — hanya PLAN yang bisa submit dari atas
+  const submitPlanTop = () => {
+    const clean = plans.map((s) => s.trim()).filter(Boolean);
+    if (!date || clean.length === 0)
+      return alert("Isi minimal Tanggal & 1 baris Plan.");
+    upsertByDate({ plan: clean, planSubmitted: true });
+  };
+
+  // patch/hapus by id (untuk kartu bawah)
+  const patchById = (id: string, patch: Partial<AgendaEntry>) => {
+    const now = new Date().toISOString();
+    onChange({
+      entries: data.entries.map((e) =>
+        e.id === id ? ({ ...e, ...patch, updatedAt: now } as AgendaEntry) : e
+      ),
+    });
+  };
+  const deletePlanById = (id: string, d: string) => {
+    if (!confirm(`Hapus PLAN untuk tanggal ${d}?`)) return;
+    patchById(id, { plan: [], planSubmitted: false });
+    if (d === date) setPlans([""]);
+  };
+  const deleteRealById = (id: string, d: string) => {
+    if (!confirm(`Hapus REALISASI untuk tanggal ${d}?`)) return;
+    patchById(id, { realisasi: [], realSubmitted: false });
+    if (d === date) setReals([""]);
+  };
+  const deleteEntryById = (id: string, d: string) => {
+    if (!confirm(`Hapus seluruh entri tanggal ${d}?`)) return;
+    onChange({ entries: data.entries.filter((e) => e.id !== id) });
+    if (d === date) {
+      setPlans([""]);
+      setReals([""]);
+    }
+  };
+
+  // grup list bawah (baru → lama)
+  const groups = useMemo(() => {
+    const sort = [...data.entries].sort((a, b) =>
+      a.date === b.date
+        ? a.updatedAt < b.updatedAt
+          ? 1
+          : -1
+        : a.date < b.date
+        ? 1
+        : -1
+    );
+    return sort.reduce<Record<string, AgendaEntry[]>>((acc, e) => {
+      (acc[e.date] ||= []).push(e);
+      return acc;
+    }, {});
+  }, [data.entries]);
+
+  return (
+    <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
+      <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center gap-2">
+        <CalendarCheck className="h-5 w-5 text-blue-600" />
+        <h2 className="text-slate-800 font-semibold">Agenda & Jadwal</h2>
+      </div>
+
+      {/* FORM ATAS */}
+      <div className="p-3 sm:p-6 space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">
+              Tanggal
+            </label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
+            />
+            {current && (
+              <div className="mt-2 text-xs text-slate-500">
+                Status:
+                <span
+                  className={planLocked ? "text-emerald-600" : "text-slate-700"}
+                >
+                  {" "}
+                  Plan {planLocked ? "terkunci" : "belum disubmit"}
+                </span>{" "}
+                •{" "}
+                <span
+                  className={realLocked ? "text-emerald-600" : "text-slate-700"}
+                >
+                  Realisasi {realLocked ? "terkunci" : "belum disubmit"}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* PLAN (editable & submit di atas) */}
+          <div className="border rounded-xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium text-slate-700">Plan</div>
+              {!planLocked ? (
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => addRow("plan")}
+                    className="inline-flex items-center gap-1 text-sm px-2 py-1 rounded-md border hover:bg-slate-50"
+                  >
+                    <Plus className="h-4 w-4" /> Tambah Baris
+                  </button>
+                  <button
+                    type="button"
+                    onClick={submitPlanTop}
+                    className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    Submit Plan
+                  </button>
+                </div>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-emerald-50 text-emerald-700">
+                  <Lock className="h-3.5 w-3.5" /> Terkunci
+                </span>
+              )}
+            </div>
+            <div className="space-y-2">
+              {plans.map((v, i) => (
+                <input
+                  key={i}
+                  value={v}
+                  onChange={(e) => setRow("plan", i, e.target.value)}
+                  placeholder={`Plan ${i + 1}`}
+                  disabled={planLocked}
+                  className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500 disabled:bg-slate-50"
+                />
+              ))}
+            </div>
+          </div>
+
+          {/* REALISASI (read-only di atas; input & submit dilakukan di kartu bawah) */}
+          <div className="border rounded-xl p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-medium text-slate-700">
+                Realisasi
+              </div>
+              {realLocked ? (
+                <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md bg-emerald-50 text-emerald-700">
+                  <Lock className="h-3.5 w-3.5" /> Terkunci
+                </span>
+              ) : (
+                <span className="text-xs text-slate-500">
+                  *Realisasi diisi & disubmit dari kartu di bawah
+                </span>
+              )}
+            </div>
+            {/* tampilkan ringkas (read-only) */}
+            {current?.realisasi?.length ? (
+              <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
+                {current.realisasi.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-sm text-slate-500">
+                Belum ada realisasi untuk tanggal ini.
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* LIST BAWAH (inline edit/submit & hapus) */}
+      <div className="p-3 sm:p-6">
+        {Object.keys(groups).length === 0 ? (
+          <div className="text-sm text-slate-600">
+            Belum ada agenda yang disubmit.
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {Object.entries(groups).map(([tgl, items]) => (
+              <div key={tgl} className="border rounded-2xl overflow-hidden">
+                <div className="px-3 sm:px-4 py-2.5 bg-slate-50 text-sm font-semibold text-slate-800">
+                  {tgl}
+                </div>
+                <div className="p-3 sm:p-4 space-y-3">
+                  {items.map((e) => (
+                    <AgendaEntryCard
+                      key={e.id}
+                      entry={e}
+                      onSubmitPlan={(vals) =>
+                        patchById(e.id, { plan: vals, planSubmitted: true })
+                      }
+                      onSubmitReal={(vals) =>
+                        patchById(e.id, {
+                          realisasi: vals,
+                          realSubmitted: true,
+                        })
+                      }
+                      onDeletePlan={() => deletePlanById(e.id, e.date)}
+                      onDeleteReal={() => deleteRealById(e.id, e.date)}
+                      onDeleteEntry={() => deleteEntryById(e.id, e.date)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---- Kartu item agenda dengan inline form untuk bagian yang belum disubmit ---- */
+function AgendaEntryCard({
+  entry,
+  onSubmitPlan,
+  onSubmitReal,
+  onDeletePlan,
+  onDeleteReal,
+  onDeleteEntry,
+}: {
+  entry: AgendaEntry;
+  onSubmitPlan: (values: string[]) => void;
+  onSubmitReal: (values: string[]) => void;
+  onDeletePlan: () => void;
+  onDeleteReal: () => void;
+  onDeleteEntry: () => void;
+}) {
+  const [planDraft, setPlanDraft] = useState<string[]>(
+    entry.plan.length ? entry.plan : [""]
+  );
+  const [realDraft, setRealDraft] = useState<string[]>(
+    entry.realisasi.length ? entry.realisasi : [""]
+  );
+
+  useEffect(() => {
+    // refresh draft bila entry berubah
+    setPlanDraft(entry.plan.length ? entry.plan : [""]);
+    setRealDraft(entry.realisasi.length ? entry.realisasi : [""]);
+  }, [entry.id, entry.plan.join("|"), entry.realisasi.join("|")]);
+
+  const addRow = (w: "plan" | "real") =>
+    w === "plan"
+      ? setPlanDraft((p) => [...p, ""])
+      : setRealDraft((p) => [...p, ""]);
+
+  const setRow = (w: "plan" | "real", i: number, v: string) =>
+    w === "plan"
+      ? setPlanDraft((p) => p.map((x, idx) => (idx === i ? v : x)))
+      : setRealDraft((p) => p.map((x, idx) => (idx === i ? v : x)));
+
+  const submitPlan = () => {
+    const vals = planDraft.map((s) => s.trim()).filter(Boolean);
+    if (!vals.length) return alert("Isi minimal 1 baris Plan.");
+    onSubmitPlan(vals);
+  };
+  const submitReal = () => {
+    const vals = realDraft.map((s) => s.trim()).filter(Boolean);
+    if (!vals.length) return alert("Isi minimal 1 baris Realisasi.");
+    onSubmitReal(vals);
+  };
+
+  return (
+    <div className="border rounded-xl p-3 bg-white shadow-sm">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mb-3">
+        Entri dibuat {new Date(entry.createdAt).toLocaleString()} • diperbarui{" "}
+        {new Date(entry.updatedAt).toLocaleString()}
+        <span
+          className={
+            "ml-2 px-2 py-0.5 rounded " +
+            (entry.planSubmitted
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-slate-100 text-slate-600")
+          }
+        >
+          Plan {entry.planSubmitted ? "terkunci" : "belum submit"}
+        </span>
+        <span
+          className={
+            "px-2 py-0.5 rounded " +
+            (entry.realSubmitted
+              ? "bg-emerald-50 text-emerald-700"
+              : "bg-slate-100 text-slate-600")
+          }
+        >
+          Realisasi {entry.realSubmitted ? "terkunci" : "belum submit"}
+        </span>
+        <button
+          onClick={onDeleteEntry}
+          className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded border border-rose-200 text-rose-600 hover:bg-rose-50"
+          title="Hapus entri tanggal ini"
+        >
+          <Trash2 className="h-4 w-4" /> Hapus Entri
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* PLAN area */}
+        <div>
+          <div className="text-sm font-medium text-slate-700 mb-1">Plan</div>
+          {entry.planSubmitted ? (
+            entry.plan.length ? (
+              <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
+                {entry.plan.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-sm text-slate-500">(kosong)</div>
+            )
+          ) : (
+            <>
+              <div className="space-y-2">
+                {planDraft.map((v, i) => (
+                  <input
+                    key={i}
+                    value={v}
+                    onChange={(e) => setRow("plan", i, e.target.value)}
+                    placeholder={`Plan ${i + 1}`}
+                    className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                ))}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => addRow("plan")}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border hover:bg-slate-50"
+                >
+                  <Plus className="h-4 w-4" /> Tambah Baris
+                </button>
+                <button
+                  type="button"
+                  onClick={submitPlan}
+                  className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  Submit Plan
+                </button>
+                <button
+                  type="button"
+                  onClick={onDeletePlan}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                >
+                  <Trash2 className="h-4 w-4" /> Hapus Plan
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* REALISASI area */}
+        <div>
+          <div className="text-sm font-medium text-slate-700 mb-1">
+            Realisasi
+          </div>
+          {entry.realSubmitted ? (
+            entry.realisasi.length ? (
+              <ul className="list-disc pl-5 text-sm text-slate-700 space-y-1">
+                {entry.realisasi.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            ) : (
+              <div className="text-sm text-slate-500">(kosong)</div>
+            )
+          ) : (
+            <>
+              <div className="space-y-2">
+                {realDraft.map((v, i) => (
+                  <input
+                    key={i}
+                    value={v}
+                    onChange={(e) => setRow("real", i, e.target.value)}
+                    placeholder={`Realisasi ${i + 1}`}
+                    className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
+                  />
+                ))}
+              </div>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => addRow("real")}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border hover:bg-slate-50"
+                >
+                  <Plus className="h-4 w-4" /> Tambah Baris
+                </button>
+                <button
+                  type="button"
+                  onClick={submitReal}
+                  className="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  Submit Realisasi
+                </button>
+                <button
+                  type="button"
+                  onClick={onDeleteReal}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                >
+                  <Trash2 className="h-4 w-4" /> Hapus Realisasi
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   LAMPIRAN (Arsip + TTD + PDF)
+   ========================================================================= */
+type Archive = {
+  date: string;
+  state: AppState;
+  signatureDataUrl?: string;
+};
 const ARCHIVE_KEY = "sitrep-archives";
-
 function readArchives(): Archive[] {
   if (typeof window === "undefined") return [];
   try {
@@ -1424,23 +1914,35 @@ function writeArchives(arr: Archive[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(ARCHIVE_KEY, JSON.stringify(arr));
 }
-
-function Lampiran({ appState }: { appState: AppState }) {
+function Lampiran({
+  appState,
+  onArchivedAndReset,
+}: {
+  appState: AppState;
+  onArchivedAndReset: () => void;
+}) {
   const [archives, setArchives] = useState<Archive[]>([]);
-
+  const [showSign, setShowSign] = useState(false);
   useEffect(() => setArchives(readArchives()), []);
 
-  const saveToday = () => {
+  const startSave = () => setShowSign(true);
+  const onSignConfirm = (dataUrl: string | null) => {
+    setShowSign(false);
+    if (!dataUrl) return;
     const date = todayISO();
+    const archive: Archive = {
+      date,
+      state: appState,
+      signatureDataUrl: dataUrl,
+    };
     const arr = readArchives().filter((a) => a.date !== date);
-    arr.push({ date, state: appState });
+    arr.push(archive);
     writeArchives(arr);
     setArchives(arr);
-    generatePdf({ date, state: appState }, true);
+    generatePdf(archive, true);
+    onArchivedAndReset();
   };
-
   const download = (a: Archive) => generatePdf(a, true);
-
   const remove = (date: string) => {
     const arr = readArchives().filter((a) => a.date !== date);
     writeArchives(arr);
@@ -1457,9 +1959,9 @@ function Lampiran({ appState }: { appState: AppState }) {
           </h2>
         </div>
         <button
-          onClick={saveToday}
+          onClick={startSave}
           className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-600 text-white text-sm shadow hover:bg-blue-700"
-          title="Simpan arsip hari ini & download PDF"
+          title="Simpan arsip hari ini (dengan tanda tangan) & download PDF"
         >
           <FilePlus2 className="h-4 w-4" />
           Simpan Arsip Hari Ini
@@ -1526,244 +2028,463 @@ function Lampiran({ appState }: { appState: AppState }) {
           </div>
         )}
       </div>
+
+      {showSign && (
+        <SignatureModal
+          onClose={() => setShowSign(false)}
+          onConfirm={onSignConfirm}
+        />
+      )}
     </div>
   );
 }
 
-/* =========================== PDF GENERATOR =========================== */
-function generatePdf(archive: Archive, autoDownload = true) {
-  const { date, state } = archive;
+/* =========================== Signature Modal =========================== */
+function SignatureModal({
+  onClose,
+  onConfirm,
+}: {
+  onClose: () => void;
+  onConfirm: (dataUrl: string | null) => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawing = useRef(false);
+  const last = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current!;
+    const ctx = canvas.getContext("2d")!;
+    const dpr = window.devicePixelRatio || 1;
+    const width = 520,
+      height = 180;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    canvas.style.width = width + "px";
+    canvas.style.height = height + "px";
+    ctx.scale(dpr, dpr);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = "#111827";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, width, height);
+  }, []);
+
+  const pos = (e: React.PointerEvent) => {
+    const rect = (e.target as HTMLCanvasElement).getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+  const onDown = (e: React.PointerEvent) => {
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    drawing.current = true;
+    last.current = pos(e);
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (!drawing.current) return;
+    const p = pos(e);
+    const ctx = canvasRef.current!.getContext("2d")!;
+    ctx.beginPath();
+    const l = last.current!;
+    ctx.moveTo(l.x, l.y);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    last.current = p;
+  };
+  const onUp = () => {
+    drawing.current = false;
+    last.current = null;
+  };
+  const clear = () => {
+    const c = canvasRef.current!;
+    const ctx = c.getContext("2d")!;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, c.width, c.height);
+  };
+  const confirm = () => {
+    const dataUrl = canvasRef.current!.toDataURL("image/png");
+    if (!dataUrl || dataUrl.length < 2000) {
+      alert("Mohon tanda tangani terlebih dahulu.");
+      return;
+    }
+    onConfirm(dataUrl);
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-lg overflow-hidden">
+        <div className="px-4 py-3 border-b flex items-center justify-between">
+          <div className="font-semibold text-slate-800">
+            Tanda Tangan Leader
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-slate-100"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="p-4">
+          <p className="text-sm text-slate-600 mb-2">
+            Silakan tanda tangan di area berikut (bisa mouse atau sentuh).
+          </p>
+          <div className="border rounded-xl overflow-hidden bg-white">
+            <canvas
+              ref={canvasRef}
+              onPointerDown={onDown}
+              onPointerMove={onMove}
+              onPointerUp={onUp}
+              onPointerCancel={onUp}
+            />
+          </div>
+          <div className="flex items-center justify-between mt-3">
+            <button
+              onClick={clear}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border text-sm hover:bg-slate-50"
+            >
+              <Eraser className="h-4 w-4" />
+              Bersihkan
+            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={onClose}
+                className="px-3 py-2 rounded-lg border text-sm hover:bg-slate-50"
+              >
+                Batal
+              </button>
+              <button
+                onClick={confirm}
+                className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm shadow hover:bg-blue-700"
+              >
+                Simpan & Lanjutkan
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* =========================== PDF GENERATOR (layout profesional + Agenda) =========================== */
+function generatePdf(
+  archive: { date: string; state: AppState; signatureDataUrl?: string },
+  autoDownload = true
+) {
+  const { date, state, signatureDataUrl } = archive;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const line = (y: number) => doc.setDrawColor(220).line(40, y, 555, y);
+  const BLUE: [number, number, number] = [29, 78, 216];
+  const SLATE: [number, number, number] = [71, 85, 105];
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
 
-  let y = 40;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(14);
-  doc.text(`LEADER MONITORING DAILY — ${date}`, 40, y);
-  y += 8;
-  line(y);
-  y += 16;
+  const headerFooter = () => {
+    doc.setFillColor(...BLUE);
+    doc.rect(40, 20, pageW - 80, 28, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text("LEADER MONITORING DAILY", 50, 39);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(date, pageW - 50, 39, { align: "right" });
+    doc.setTextColor(120);
+    doc.setFontSize(9);
+    const pageStr = `Hal. ${doc.internal.getNumberOfPages()}`;
+    doc.text(pageStr, pageW - 50, pageH - 16, { align: "right" });
+    doc.text(`${state.header.leader} • ${state.header.depo}`, 50, pageH - 16);
+  };
+  const commonTableOpts = {
+    theme: "grid" as const,
+    headStyles: {
+      fillColor: BLUE,
+      textColor: 255,
+      fontStyle: "bold" as const,
+      halign: "left" as const,
+    },
+    styles: {
+      font: "helvetica",
+      fontSize: 9,
+      cellPadding: 5,
+      textColor: SLATE as any,
+    },
+    alternateRowStyles: { fillColor: [246, 248, 252] as any },
+    margin: { left: 40, right: 40 },
+    didDrawPage: headerFooter,
+  };
 
-  // Header
+  // Header data
+  doc.setTextColor(...SLATE);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(11);
-  doc.text(`Leader: ${state.header.leader}`, 40, y);
-  y += 16;
-  doc.text(`Target: ${state.header.target}`, 40, y);
-  y += 16;
-  doc.text(`Depo: ${state.header.depo}`, 40, y);
-  y += 20;
+  doc.text(`Leader: ${state.header.leader}`, 50, 78);
+  doc.text(`Target: ${state.header.target}`, 50, 96);
+  doc.text(`Depo: ${state.header.depo}`, 50, 114);
 
-  // Checklist summary
-  doc.setFont("helvetica", "bold");
-  doc.text("Checklist Area", 40, y);
-  y += 14;
-  doc.setFont("helvetica", "normal");
-  const addChecklist = (title: string, sec: Record<string, RowValue>) => {
-    const keys = Object.keys(sec);
-    if (!keys.length) return;
-    doc.text(`• ${title}`, 40, y);
-    y += 14;
-    keys.forEach((k) => {
-      const v = sec[k];
-      let val = "";
-      if (v.kind === "options") val = v.value || "-";
-      if (v.kind === "number") val = (v as any).value || "-";
-      if (v.kind === "score") val = String((v as any).value ?? "-");
-      if (v.kind === "compound") {
-        const c = v as any;
-        val = `${c.value || "-"}; ${c.extras?.text || ""} ${
-          c.extras?.currency || ""
-        }`.trim();
-      }
-      const note = v.note ? ` | Cat: ${v.note}` : "";
-      const lineText = `   - ${k.replace(/-/g, " ")}: ${val}${note}`;
-      const split = doc.splitTextToSize(lineText, 515 - 40);
-      split.forEach((t) => {
-        doc.text(t, 60, y);
-        y += 14;
-        if (y > 780) {
-          doc.addPage();
-          y = 40;
-        }
-      });
-    });
-    y += 6;
+  let y = 132;
+  const sectionTitle = (title: string) => {
+    doc.setDrawColor(...BLUE);
+    doc.setLineWidth(2);
+    doc.line(40, y, 180, y);
+    doc.setTextColor(...SLATE);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(12);
+    doc.text(title, 40, y + 18);
+    y += 28;
   };
-  addChecklist("Kas Kecil", state.checklist.kas);
-  addChecklist("Buku Penunjang", state.checklist.buku);
-  addChecklist("AR", state.checklist.ar);
-
-  if (y > 760) {
-    doc.addPage();
-    y = 40;
-  }
-
-  // Evaluasi
-  doc.setFont("helvetica", "bold");
-  doc.text("Evaluasi Tim", 40, y);
-  y += 14;
-  doc.setFont("helvetica", "normal");
-  doc.text(`Hari ke: ${state.evaluasi.attitude.hari}`, 40, y);
-  y += 16;
-  doc.text("Attitude (HEBAT):", 40, y);
-  y += 14;
-  Object.entries(state.evaluasi.attitude.scores).forEach(([k, v]) => {
-    const note = state.evaluasi.attitude.notes[k]
-      ? ` | Cat: ${state.evaluasi.attitude.notes[k]}`
-      : "";
-    doc.text(`   - ${k}: ${v}${note}`, 60, y);
-    y += 14;
-    if (y > 780) {
-      doc.addPage();
-      y = 40;
-    }
-  });
-  y += 6;
-  doc.text("Kompetensi:", 40, y);
-  y += 14;
-  doc.text(
-    `   - Nama Kasir: ${state.evaluasi.kompetensi.namaKasir || "-"}`,
-    60,
-    y
-  );
-  y += 14;
-  doc.text(
-    `   - Nama Sales Admin: ${state.evaluasi.kompetensi.namaSalesAdmin || "-"}`,
-    60,
-    y
-  );
-  y += 14;
-  Object.entries(state.evaluasi.kompetensi.scores).forEach(([k, v]) => {
-    const note = state.evaluasi.kompetensi.notes[k]
-      ? ` | Cat: ${state.evaluasi.kompetensi.notes[k]}`
-      : "";
-    doc.text(`   - ${k}: ${v}${note}`, 60, y);
-    y += 14;
-    if (y > 780) {
-      doc.addPage();
-      y = 40;
-    }
-  });
-  if (state.evaluasi.kompetensi.kesalahanMingguIni) {
-    const split = doc.splitTextToSize(
-      `   - Kesalahan minggu ini: ${state.evaluasi.kompetensi.kesalahanMingguIni}`,
-      515
-    );
-    split.forEach((t) => {
-      doc.text(t, 60, y);
-      y += 14;
-      if (y > 780) {
-        doc.addPage();
-        y = 40;
+  const valToString = (v: RowValue | undefined) => {
+    if (!v) return "-";
+    switch (v.kind) {
+      case "options":
+        return v.value ?? "-";
+      case "number":
+        return (v as any).value || "-";
+      case "score":
+        return String((v as any).value ?? "-");
+      case "compound": {
+        const c = v as any;
+        const extras = [c.extras?.text, c.extras?.currency]
+          .filter(Boolean)
+          .join(" • ");
+        return [c.value || "-", extras].filter(Boolean).join(" | ");
       }
+    }
+  };
+
+  // CHECKLIST
+  sectionTitle("Checklist Area");
+  const pushSection = (title: string, sec: Record<string, RowValue>) => {
+    const keys = Object.keys(sec);
+    if (keys.length === 0) return;
+    autoTable(doc, {
+      ...commonTableOpts,
+      startY: y,
+      head: [[`${title}`, "Status / Isian", "Catatan"]],
+      body: keys.map((k) => {
+        const rv = sec[k];
+        const label = k.replace(/-/g, " ");
+        return [label, valToString(rv), rv?.note || ""];
+      }),
+      columnStyles: {
+        0: { cellWidth: 220 },
+        1: { cellWidth: 170 },
+        2: { cellWidth: "auto" },
+      },
     });
-  }
-  y += 8;
+    y = (doc as any).lastAutoTable.finalY + 16;
+  };
+  pushSection("Kas Kecil", state.checklist.kas);
+  pushSection("Buku Penunjang", state.checklist.buku);
+  pushSection("AR", state.checklist.ar);
 
-  if (y > 760) {
-    doc.addPage();
-    y = 40;
+  // EVALUASI
+  sectionTitle("Evaluasi Tim");
+  const attScores = state.evaluasi.attitude.scores || {};
+  const attAvg =
+    Object.keys(attScores).length > 0
+      ? Math.round(
+          (Object.values(attScores).reduce(
+            (a: number, b: any) => a + (b as number),
+            0
+          ) /
+            Object.keys(attScores).length) *
+            10
+        ) / 10
+      : "-";
+  autoTable(doc, {
+    ...commonTableOpts,
+    startY: y,
+    head: [["Attitude (HEBAT)", "Skor", "Catatan"]],
+    body: Object.entries(attScores).map(([k, v]) => [
+      k,
+      String(v),
+      state.evaluasi.attitude.notes?.[k] || "",
+    ]),
+    columnStyles: {
+      0: { cellWidth: 250 },
+      1: { cellWidth: 70, halign: "center" },
+      2: { cellWidth: "auto" },
+    },
+    foot: [[`Rata-rata`, String(attAvg), ""]],
+    footStyles: {
+      fillColor: [234, 240, 255],
+      textColor: SLATE as any,
+      fontStyle: "bold" as const,
+    },
+  });
+  y = (doc as any).lastAutoTable.finalY + 16;
+
+  const komScores = state.evaluasi.kompetensi.scores || {};
+  autoTable(doc, {
+    ...commonTableOpts,
+    startY: y,
+    head: [["Kompetensi", "Skor", "Catatan"]],
+    body: Object.entries(komScores).map(([k, v]) => [
+      k.replace(/([A-Z])/g, " $1").trim(),
+      String(v),
+      state.evaluasi.kompetensi.notes?.[k] || "",
+    ]),
+    columnStyles: {
+      0: { cellWidth: 250 },
+      1: { cellWidth: 70, halign: "center" },
+      2: { cellWidth: "auto" },
+    },
+  });
+  y = (doc as any).lastAutoTable.finalY + 10;
+
+  if (state.evaluasi.kompetensi.kesalahanMingguIni) {
+    doc.setFont("helvetica", "bold");
+    doc.text("Kesalahan Minggu Ini", 40, y + 12);
+    doc.setFont("helvetica", "normal");
+    const lines = doc.splitTextToSize(
+      state.evaluasi.kompetensi.kesalahanMingguIni,
+      pageW - 80
+    );
+    doc.text(lines, 40, y + 30);
+    y = y + 30 + lines.length * 12 + 10;
   }
 
-  // Target & Achievement
-  doc.setFont("helvetica", "bold");
-  doc.text("Target & Achievement", 40, y);
-  y += 14;
+  // TARGET & ACHIEVEMENT
+  sectionTitle("Target & Achievement");
+  autoTable(doc, {
+    ...commonTableOpts,
+    startY: y,
+    head: [["Penyelesaian Klaim Bulan Ini", "Selesai?"]],
+    body: ["FRI", "SPJ", "APA", "WPL"].map((p) => [
+      p,
+      state.target.klaimSelesai[p as Principal] ? "✓" : "—",
+    ]),
+    columnStyles: {
+      0: { cellWidth: 240 },
+      1: { cellWidth: 80, halign: "center" },
+    },
+  });
+  y = (doc as any).lastAutoTable.finalY + 10;
   doc.setFont("helvetica", "normal");
   doc.text(
     `Target selesai bulan ini: ${state.target.targetSelesai || "-"}`,
     40,
-    y
+    y + 12
   );
-  y += 16;
-  doc.text("Penyelesaian Klaim:", 40, y);
-  y += 14;
-  PRINCIPALS.forEach((p) => {
-    doc.text(
-      `   - ${p}: ${state.target.klaimSelesai[p] ? "Selesai" : "Belum"}`,
-      60,
-      y
-    );
-    y += 14;
-    if (y > 780) {
-      doc.addPage();
-      y = 40;
-    }
-  });
-  y += 6;
-  doc.text("Laporan Penjualan Mingguan:", 40, y);
-  y += 14;
-  PRINCIPALS.forEach((p) => {
-    const w = state.target.weekly[p]
-      .map((b, i) => `M${i + 1}:${b ? "✓" : "×"}`)
-      .join(" ");
-    doc.text(`   - ${p}: ${w}`, 60, y);
-    y += 14;
-    if (y > 780) {
-      doc.addPage();
-      y = 40;
-    }
-  });
   doc.text(
     `Ketepatan Input Fodks: ${state.target.ketepatanFodks ? "Ya" : "Tidak"}`,
     40,
-    y
+    y + 28
   );
-  y += 20;
+  y += 40;
 
-  if (y > 760) {
-    doc.addPage();
-    y = 40;
-  }
+  autoTable(doc, {
+    ...commonTableOpts,
+    startY: y,
+    head: [["Prinsipal", "M1", "M2", "M3", "M4"]],
+    body: (["FRI", "SPJ", "APA", "WPL"] as Principal[]).map((p) => [
+      p,
+      state.target.weekly[p][0] ? "✓" : "—",
+      state.target.weekly[p][1] ? "✓" : "—",
+      state.target.weekly[p][2] ? "✓" : "—",
+      state.target.weekly[p][3] ? "✓" : "—",
+    ]),
+    columnStyles: {
+      0: { cellWidth: 180 },
+      1: { halign: "center" },
+      2: { halign: "center" },
+      3: { halign: "center" },
+      4: { halign: "center" },
+    },
+  });
+  y = (doc as any).lastAutoTable.finalY + 16;
 
   // SPARTA
-  doc.setFont("helvetica", "bold");
-  doc.text("SPARTA Project Tracking", 40, y);
-  y += 14;
-  doc.setFont("helvetica", "normal");
-  doc.text(`Deadline: ${state.sparta.deadline || "-"}`, 40, y);
-  y += 16;
-  state.sparta.steps.forEach((done, i) => {
-    doc.text(
-      `   - ${i + 1}. ${UDI_STEPS[i]}: ${done ? "Selesai" : "Belum"}`,
-      60,
-      y
-    );
-    y += 14;
-    if (y > 780) {
-      doc.addPage();
-      y = 40;
-    }
+  sectionTitle("SPARTA Project Tracking");
+  const steps = state.sparta.steps || [];
+  const percent = Math.round((steps.filter(Boolean).length / 4) * 100);
+  doc.text(`Deadline: ${state.sparta.deadline || "-"}`, 40, y + 12);
+  doc.text(`Progress: ${percent}%`, pageW - 40, y + 12, { align: "right" });
+  y += 20;
+  autoTable(doc, {
+    ...commonTableOpts,
+    startY: y,
+    head: [["Langkah", "Status"]],
+    body: [
+      ["1. menyelesaikan Q3 2024", steps[0] ? "✓" : "—"],
+      ["2. menyelesaikan Q4 2024", steps[1] ? "✓" : "—"],
+      ["3. Q1 2025 termasuk reward Q1 2025", steps[2] ? "✓" : "—"],
+      ["4. Q2 2025 + reward proporsional Q2 2025", steps[3] ? "✓" : "—"],
+    ],
+    columnStyles: { 0: { cellWidth: 360 }, 1: { halign: "center" } },
   });
+  y = (doc as any).lastAutoTable.finalY + 12;
+
   if (state.sparta.progressText) {
-    const s = doc.splitTextToSize(
-      `Progress: ${state.sparta.progressText}`,
-      515
-    );
-    s.forEach((t) => {
-      doc.text(t, 40, y);
-      y += 14;
-      if (y > 780) {
-        doc.addPage();
-        y = 40;
-      }
-    });
+    doc.setFont("helvetica", "bold");
+    doc.text("Uraian Progress", 40, y + 12);
+    doc.setFont("helvetica", "normal");
+    const lines = doc.splitTextToSize(state.sparta.progressText, pageW - 80);
+    doc.text(lines, 40, y + 30);
+    y = y + 30 + lines.length * 12 + 10;
   }
   if (state.sparta.nextAction) {
-    const s = doc.splitTextToSize(
-      `Next Action: ${state.sparta.nextAction}`,
-      515
-    );
-    s.forEach((t) => {
-      doc.text(t, 40, y);
-      y += 14;
-      if (y > 780) {
-        doc.addPage();
-        y = 40;
-      }
-    });
+    doc.setFont("helvetica", "bold");
+    doc.text("Next Action", 40, y + 12);
+    doc.setFont("helvetica", "normal");
+    const lines = doc.splitTextToSize(state.sparta.nextAction, pageW - 80);
+    doc.text(lines, 40, y + 30);
+    y = y + 30 + lines.length * 12 + 10;
   }
+
+  // AGENDA (hanya yang tanggalnya = date arsip)
+  sectionTitle("Agenda & Jadwal (hari ini)");
+  const todays = state.agenda?.entries?.filter((e) => e.date === date) ?? [];
+  if (todays.length) {
+    autoTable(doc, {
+      ...commonTableOpts,
+      startY: y,
+      head: [["Plan", "Realisasi"]],
+      body: todays.map((e) => [
+        "• " + e.plan.join("\n• "),
+        e.realisasi.length ? "• " + e.realisasi.join("\n• ") : "—",
+      ]),
+      columnStyles: { 0: { cellWidth: 260 }, 1: { cellWidth: "auto" } },
+    });
+    y = (doc as any).lastAutoTable.finalY + 16;
+  } else {
+    doc.setFont("helvetica", "normal");
+    doc.text("(Tidak ada agenda yang dicatat untuk hari ini)", 40, y + 12);
+    y += 28;
+  }
+
+  // TTD
+  if (y > pageH - 160) doc.addPage();
+  headerFooter();
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(12);
+  doc.text("Persetujuan & Tanda Tangan", 40, y + 18);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.text(
+    "Dengan ini saya menyatakan laporan di atas benar dan dapat dipertanggungjawabkan.",
+    40,
+    y + 36
+  );
+  const boxY = y + 50;
+  doc.setDrawColor(200);
+  doc.rect(pageW - 260, boxY, 200, 100);
+  if (signatureDataUrl) {
+    doc.addImage(signatureDataUrl, "PNG", pageW - 255, boxY + 10, 190, 60);
+  } else {
+    doc.setTextColor(150);
+    doc.text("(tanda tangan belum tersedia)", pageW - 160, boxY + 60, {
+      align: "center",
+    });
+    doc.setTextColor(...SLATE);
+  }
+  doc.text(
+    state.header.leader || "__________________",
+    pageW - 160,
+    boxY + 120,
+    {
+      align: "center",
+    }
+  );
 
   const filename = `SITREP-${date}.pdf`;
   if (autoDownload) doc.save(filename);
