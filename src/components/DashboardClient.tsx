@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ClipboardList,
   Target as TargetIcon,
@@ -12,7 +12,11 @@ import {
   ListChecks,
   AlertTriangle,
   CalendarDays,
+  Download,
+  FilePlus2,
+  FileText,
 } from "lucide-react";
+import { jsPDF } from "jspdf";
 
 /* =========================== TOP TABS =========================== */
 const TABS = [
@@ -20,31 +24,199 @@ const TABS = [
   { key: "evaluasi", label: "Evaluasi Tim", icon: Users2 },
   { key: "target", label: "Target & Achievement", icon: TargetIcon },
   { key: "sparta", label: "Project Tracking (SPARTA)", icon: ListChecks },
+  { key: "lampiran", label: "Lampiran", icon: Paperclip },
   { key: "agenda", label: "Agenda & Jadwal", icon: CalendarCheck },
   { key: "achievement", label: "Achievement", icon: Trophy },
-  { key: "lampiran", label: "Lampiran", icon: Paperclip },
 ] as const;
 
-type TabDef = (typeof TABS)[number];
+type TabDef = (typeof TABS)[number]["key"];
 
+/* =========================== APP STATE (untuk Lampiran) =========================== */
+type SectionKey =
+  | "kas"
+  | "buku"
+  | "ar"
+  | "klaim"
+  | "pengiriman"
+  | "setoran"
+  | "pembelian"
+  | "faktur"
+  | "retur"
+  | "marketing";
+
+type RowValue =
+  | { kind: "options"; value: string | null; note?: string }
+  | { kind: "number"; value: string; note?: string; suffix?: string }
+  | { kind: "score"; value: number; note?: string }
+  | {
+      kind: "compound";
+      value: string | null;
+      extras?: { text?: string; currency?: string };
+      note?: string;
+    };
+
+type ChecklistState = Record<
+  SectionKey,
+  {
+    // key: slug label
+    [rowKey: string]: RowValue;
+  }
+>;
+
+type EvaluasiAttitude = {
+  hari: 1 | 2 | 3 | 4 | 5 | 6;
+  // H,E,B,A,T skor & catatan
+  scores: Record<string, number>;
+  notes: Record<string, string>;
+};
+type EvaluasiKompetensi = {
+  namaKasir: string;
+  namaSalesAdmin: string;
+  kesalahanMingguIni: string;
+  scores: Record<string, number>;
+  notes: Record<string, string>;
+};
+
+const PRINCIPALS = ["FRI", "SPJ", "APA", "WPL"] as const;
+type Principal = (typeof PRINCIPALS)[number];
+
+type TargetState = {
+  targetSelesai: string;
+  klaimSelesai: Record<Principal, boolean>;
+  weekly: Record<Principal, boolean[]>; // 4 minggu
+  ketepatanFodks: boolean;
+};
+
+type SpartaState = {
+  deadline: string;
+  steps: boolean[]; // 4 langkah UDI
+  progressText: string;
+  nextAction: string;
+};
+
+type AppState = {
+  header: { leader: string; target: string; depo: string };
+  checklist: ChecklistState;
+  evaluasi: {
+    attitude: EvaluasiAttitude;
+    kompetensi: EvaluasiKompetensi;
+  };
+  target: TargetState;
+  sparta: SpartaState;
+};
+
+const todayISO = () => new Date().toISOString().slice(0, 10);
+
+/* =========================== ROOT =========================== */
 export default function DashboardClient() {
-  const role = "Sales Supervisor - BLM";
-  const [active, setActive] = useState<TabDef["key"]>("checklist");
+  const [active, setActive] = useState<TabDef>("checklist");
+
+  // ============ Global state untuk Lampiran ============
+  const [state, setState] = useState<AppState>({
+    header: {
+      leader: "(Auto-fill from user)",
+      target: "(Auto-fill)",
+      depo: "(Auto-fill)",
+    },
+    checklist: {
+      kas: {},
+      buku: {},
+      ar: {},
+      klaim: {},
+      pengiriman: {},
+      setoran: {},
+      pembelian: {},
+      faktur: {},
+      retur: {},
+      marketing: {},
+    },
+    evaluasi: {
+      attitude: { hari: 1, scores: {}, notes: {} },
+      kompetensi: {
+        namaKasir: "",
+        namaSalesAdmin: "",
+        kesalahanMingguIni: "",
+        scores: {},
+        notes: {},
+      },
+    },
+    target: {
+      targetSelesai: "",
+      klaimSelesai: { FRI: false, SPJ: false, APA: false, WPL: false },
+      weekly: {
+        FRI: [false, false, false, false],
+        SPJ: [false, false, false, false],
+        APA: [false, false, false, false],
+        WPL: [false, false, false, false],
+      },
+      ketepatanFodks: false,
+    },
+    sparta: {
+      deadline: "",
+      steps: [false, false, false, false],
+      progressText: "",
+      nextAction: "",
+    },
+  });
+
+  // helper: update path
+  const update = <K extends keyof AppState>(k: K, v: AppState[K]) =>
+    setState((s) => ({ ...s, [k]: v }));
 
   return (
     <div className="min-h-screen bg-slate-100">
-      <Header role={role} />
+      <Header
+        header={state.header}
+        onHeaderChange={(h) => update("header", h)}
+      />
 
       <main className="max-w-6xl mx-auto px-3 sm:px-4 pb-16">
         <RoleTabs tabs={TABS} active={active} onChange={setActive} />
-        <section className="mt-6">{renderActive(active)}</section>
+        <section className="mt-6">
+          {active === "checklist" && (
+            <ChecklistArea
+              data={state.checklist}
+              onChange={(payload) => update("checklist", payload)}
+            />
+          )}
+          {active === "evaluasi" && (
+            <EvaluasiTim
+              data={state.evaluasi}
+              onChange={(payload) => update("evaluasi", payload)}
+            />
+          )}
+          {active === "target" && (
+            <TargetAchievement
+              data={state.target}
+              onChange={(payload) => update("target", payload)}
+            />
+          )}
+          {active === "sparta" && (
+            <SpartaTracking
+              data={state.sparta}
+              onChange={(payload) => update("sparta", payload)}
+            />
+          )}
+          {active === "lampiran" && <Lampiran appState={state} />}
+          {["agenda", "achievement"].includes(active) && (
+            <SimpleTab
+              title={TABS.find((t) => t.key === active)?.label || ""}
+            />
+          )}
+        </section>
       </main>
     </div>
   );
 }
 
 /* =========================== HEADER =========================== */
-function Header({ role }: { role: string }) {
+function Header({
+  header,
+  onHeaderChange,
+}: {
+  header: AppState["header"];
+  onHeaderChange: (h: AppState["header"]) => void;
+}) {
   return (
     <header className="w-full bg-gradient-to-b from-blue-800 to-blue-700 text-white shadow">
       <div className="max-w-6xl mx-auto px-3 sm:px-4">
@@ -68,69 +240,64 @@ function Header({ role }: { role: string }) {
           </p>
 
           <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <MetaPill label="Leader" value="(Auto-fill from user)" />
-            <MetaPill label="Target" value="(Auto-fill)" />
-            <MetaPill label="Depo" value="(Auto-fill)" />
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white/95">
-        <div className="max-w-6xl mx-auto px-3 sm:px-4">
-          <div className="flex items-center gap-4 overflow-x-auto py-2 text-[13px] text-slate-600">
-            {TABS.map((t, idx) => (
-              <div
-                key={t.key}
-                className="flex items-center gap-2 whitespace-nowrap"
-              >
-                <span
-                  className={
-                    "inline-block h-2.5 w-2.5 rounded-sm " +
-                    [
-                      "bg-rose-400",
-                      "bg-amber-400",
-                      "bg-emerald-400",
-                      "bg-cyan-400",
-                      "bg-indigo-400",
-                      "bg-fuchsia-400",
-                      "bg-slate-400",
-                    ][idx % 7]
-                  }
-                />
-                <span className="font-medium">{t.label}</span>
-              </div>
-            ))}
+            <MetaPill
+              label="Leader"
+              value={header.leader}
+              onEdit={(v) => onHeaderChange({ ...header, leader: v })}
+            />
+            <MetaPill
+              label="Target"
+              value={header.target}
+              onEdit={(v) => onHeaderChange({ ...header, target: v })}
+            />
+            <MetaPill
+              label="Depo"
+              value={header.depo}
+              onEdit={(v) => onHeaderChange({ ...header, depo: v })}
+            />
           </div>
         </div>
       </div>
     </header>
   );
 }
-
-function MetaPill({ label, value }: { label: string; value: string }) {
+function MetaPill({
+  label,
+  value,
+  onEdit,
+}: {
+  label: string;
+  value: string;
+  onEdit: (v: string) => void;
+}) {
   return (
     <div className="bg-white/10 border border-white/15 rounded-xl px-3 py-2 text-center">
       <div className="text-[11px] uppercase tracking-wide text-blue-100">
         {label}
       </div>
-      <div className="text-sm font-medium">{value}</div>
+      <input
+        value={value}
+        onChange={(e) => onEdit(e.target.value)}
+        className="mt-0.5 w-full bg-transparent text-center font-medium outline-none placeholder:text-blue-100/70"
+        placeholder="(isi)"
+      />
     </div>
   );
 }
 
-/* =========================== ROLE TABS (TOP) =========================== */
+/* =========================== ROLE TABS =========================== */
 function RoleTabs({
   tabs,
   active,
   onChange,
 }: {
   tabs: ReadonlyArray<{
-    key: TabDef["key"];
+    key: TabDef;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
   }>;
-  active: TabDef["key"];
-  onChange: (key: TabDef["key"]) => void;
+  active: TabDef;
+  onChange: (key: TabDef) => void;
 }) {
   return (
     <div className="bg-white border rounded-2xl shadow-sm p-2 flex flex-nowrap overflow-x-auto gap-2">
@@ -153,36 +320,22 @@ function RoleTabs({
   );
 }
 
-/* =========================== ACTIVE VIEW ROUTER =========================== */
-function renderActive(key: TabDef["key"]) {
-  switch (key) {
-    case "checklist":
-      return <ChecklistArea />;
-    case "evaluasi":
-      return <EvaluasiTim />;
-    case "target":
-      return <TargetAchievement />;
-    case "sparta":
-      return <SpartaTracking />;
-    default:
-      return <SimpleTab title={TABS.find((t) => t.key === key)?.label || ""} />;
-  }
-}
-
-/* =========================== CHECKLIST AREA (with SUB-TABS) =========================== */
-type Section = { title: string; rows: RowDef[] };
+/* =========================================================================
+   CHECKLIST AREA (Controlled, agar bisa direkap)
+   ========================================================================= */
 type RowDef =
-  | { kind: "options"; label: string; options: string[] }
-  | { kind: "number"; label: string; suffix?: string }
-  | { kind: "score"; label: string }
+  | { kind: "options"; key: string; label: string; options: string[] }
+  | { kind: "number"; key: string; label: string; suffix?: string }
+  | { kind: "score"; key: string; label: string }
   | {
       kind: "compound";
+      key: string;
       label: string;
       options: string[];
       extra?: { type: "text" | "currency"; placeholder?: string }[];
     };
 
-const SECTION_TABS = [
+const SECTION_TABS: { key: SectionKey; label: string }[] = [
   { key: "kas", label: "Kas Kecil" },
   { key: "buku", label: "Buku Penunjang" },
   { key: "ar", label: "AR" },
@@ -193,118 +346,148 @@ const SECTION_TABS = [
   { key: "faktur", label: "Faktur Penjualan" },
   { key: "retur", label: "Retur Penjualan" },
   { key: "marketing", label: "Marketing" },
-] as const;
+];
 
-type SectionKey = (typeof SECTION_TABS)[number]["key"];
+const SLUG = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 
-function ChecklistArea() {
-  const SECTION_MAP: Record<SectionKey, Section> = useMemo(
-    () => ({
-      kas: {
-        title: "Kas Kecil",
-        rows: [
-          {
-            kind: "options",
-            label: "Saldo Kas Kecil",
-            options: ["Cocok", "Tidak Cocok"],
-          },
-          { kind: "number", label: "Voucher Individual", suffix: "pcs" },
-          {
-            kind: "options",
-            label: "Voucher Harian",
-            options: ["Clear", "Tidak Beres"],
-          },
-          {
-            kind: "options",
-            label: "Approval",
-            options: ["Sesuai", "Tidak Sesuai"],
-          },
-          {
-            kind: "options",
-            label: "Kasbon Operasional",
-            options: ["Clear", "Belum Kembali"],
-          },
-          {
-            kind: "options",
-            label: "Dokumentasi Bukti Biaya",
-            options: ["Valid", "Perlu Validasi"],
-          },
-          {
-            kind: "compound",
-            label: "Dropping Kas Kecil",
-            options: ["Ada Form", "Tidak"],
-            extra: [
-              { type: "text", placeholder: "Penjelasan..." },
-              { type: "currency", placeholder: "Nilai" },
-            ],
-          },
-          {
-            kind: "options",
-            label: "Serah Terima dengan FAT",
-            options: ["Sesuai", "Tidak Sesuai"],
-          },
-          { kind: "score", label: "Score Performa" },
-        ],
-      },
-      buku: {
-        title: "Buku Penunjang",
-        rows: [
-          {
-            kind: "options",
-            label: "Buku Kontrol BBM Berlangganan",
-            options: ["Sesuai", "Tidak Sesuai"],
-          },
-          {
-            kind: "options",
-            label: "Buku Khusus Materai",
-            options: ["Sesuai", "Tidak Sesuai"],
-          },
-          {
-            kind: "options",
-            label: "Buku Kasbon Operasional",
-            options: ["Sesuai", "Tidak Sesuai"],
-          },
-        ],
-      },
-      ar: {
-        title: "AR",
-        rows: [
-          {
-            kind: "options",
-            label: "Faktur Tagihan Sales disiapkan H-2",
-            options: ["Sesuai", "Tidak Sesuai"],
-          },
-          {
-            kind: "options",
-            label: "Faktur disesuaikan Rute/Permintaan/Kebutuhan",
-            options: ["Sesuai", "Tidak Sesuai"],
-          },
-          {
-            kind: "options",
-            label:
-              "Faktur yang perlu ditagih/overdue/sales teman tidak masuk dibawakan",
-            options: ["Sesuai", "Tidak Sesuai"],
-          },
-          {
-            kind: "options",
-            label: "Penyerahan Faktur",
-            options: ["On Time", "Terlambat"],
-          },
-        ],
-      },
-      klaim: { title: "Klaim", rows: [] },
-      pengiriman: { title: "Pengiriman", rows: [] },
-      setoran: { title: "Setoran Bank", rows: [] },
-      pembelian: { title: "Proses Pembelian", rows: [] },
-      faktur: { title: "Faktur Penjualan", rows: [] },
-      retur: { title: "Retur Penjualan", rows: [] },
-      marketing: { title: "Marketing", rows: [] },
-    }),
-    []
-  );
+function ChecklistArea({
+  data,
+  onChange,
+}: {
+  data: ChecklistState;
+  onChange: (v: ChecklistState) => void;
+}) {
+  // definisi rows per seksi
+  const SECTION_MAP: Record<SectionKey, { title: string; rows: RowDef[] }> =
+    useMemo(
+      () => ({
+        kas: {
+          title: "Kas Kecil",
+          rows: [
+            {
+              kind: "options",
+              key: "saldo-kas-kecil",
+              label: "Saldo Kas Kecil",
+              options: ["Cocok", "Tidak Cocok"],
+            },
+            {
+              kind: "number",
+              key: "voucher-individual",
+              label: "Voucher Individual",
+              suffix: "pcs",
+            },
+            {
+              kind: "options",
+              key: "voucher-harian",
+              label: "Voucher Harian",
+              options: ["Clear", "Tidak Beres"],
+            },
+            {
+              kind: "options",
+              key: "approval",
+              label: "Approval",
+              options: ["Sesuai", "Tidak Sesuai"],
+            },
+            {
+              kind: "options",
+              key: "kasbon-operasional",
+              label: "Kasbon Operasional",
+              options: ["Clear", "Belum Kembali"],
+            },
+            {
+              kind: "options",
+              key: "dok-bukti-biaya",
+              label: "Dokumentasi Bukti Biaya",
+              options: ["Valid", "Perlu Validasi"],
+            },
+            {
+              kind: "compound",
+              key: "dropping-kas-kecil",
+              label: "Dropping Kas Kecil",
+              options: ["Ada Form", "Tidak"],
+              extra: [
+                { type: "text", placeholder: "Penjelasan..." },
+                { type: "currency", placeholder: "Nilai" },
+              ],
+            },
+            {
+              kind: "options",
+              key: "serah-terima-fat",
+              label: "Serah Terima dengan FAT",
+              options: ["Sesuai", "Tidak Sesuai"],
+            },
+            { kind: "score", key: "score-performa", label: "Score Performa" },
+          ],
+        },
+        buku: {
+          title: "Buku Penunjang",
+          rows: [
+            {
+              kind: "options",
+              key: "bbm-berlangganan",
+              label: "Buku Kontrol BBM Berlangganan",
+              options: ["Sesuai", "Tidak Sesuai"],
+            },
+            {
+              kind: "options",
+              key: "khusus-materai",
+              label: "Buku Khusus Materai",
+              options: ["Sesuai", "Tidak Sesuai"],
+            },
+            {
+              kind: "options",
+              key: "kasbon-operasional",
+              label: "Buku Kasbon Operasional",
+              options: ["Sesuai", "Tidak Sesuai"],
+            },
+          ],
+        },
+        ar: {
+          title: "AR",
+          rows: [
+            {
+              kind: "options",
+              key: "faktur-h2",
+              label: "Faktur Tagihan Sales disiapkan H-2",
+              options: ["Sesuai", "Tidak Sesuai"],
+            },
+            {
+              kind: "options",
+              key: "faktur-disuaikan",
+              label: "Faktur disesuaikan Rute/Permintaan/Kebutuhan",
+              options: ["Sesuai", "Tidak Sesuai"],
+            },
+            {
+              kind: "options",
+              key: "overdue-bawakan",
+              label:
+                "Faktur yang perlu ditagih/overdue/sales teman tidak masuk dibawakan",
+              options: ["Sesuai", "Tidak Sesuai"],
+            },
+            {
+              kind: "options",
+              key: "penyerahan-faktur",
+              label: "Penyerahan Faktur",
+              options: ["On Time", "Terlambat"],
+            },
+          ],
+        },
+        klaim: { title: "Klaim", rows: [] },
+        pengiriman: { title: "Pengiriman", rows: [] },
+        setoran: { title: "Setoran Bank", rows: [] },
+        pembelian: { title: "Proses Pembelian", rows: [] },
+        faktur: { title: "Faktur Penjualan", rows: [] },
+        retur: { title: "Retur Penjualan", rows: [] },
+        marketing: { title: "Marketing", rows: [] },
+      }),
+      []
+    );
 
   const [secActive, setSecActive] = useState<SectionKey>("kas");
   const section = SECTION_MAP[secActive];
+
+  const patch = (sec: SectionKey, key: string, v: RowValue) =>
+    onChange({ ...data, [sec]: { ...data[sec], [key]: v } });
 
   return (
     <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
@@ -320,18 +503,27 @@ function ChecklistArea() {
           </div>
           <p className="text-sm text-slate-700">
             <span className="font-medium">Instruksi:</span> Gunakan sub-tab di
-            bawah. Skor 1–5 memberi warna indikator.
+            bawah. Semua isian akan masuk ke Lampiran.
           </p>
         </div>
       </div>
 
-      <div className="px-3 sm:px-6 pb-3">
-        <div className="overflow-x-auto">
-          <SectionTabs
-            tabs={SECTION_TABS}
-            active={secActive}
-            onChange={setSecActive}
-          />
+      <div className="px-3 sm:px-6 pb-3 overflow-x-auto">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 flex flex-nowrap gap-2">
+          {SECTION_TABS.map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setSecActive(t.key)}
+              className={
+                "px-3.5 py-2 rounded-lg text-sm transition whitespace-nowrap " +
+                (secActive === t.key
+                  ? "bg-blue-600 text-white shadow"
+                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100")
+              }
+            >
+              {t.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -353,9 +545,17 @@ function ChecklistArea() {
           </div>
         ) : (
           <div className="divide-y">
-            {section.rows.map((row, ri) => (
-              <ChecklistRow key={ri} row={row} />
-            ))}
+            {section.rows.map((row) => {
+              const current = data[secActive][row.key] as RowValue | undefined;
+              return (
+                <ChecklistRow
+                  key={row.key}
+                  row={row}
+                  value={current}
+                  onChange={(v) => patch(secActive, row.key, v)}
+                />
+              );
+            })}
           </div>
         )}
       </div>
@@ -363,63 +563,104 @@ function ChecklistArea() {
   );
 }
 
-function SectionTabs({
-  tabs,
-  active,
+function ChecklistRow({
+  row,
+  value,
   onChange,
 }: {
-  tabs: ReadonlyArray<{ key: SectionKey; label: string }>;
-  active: SectionKey;
-  onChange: (key: SectionKey) => void;
+  row: RowDef;
+  value?: RowValue;
+  onChange: (v: RowValue) => void;
 }) {
-  return (
-    <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 flex flex-nowrap gap-2">
-      {tabs.map((t) => (
-        <button
-          key={t.key}
-          onClick={() => onChange(t.key)}
-          className={
-            "px-3.5 py-2 rounded-lg text-sm transition whitespace-nowrap " +
-            (active === t.key
-              ? "bg-blue-600 text-white shadow"
-              : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100")
-          }
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
-  );
-}
+  const [note, setNote] = useState(value?.note || "");
 
-/* =========================== ROW RENDERERS =========================== */
-function ChecklistRow({ row }: { row: RowDef }) {
-  const [note, setNote] = useState("");
+  useEffect(() => {
+    // sinkron note ke parent
+    if (value && value.note !== note) onChange({ ...(value as any), note });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note]);
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-12 items-start bg-white">
-      <div className="sm:col-span-6 py-3 px-2 text-sm">
-        {("label" in row && (row as any).label) || ""}
-      </div>
+      <div className="sm:col-span-6 py-3 px-2 text-sm">{row.label}</div>
       <div className="sm:col-span-4 py-3 px-2">
         <div className="sm:hidden text-xs text-slate-500 mb-1">
           Status / Isian
         </div>
-        {row.kind === "options" && <OptionsGroup options={row.options} />}
-        {row.kind === "number" && <NumberWithSuffix suffix={row.suffix} />}
-        {row.kind === "score" && <ScoreSelect />}
+
+        {row.kind === "options" && (
+          <OptionsGroup
+            options={row.options}
+            value={(value as any)?.value ?? null}
+            onChange={(v) => onChange({ kind: "options", value: v })}
+          />
+        )}
+
+        {row.kind === "number" && (
+          <NumberWithSuffix
+            suffix={row.suffix}
+            value={(value as any)?.value ?? ""}
+            onChange={(v) =>
+              onChange({ kind: "number", value: v, suffix: row.suffix })
+            }
+          />
+        )}
+
+        {row.kind === "score" && (
+          <ScoreSelect
+            value={(value as any)?.value ?? 3}
+            onChange={(v) => onChange({ kind: "score", value: v })}
+          />
+        )}
+
         {row.kind === "compound" && (
           <div className="space-y-2">
-            <OptionsGroup options={row.options} />
+            <OptionsGroup
+              options={row.options}
+              value={(value as any)?.value ?? null}
+              onChange={(v) =>
+                onChange({
+                  kind: "compound",
+                  value: v,
+                  extras: {
+                    text: (value as any)?.extras?.text,
+                    currency: (value as any)?.extras?.currency,
+                  },
+                })
+              }
+            />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {row.extra?.map((f, i) => (
-                <input
-                  key={i}
-                  placeholder={f.placeholder}
-                  className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
-                  inputMode={f.type === "currency" ? "numeric" : undefined}
-                />
-              ))}
+              <input
+                placeholder={row.extra?.[0]?.placeholder}
+                value={(value as any)?.extras?.text ?? ""}
+                onChange={(e) =>
+                  onChange({
+                    kind: "compound",
+                    value: (value as any)?.value ?? null,
+                    extras: {
+                      text: e.target.value,
+                      currency: (value as any)?.extras?.currency,
+                    },
+                  })
+                }
+                className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+              />
+              <input
+                placeholder={row.extra?.[1]?.placeholder}
+                value={(value as any)?.extras?.currency ?? ""}
+                onChange={(e) =>
+                  onChange({
+                    kind: "compound",
+                    value: (value as any)?.value ?? null,
+                    extras: {
+                      text: (value as any)?.extras?.text,
+                      currency: e.target.value,
+                    },
+                  })
+                }
+                inputMode="numeric"
+                className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+              />
             </div>
           </div>
         )}
@@ -437,15 +678,22 @@ function ChecklistRow({ row }: { row: RowDef }) {
   );
 }
 
-function OptionsGroup({ options }: { options: string[] }) {
-  const [value, setValue] = useState<string | null>(null);
+function OptionsGroup({
+  options,
+  value,
+  onChange,
+}: {
+  options: string[];
+  value: string | null;
+  onChange: (v: string) => void;
+}) {
   return (
     <div className="flex flex-wrap gap-2">
       {options.map((opt) => (
         <button
           type="button"
           key={opt}
-          onClick={() => setValue(opt)}
+          onClick={() => onChange(opt)}
           className={
             "px-3 py-1.5 rounded-lg border text-sm transition " +
             (value === opt
@@ -459,14 +707,20 @@ function OptionsGroup({ options }: { options: string[] }) {
     </div>
   );
 }
-
-function NumberWithSuffix({ suffix }: { suffix?: string }) {
-  const [num, setNum] = useState<string>("");
+function NumberWithSuffix({
+  suffix,
+  value,
+  onChange,
+}: {
+  suffix?: string;
+  value: string;
+  onChange: (v: string) => void;
+}) {
   return (
     <div className="flex items-center gap-2">
       <input
-        value={num}
-        onChange={(e) => setNum(e.target.value)}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         inputMode="numeric"
         className="w-full sm:w-28 rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
       />
@@ -474,8 +728,6 @@ function NumberWithSuffix({ suffix }: { suffix?: string }) {
     </div>
   );
 }
-
-/* =========================== THEMED SELECT + SCORE =========================== */
 function ThemedSelect(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
   const { className = "", ...rest } = props;
   return (
@@ -495,14 +747,19 @@ function scoreDot(score: number) {
   if (score === 3) return "bg-amber-500";
   return "bg-emerald-500";
 }
-function ScoreSelect() {
-  const [score, setScore] = useState(3);
+function ScoreSelect({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+}) {
   return (
     <div className="flex items-center gap-2">
-      <span className={"h-2.5 w-2.5 rounded-full " + scoreDot(score)} />
+      <span className={"h-2.5 w-2.5 rounded-full " + scoreDot(value)} />
       <ThemedSelect
-        value={String(score)}
-        onChange={(e) => setScore(Number(e.target.value))}
+        value={String(value)}
+        onChange={(e) => onChange(Number(e.target.value))}
       >
         {[1, 2, 3, 4, 5].map((n) => (
           <option key={n} value={n}>
@@ -514,7 +771,9 @@ function ScoreSelect() {
   );
 }
 
-/* =========================== EVALUASI TIM (HARI-BASED) =========================== */
+/* =========================================================================
+   EVALUASI TIM (Controlled)
+   ========================================================================= */
 type Theme = "attitude" | "kompetensi" | "prestasi" | "kepatuhan" | "kosong";
 const DAY_THEME: Record<1 | 2 | 3 | 4 | 5 | 6, Theme> = {
   1: "attitude",
@@ -525,11 +784,49 @@ const DAY_THEME: Record<1 | 2 | 3 | 4 | 5 | 6, Theme> = {
   6: "kepatuhan",
 };
 
-function EvaluasiTim() {
-  const [hari, setHari] = useState<1 | 2 | 3 | 4 | 5 | 6>(1);
+const HEBAT_ITEMS = [
+  { code: "H", title: "Harmonis & Integritas" },
+  { code: "E", title: "Etos Profesional" },
+  { code: "B", title: "Berinovasi untuk Maju" },
+  { code: "A", title: "Ahli & Adaptif" },
+  { code: "T", title: "Tepat Manfaat & Peduli" },
+] as const;
+
+const KOMPETENSI_ITEMS = [
+  { key: "menghitungUang", title: "Menghitung uang" },
+  { key: "membukukanKasKecil", title: "Membukukan Kas kecil" },
+  { key: "penjurnalan", title: "Penjurnalan" },
+  { key: "menyelesaikanTugas", title: "Menyelesaikan Tugas" },
+  { key: "setoranPas", title: "Setoran Pas" },
+  { key: "tepatMenyiapkanTagihan", title: "Tepat Menyiapkan Tagihan" },
+  {
+    key: "menyiapkanTagihanTepatWaktu",
+    title: "Menyiapkan Tagihan Tepat Waktu",
+  },
+  { key: "menagihAR", title: "Menagih AR ke" },
+  { key: "laporanTepatWaktu", title: "Laporan tepat Waktu" },
+] as const;
+
+function EvaluasiTim({
+  data,
+  onChange,
+}: {
+  data: AppState["evaluasi"];
+  onChange: (v: AppState["evaluasi"]) => void;
+}) {
+  const hari = data.attitude.hari;
   const theme = DAY_THEME[hari];
-  const [nama, setNama] = useState("");
-  const [peran, setPeran] = useState("");
+
+  const setHari = (h: 1 | 2 | 3 | 4 | 5 | 6) =>
+    onChange({ ...data, attitude: { ...data.attitude, hari: h } });
+
+  const setAtt = (
+    scores: Record<string, number>,
+    notes: Record<string, string>
+  ) => onChange({ ...data, attitude: { ...data.attitude, scores, notes } });
+
+  const setKom = (payload: Partial<EvaluasiKompetensi>) =>
+    onChange({ ...data, kompetensi: { ...data.kompetensi, ...payload } });
 
   return (
     <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
@@ -570,84 +867,40 @@ function EvaluasiTim() {
             </span>
           </div>
         </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <input
-            value={nama}
-            onChange={(e) => setNama(e.target.value)}
-            placeholder="Nama anggota…"
-            className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
-          />
-          <input
-            value={peran}
-            onChange={(e) => setPeran(e.target.value)}
-            placeholder="Peran / Posisi…"
-            className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
-          />
-        </div>
       </div>
 
       <div className="px-3 sm:px-6 pb-6">
         {theme === "attitude" ? (
-          <FormAttitude />
+          <FormAttitudeControlled data={data.attitude} onChange={setAtt} />
         ) : theme === "kompetensi" ? (
-          <FormKompetensi />
-        ) : theme === "prestasi" ? (
-          <FormPlaceholder title="Prestasi" />
-        ) : theme === "kepatuhan" ? (
-          <FormPlaceholder title="Kepatuhan SOP" />
+          <FormKompetensiControlled data={data.kompetensi} onChange={setKom} />
         ) : (
-          <EmptyDay />
+          <div className="p-4 text-sm text-slate-600 border border-dashed rounded-xl bg-slate-50">
+            Form {theme} menyusul.
+          </div>
         )}
       </div>
     </div>
   );
 }
 
-/* ---------- Attitude ---------- */
-const HEBAT_ITEMS = [
-  {
-    code: "H",
-    title: "Harmonis & Integritas",
-    question:
-      "Apakah yang bersangkutan jujur, tidak manipulatif, mengakui kesalahan, konsisten menepati janji, menjaga keharmonisan tim, dan menjaga etika?",
-    hint: "Nilai 1 jika: provokatif, berpolitik, memanipulatif, berbohong, mengadu domba, bermuka dua.",
-  },
-  {
-    code: "E",
-    title: "Etos Profesional",
-    question:
-      "Apakah menjaga kualitas pekerjaan, tepat waktu, bertanggung jawab, berpenampilan profesional, dan bisa mengatur waktu agar deadline tercapai?",
-    hint: "Nilai 1 jika: berpenampilan tidak rapi, kerja asal-asalan, sering miss deadline.",
-  },
-  {
-    code: "B",
-    title: "Berinovasi untuk Maju",
-    question:
-      "Apakah proaktif memberi masukan, partisipatif dalam perbaikan, memberi feedback dan saran, serta berkeinginan belajar?",
-    hint: "Nilai 1 jika: pasif, merasa diri sudah mentok, bekerja asal gaji tanpa kontribusi.",
-  },
-  {
-    code: "A",
-    title: "Ahli & Adaptif",
-    question:
-      "Apakah cepat belajar, menguasai pekerjaan, inisiatif, tidak mudah tersinggung saat menerima masukan, dan adaptif?",
-    hint: "Nilai 1 jika: kompetensi kurang, lambat belajar, mudah tersinggung jika dikritik.",
-  },
-  {
-    code: "T",
-    title: "Tepat Manfaat & Peduli",
-    question:
-      "Apakah berdampak positif bagi tim/target, peduli dengan rekan kerja/mitra, dan berkontribusi nyata?",
-    hint: "Nilai 1 jika: kurang memberi manfaat, cenderung masa bodoh pada tim/target.",
-  },
-] as const;
-
-function FormAttitude() {
+function FormAttitudeControlled({
+  data,
+  onChange,
+}: {
+  data: EvaluasiAttitude;
+  onChange: (
+    scores: Record<string, number>,
+    notes: Record<string, string>
+  ) => void;
+}) {
   const [scores, setScores] = useState<Record<string, number>>(
-    Object.fromEntries(HEBAT_ITEMS.map((i) => [i.code, 3]))
+    Object.keys(data.scores).length
+      ? data.scores
+      : Object.fromEntries(HEBAT_ITEMS.map((i) => [i.code, 3]))
   );
-  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState<Record<string, string>>(data.notes || {});
+  useEffect(() => onChange(scores, notes), [scores, notes]); // sinkron
 
   const avg =
     Math.round(
@@ -655,12 +908,12 @@ function FormAttitude() {
         10
     ) / 10;
 
-  const setScore = (code: string, v: number) =>
-    setScores((p) => ({ ...p, [code]: v }));
-
   return (
     <div className="space-y-4">
-      <ScoreLegend />
+      <div className="rounded-xl border bg-slate-50 p-3 text-sm text-slate-600">
+        <span className="font-medium">Skala 1–5:</span> 1 sangat jelek, 2
+        kurang, 3 cukup, 4 baik, 5 sangat baik.
+      </div>
 
       <div className="divide-y border rounded-xl bg-white">
         {HEBAT_ITEMS.map((item) => (
@@ -675,15 +928,14 @@ function FormAttitude() {
                 </span>
                 <h4 className="font-medium text-slate-800">{item.title}</h4>
               </div>
-              <p className="text-sm text-slate-600 mt-1">{item.question}</p>
-              <p className="text-xs text-slate-500 mt-1">Hint: {item.hint}</p>
             </div>
-
             <div className="sm:col-span-2">
               <div className="sm:hidden text-xs text-slate-500 mb-1">Skor</div>
-              <ScoreSelect />
+              <ScoreSelect
+                value={scores[item.code]}
+                onChange={(v) => setScores((p) => ({ ...p, [item.code]: v }))}
+              />
             </div>
-
             <div className="sm:col-span-3">
               <div className="sm:hidden text-xs text-slate-500 mb-1">
                 Catatan
@@ -701,59 +953,29 @@ function FormAttitude() {
         ))}
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-slate-500">
-          Rata-rata skor (HEBAT):{" "}
-          <span className="font-semibold text-slate-800">{avg}</span>
-        </div>
-        <button
-          type="button"
-          className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm shadow hover:bg-blue-700"
-        >
-          Simpan Evaluasi
-        </button>
+      <div className="text-sm text-slate-500">
+        Rata-rata skor (HEBAT):{" "}
+        <span className="font-semibold text-slate-800">{avg}</span>
       </div>
     </div>
   );
 }
 
-function ScoreLegend() {
-  return (
-    <div className="rounded-xl border bg-slate-50 p-3 text-sm text-slate-600">
-      <span className="font-medium">Skala 1–5:</span> 1 sangat jelek, 2 kurang,
-      3 cukup, 4 baik, 5 sangat baik (bisa jadi teladan).
-    </div>
-  );
-}
-
-/* ---------- KOMPETENSI (Hari 2) ---------- */
-const KOMPETENSI_ITEMS = [
-  { key: "menghitungUang", title: "Menghitung uang" },
-  { key: "membukukanKasKecil", title: "Membukukan Kas kecil" },
-  { key: "penjurnalan", title: "Penjurnalan" },
-  { key: "menyelesaikanTugas", title: "Menyelesaikan Tugas" },
-  { key: "setoranPas", title: "Setoran Pas" },
-  { key: "tepatMenyiapkanTagihan", title: "Tepat Menyiapkan Tagihan" },
-  {
-    key: "menyiapkanTagihanTepatWaktu",
-    title: "Menyiapkan Tagihan Tepat Waktu",
-  },
-  { key: "menagihAR", title: "Menagih AR ke" },
-  { key: "laporanTepatWaktu", title: "Laporan tepat Waktu" },
-] as const;
-
-function FormKompetensi() {
-  const [namaKasir, setNamaKasir] = useState("");
-  const [namaSalesAdmin, setNamaSalesAdmin] = useState("");
-  const [kesalahanMingguIni, setKesalahanMingguIni] = useState("");
-
+function FormKompetensiControlled({
+  data,
+  onChange,
+}: {
+  data: EvaluasiKompetensi;
+  onChange: (payload: Partial<EvaluasiKompetensi>) => void;
+}) {
   const [scores, setScores] = useState<Record<string, number>>(
-    Object.fromEntries(KOMPETENSI_ITEMS.map((i) => [i.key, 3]))
+    Object.keys(data.scores).length
+      ? data.scores
+      : Object.fromEntries(KOMPETENSI_ITEMS.map((i) => [i.key, 3]))
   );
-  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState<Record<string, string>>(data.notes || {});
 
-  const setScore = (key: string, v: number) =>
-    setScores((p) => ({ ...p, [key]: v }));
+  useEffect(() => onChange({ scores, notes }), [scores, notes]); // sinkron
 
   const avg =
     Math.round(
@@ -764,18 +986,21 @@ function FormKompetensi() {
 
   return (
     <div className="space-y-4">
-      <ScoreLegend />
+      <div className="rounded-xl border bg-slate-50 p-3 text-sm text-slate-600">
+        <span className="font-medium">Skala 1–5:</span> 1 sangat jelek, 2
+        kurang, 3 cukup, 4 baik, 5 sangat baik.
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <input
-          value={namaKasir}
-          onChange={(e) => setNamaKasir(e.target.value)}
+          value={data.namaKasir}
+          onChange={(e) => onChange({ namaKasir: e.target.value })}
           placeholder="Nama Kasir"
           className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
         />
         <input
-          value={namaSalesAdmin}
-          onChange={(e) => setNamaSalesAdmin(e.target.value)}
+          value={data.namaSalesAdmin}
+          onChange={(e) => onChange({ namaSalesAdmin: e.target.value })}
           placeholder="Nama Sales Admin"
           className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
         />
@@ -790,28 +1015,13 @@ function FormKompetensi() {
             <div className="sm:col-span-7">
               <h4 className="font-medium text-slate-800">{item.title}</h4>
             </div>
-
             <div className="sm:col-span-2">
               <div className="sm:hidden text-xs text-slate-500 mb-1">Skor</div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={
-                    "h-2.5 w-2.5 rounded-full " + scoreDot(scores[item.key])
-                  }
-                />
-                <ThemedSelect
-                  value={String(scores[item.key])}
-                  onChange={(e) => setScore(item.key, Number(e.target.value))}
-                >
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </ThemedSelect>
-              </div>
+              <ScoreSelect
+                value={scores[item.key]}
+                onChange={(v) => setScores((p) => ({ ...p, [item.key]: v }))}
+              />
             </div>
-
             <div className="sm:col-span-3">
               <div className="sm:hidden text-xs text-slate-500 mb-1">
                 Catatan
@@ -834,81 +1044,48 @@ function FormKompetensi() {
           Kesalahan yang dibuat di minggu ini
         </label>
         <textarea
-          value={kesalahanMingguIni}
-          onChange={(e) => setKesalahanMingguIni(e.target.value)}
+          value={data.kesalahanMingguIni}
+          onChange={(e) => onChange({ kesalahanMingguIni: e.target.value })}
           rows={3}
           placeholder="Tuliskan ringkas kesalahan/temuan minggu ini..."
           className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
         />
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-slate-500">
-          Rata-rata skor kompetensi:{" "}
-          <span className="font-semibold text-slate-800">{avg}</span>
-        </div>
-        <button
-          type="button"
-          className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm shadow hover:bg-blue-700"
-        >
-          Simpan Evaluasi
-        </button>
+      <div className="text-sm text-slate-500">
+        Rata-rata skor kompetensi:{" "}
+        <span className="font-semibold text-slate-800">{avg}</span>
       </div>
     </div>
   );
 }
 
-/* ---------- Placeholder ---------- */
-function FormPlaceholder({ title }: { title: string }) {
-  return (
-    <div className="space-y-3">
-      <ScoreLegend />
-      <div className="p-4 text-sm text-slate-600 border border-dashed rounded-xl bg-slate-50">
-        Form {title} menyusul.
-      </div>
-    </div>
-  );
-}
-function EmptyDay() {
-  return (
-    <div className="p-4 text-sm text-slate-600 border border-dashed rounded-xl bg-slate-50">
-      Tidak ada evaluasi terjadwal pada hari ini.
-    </div>
-  );
-}
-
-/* =========================== TARGET & ACHIEVEMENT =========================== */
-const PRINCIPALS = ["FRI", "SPJ", "APA", "WPL"] as const;
-type Principal = (typeof PRINCIPALS)[number];
-
-function TargetAchievement() {
-  const [targetSelesai, setTargetSelesai] = useState<string>("");
-  const [klaimDone, setKlaimDone] = useState<Record<Principal, boolean>>({
-    FRI: false,
-    SPJ: false,
-    APA: false,
-    WPL: false,
-  });
-  const [weekly, setWeekly] = useState<Record<Principal, boolean[]>>({
-    FRI: [false, false, false, false],
-    SPJ: [false, false, false, false],
-    APA: [false, false, false, false],
-    WPL: [false, false, false, false],
-  });
-  const [ketepatanFodks, setKetepatanFodks] = useState<boolean>(false);
-
+/* =========================================================================
+   TARGET & ACHIEVEMENT (Controlled)
+   ========================================================================= */
+function TargetAchievement({
+  data,
+  onChange,
+}: {
+  data: TargetState;
+  onChange: (v: TargetState) => void;
+}) {
   const toggleKlaim = (p: Principal) =>
-    setKlaimDone((s) => ({ ...s, [p]: !s[p] }));
+    onChange({
+      ...data,
+      klaimSelesai: { ...data.klaimSelesai, [p]: !data.klaimSelesai[p] },
+    });
   const toggleWeekly = (p: Principal, w: number) =>
-    setWeekly((s) => {
-      const next = [...s[p]];
-      next[w] = !next[w];
-      return { ...s, [p]: next };
+    onChange({
+      ...data,
+      weekly: {
+        ...data.weekly,
+        [p]: data.weekly[p].map((v, i) => (i === w ? !v : v)),
+      },
     });
 
   return (
     <div className="space-y-6">
-      {/* Klaim Bulan Ini */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center gap-2">
           <TargetIcon className="h-5 w-5 text-blue-600" />
@@ -944,7 +1121,7 @@ function TargetAchievement() {
                             <input
                               type="checkbox"
                               className="h-4 w-4 accent-blue-600"
-                              checked={klaimDone[p]}
+                              checked={data.klaimSelesai[p]}
                               onChange={() => toggleKlaim(p)}
                             />
                             <span className="text-sm text-slate-700">
@@ -964,8 +1141,10 @@ function TargetAchievement() {
                 Target Selesai (bulan ini)
               </label>
               <input
-                value={targetSelesai}
-                onChange={(e) => setTargetSelesai(e.target.value)}
+                value={data.targetSelesai}
+                onChange={(e) =>
+                  onChange({ ...data, targetSelesai: e.target.value })
+                }
                 inputMode="numeric"
                 placeholder="mis. 10"
                 className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
@@ -975,7 +1154,6 @@ function TargetAchievement() {
         </div>
       </div>
 
-      {/* Laporan Penjualan Mingguan */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 font-semibold text-slate-800">
           Laporan Penjualan ke Prinsipal Mingguan
@@ -1003,7 +1181,7 @@ function TargetAchievement() {
                         <input
                           type="checkbox"
                           className="h-4 w-4 accent-blue-600"
-                          checked={weekly[p][w]}
+                          checked={data.weekly[p][w]}
                           onChange={() => toggleWeekly(p, w)}
                         />
                       </td>
@@ -1016,7 +1194,6 @@ function TargetAchievement() {
         </div>
       </div>
 
-      {/* Ketepatan Fodks */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 font-semibold text-slate-800">
           Ketepatan Waktu Input Fodks
@@ -1026,8 +1203,10 @@ function TargetAchievement() {
             <input
               type="checkbox"
               className="h-5 w-5 accent-blue-600"
-              checked={ketepatanFodks}
-              onChange={() => setKetepatanFodks((v) => !v)}
+              checked={data.ketepatanFodks}
+              onChange={() =>
+                onChange({ ...data, ketepatanFodks: !data.ketepatanFodks })
+              }
             />
             <span className="text-sm text-slate-700">
               Tandai jika tepat waktu
@@ -1039,18 +1218,9 @@ function TargetAchievement() {
   );
 }
 
-/* =========================== SPARTA PROJECT TRACKING =========================== */
-function daysLeft(deadline: string) {
-  if (!deadline) return null;
-  const d = new Date(deadline);
-  const now = new Date();
-  const diff = Math.ceil(
-    (d.getTime() -
-      new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) /
-      (1000 * 60 * 60 * 24)
-  );
-  return diff;
-}
+/* =========================================================================
+   SPARTA (Controlled)
+   ========================================================================= */
 const UDI_STEPS = [
   "menyelesaikan Q3 2024",
   "menyelesaikan Q4 2024",
@@ -1058,26 +1228,32 @@ const UDI_STEPS = [
   "menyelesaikan Q2 2025 termasuk reward proporsional Q2 2025",
 ] as const;
 
-function SpartaTracking() {
-  const [deadline, setDeadline] = useState<string>("");
-  const [steps, setSteps] = useState<boolean[]>(UDI_STEPS.map(() => false));
-  const [progressText, setProgressText] = useState<string>("");
-  const [nextAction, setNextAction] = useState<string>("");
+function daysLeft(deadline: string) {
+  if (!deadline) return null;
+  const d = new Date(deadline);
+  const today = new Date();
+  const base = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate()
+  ).getTime();
+  return Math.ceil((d.getTime() - base) / (1000 * 60 * 60 * 24));
+}
 
-  const done = steps.filter(Boolean).length;
-  const percent = Math.round((done / steps.length) * 100);
-  const sisa = daysLeft(deadline);
-
-  const toggleStep = (idx: number) =>
-    setSteps((arr) => {
-      const n = [...arr];
-      n[idx] = !n[idx];
-      return n;
-    });
+function SpartaTracking({
+  data,
+  onChange,
+}: {
+  data: SpartaState;
+  onChange: (v: SpartaState) => void;
+}) {
+  const percent = Math.round(
+    (data.steps.filter(Boolean).length / UDI_STEPS.length) * 100
+  );
+  const sisa = daysLeft(data.deadline);
 
   return (
     <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
-      {/* Title & Rules */}
       <div className="px-3 sm:px-6 py-4 border-b bg-slate-50">
         <div className="flex items-center gap-2">
           <ListChecks className="h-5 w-5 text-blue-600" />
@@ -1088,7 +1264,6 @@ function SpartaTracking() {
       </div>
 
       <div className="p-3 sm:p-6 space-y-6">
-        {/* Ketentuan */}
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
           <div className="flex items-start gap-2 text-rose-700">
             <AlertTriangle className="h-5 w-5 mt-0.5" />
@@ -1102,7 +1277,6 @@ function SpartaTracking() {
           </div>
         </div>
 
-        {/* Task Card */}
         <div className="rounded-2xl border">
           <div className="px-3 sm:px-4 py-3 border-b bg-slate-50 flex flex-wrap items-center justify-between gap-3">
             <div className="font-semibold text-slate-800">
@@ -1114,8 +1288,10 @@ function SpartaTracking() {
                 <span className="text-sm text-slate-600">Deadline:</span>
                 <input
                   type="date"
-                  value={deadline}
-                  onChange={(e) => setDeadline(e.target.value)}
+                  value={data.deadline}
+                  onChange={(e) =>
+                    onChange({ ...data, deadline: e.target.value })
+                  }
                   className="rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
                 />
               </div>
@@ -1140,7 +1316,6 @@ function SpartaTracking() {
           </div>
 
           <div className="p-3 sm:p-4 space-y-4">
-            {/* Steps */}
             <div>
               <div className="text-sm font-medium text-slate-700 mb-2">
                 Langkah-Langkah:
@@ -1151,12 +1326,19 @@ function SpartaTracking() {
                     <input
                       type="checkbox"
                       className="h-4 w-4 mt-0.5 accent-blue-600"
-                      checked={steps[i]}
-                      onChange={() => toggleStep(i)}
+                      checked={data.steps[i]}
+                      onChange={() =>
+                        onChange({
+                          ...data,
+                          steps: data.steps.map((v, idx) =>
+                            idx === i ? !v : v
+                          ),
+                        })
+                      }
                     />
                     <span
                       className={
-                        steps[i]
+                        data.steps[i]
                           ? "line-through text-slate-400"
                           : "text-slate-800"
                       }
@@ -1168,7 +1350,6 @@ function SpartaTracking() {
               </div>
             </div>
 
-            {/* Percentage */}
             <div>
               <div className="text-sm font-medium text-slate-700 mb-1">
                 Persentase
@@ -1186,44 +1367,407 @@ function SpartaTracking() {
               </div>
             </div>
 
-            {/* Progress text */}
             <div>
               <div className="text-sm font-medium text-slate-700 mb-1">
                 Progress
               </div>
               <textarea
                 rows={2}
-                value={progressText}
-                onChange={(e) => setProgressText(e.target.value)}
-                placeholder="sudah selesai sampai Q4 2024, yang Q1 dan Q2 2025 menunggu jawaban ..."
+                value={data.progressText}
+                onChange={(e) =>
+                  onChange({ ...data, progressText: e.target.value })
+                }
+                placeholder="sudah selesai sampai Q4 2024 ..."
                 className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
-            {/* Next action */}
             <div>
               <div className="text-sm font-medium text-slate-700 mb-1">
                 Next Action
               </div>
               <textarea
                 rows={2}
-                value={nextAction}
-                onChange={(e) => setNextAction(e.target.value)}
+                value={data.nextAction}
+                onChange={(e) =>
+                  onChange({ ...data, nextAction: e.target.value })
+                }
                 placeholder="besok follow up ke Pak Adi ..."
                 className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
               />
-            </div>
-
-            <div className="flex justify-end">
-              <button className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm shadow hover:bg-blue-700">
-                Simpan Tracking
-              </button>
             </div>
           </div>
         </div>
       </div>
     </div>
   );
+}
+
+/* =========================================================================
+   LAMPIRAN (Arsip harian + PDF)
+   ========================================================================= */
+
+type Archive = { date: string; state: AppState };
+
+const ARCHIVE_KEY = "sitrep-archives";
+
+function readArchives(): Archive[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(ARCHIVE_KEY);
+    return raw ? (JSON.parse(raw) as Archive[]) : [];
+  } catch {
+    return [];
+  }
+}
+function writeArchives(arr: Archive[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(ARCHIVE_KEY, JSON.stringify(arr));
+}
+
+function Lampiran({ appState }: { appState: AppState }) {
+  const [archives, setArchives] = useState<Archive[]>([]);
+
+  useEffect(() => setArchives(readArchives()), []);
+
+  const saveToday = () => {
+    const date = todayISO();
+    const arr = readArchives().filter((a) => a.date !== date);
+    arr.push({ date, state: appState });
+    writeArchives(arr);
+    setArchives(arr);
+    generatePdf({ date, state: appState }, true);
+  };
+
+  const download = (a: Archive) => generatePdf(a, true);
+
+  const remove = (date: string) => {
+    const arr = readArchives().filter((a) => a.date !== date);
+    writeArchives(arr);
+    setArchives(arr);
+  };
+
+  return (
+    <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
+      <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Paperclip className="h-5 w-5 text-blue-600" />
+          <h2 className="text-slate-800 font-semibold">
+            Lampiran & Rekapan PDF
+          </h2>
+        </div>
+        <button
+          onClick={saveToday}
+          className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-blue-600 text-white text-sm shadow hover:bg-blue-700"
+          title="Simpan arsip hari ini & download PDF"
+        >
+          <FilePlus2 className="h-4 w-4" />
+          Simpan Arsip Hari Ini
+        </button>
+      </div>
+
+      <div className="p-3 sm:p-6">
+        {archives.length === 0 ? (
+          <div className="text-sm text-slate-600">
+            Belum ada arsip. Klik{" "}
+            <span className="font-medium">Simpan Arsip Hari Ini</span> untuk
+            membuat rekap PDF tanggal sekarang.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="text-sm font-medium text-slate-700">
+              Daftar Arsip
+            </div>
+            <div className="border rounded-xl overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-600">
+                  <tr>
+                    <th className="text-left py-2 px-3">Tanggal</th>
+                    <th className="text-left py-2 px-3">Leader</th>
+                    <th className="text-left py-2 px-3">Depo</th>
+                    <th className="text-left py-2 px-3">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {archives
+                    .sort((a, b) => (a.date < b.date ? 1 : -1))
+                    .map((a) => (
+                      <tr key={a.date}>
+                        <td className="py-2 px-3 font-medium">{a.date}</td>
+                        <td className="py-2 px-3">{a.state.header.leader}</td>
+                        <td className="py-2 px-3">{a.state.header.depo}</td>
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => download(a)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs hover:bg-slate-50"
+                            >
+                              <Download className="h-4 w-4" />
+                              Download
+                            </button>
+                            <button
+                              onClick={() => remove(a.date)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-xs text-rose-600 hover:bg-rose-50 border-rose-200"
+                            >
+                              Hapus
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <FileText className="h-4 w-4" />
+              PDF bernama{" "}
+              <span className="font-medium">SITREP-YYYY-MM-DD.pdf</span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* =========================== PDF GENERATOR =========================== */
+function generatePdf(archive: Archive, autoDownload = true) {
+  const { date, state } = archive;
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const line = (y: number) => doc.setDrawColor(220).line(40, y, 555, y);
+
+  let y = 40;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(14);
+  doc.text(`LEADER MONITORING DAILY — ${date}`, 40, y);
+  y += 8;
+  line(y);
+  y += 16;
+
+  // Header
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(11);
+  doc.text(`Leader: ${state.header.leader}`, 40, y);
+  y += 16;
+  doc.text(`Target: ${state.header.target}`, 40, y);
+  y += 16;
+  doc.text(`Depo: ${state.header.depo}`, 40, y);
+  y += 20;
+
+  // Checklist summary
+  doc.setFont("helvetica", "bold");
+  doc.text("Checklist Area", 40, y);
+  y += 14;
+  doc.setFont("helvetica", "normal");
+  const addChecklist = (title: string, sec: Record<string, RowValue>) => {
+    const keys = Object.keys(sec);
+    if (!keys.length) return;
+    doc.text(`• ${title}`, 40, y);
+    y += 14;
+    keys.forEach((k) => {
+      const v = sec[k];
+      let val = "";
+      if (v.kind === "options") val = v.value || "-";
+      if (v.kind === "number") val = (v as any).value || "-";
+      if (v.kind === "score") val = String((v as any).value ?? "-");
+      if (v.kind === "compound") {
+        const c = v as any;
+        val = `${c.value || "-"}; ${c.extras?.text || ""} ${
+          c.extras?.currency || ""
+        }`.trim();
+      }
+      const note = v.note ? ` | Cat: ${v.note}` : "";
+      const lineText = `   - ${k.replace(/-/g, " ")}: ${val}${note}`;
+      const split = doc.splitTextToSize(lineText, 515 - 40);
+      split.forEach((t) => {
+        doc.text(t, 60, y);
+        y += 14;
+        if (y > 780) {
+          doc.addPage();
+          y = 40;
+        }
+      });
+    });
+    y += 6;
+  };
+  addChecklist("Kas Kecil", state.checklist.kas);
+  addChecklist("Buku Penunjang", state.checklist.buku);
+  addChecklist("AR", state.checklist.ar);
+
+  if (y > 760) {
+    doc.addPage();
+    y = 40;
+  }
+
+  // Evaluasi
+  doc.setFont("helvetica", "bold");
+  doc.text("Evaluasi Tim", 40, y);
+  y += 14;
+  doc.setFont("helvetica", "normal");
+  doc.text(`Hari ke: ${state.evaluasi.attitude.hari}`, 40, y);
+  y += 16;
+  doc.text("Attitude (HEBAT):", 40, y);
+  y += 14;
+  Object.entries(state.evaluasi.attitude.scores).forEach(([k, v]) => {
+    const note = state.evaluasi.attitude.notes[k]
+      ? ` | Cat: ${state.evaluasi.attitude.notes[k]}`
+      : "";
+    doc.text(`   - ${k}: ${v}${note}`, 60, y);
+    y += 14;
+    if (y > 780) {
+      doc.addPage();
+      y = 40;
+    }
+  });
+  y += 6;
+  doc.text("Kompetensi:", 40, y);
+  y += 14;
+  doc.text(
+    `   - Nama Kasir: ${state.evaluasi.kompetensi.namaKasir || "-"}`,
+    60,
+    y
+  );
+  y += 14;
+  doc.text(
+    `   - Nama Sales Admin: ${state.evaluasi.kompetensi.namaSalesAdmin || "-"}`,
+    60,
+    y
+  );
+  y += 14;
+  Object.entries(state.evaluasi.kompetensi.scores).forEach(([k, v]) => {
+    const note = state.evaluasi.kompetensi.notes[k]
+      ? ` | Cat: ${state.evaluasi.kompetensi.notes[k]}`
+      : "";
+    doc.text(`   - ${k}: ${v}${note}`, 60, y);
+    y += 14;
+    if (y > 780) {
+      doc.addPage();
+      y = 40;
+    }
+  });
+  if (state.evaluasi.kompetensi.kesalahanMingguIni) {
+    const split = doc.splitTextToSize(
+      `   - Kesalahan minggu ini: ${state.evaluasi.kompetensi.kesalahanMingguIni}`,
+      515
+    );
+    split.forEach((t) => {
+      doc.text(t, 60, y);
+      y += 14;
+      if (y > 780) {
+        doc.addPage();
+        y = 40;
+      }
+    });
+  }
+  y += 8;
+
+  if (y > 760) {
+    doc.addPage();
+    y = 40;
+  }
+
+  // Target & Achievement
+  doc.setFont("helvetica", "bold");
+  doc.text("Target & Achievement", 40, y);
+  y += 14;
+  doc.setFont("helvetica", "normal");
+  doc.text(
+    `Target selesai bulan ini: ${state.target.targetSelesai || "-"}`,
+    40,
+    y
+  );
+  y += 16;
+  doc.text("Penyelesaian Klaim:", 40, y);
+  y += 14;
+  PRINCIPALS.forEach((p) => {
+    doc.text(
+      `   - ${p}: ${state.target.klaimSelesai[p] ? "Selesai" : "Belum"}`,
+      60,
+      y
+    );
+    y += 14;
+    if (y > 780) {
+      doc.addPage();
+      y = 40;
+    }
+  });
+  y += 6;
+  doc.text("Laporan Penjualan Mingguan:", 40, y);
+  y += 14;
+  PRINCIPALS.forEach((p) => {
+    const w = state.target.weekly[p]
+      .map((b, i) => `M${i + 1}:${b ? "✓" : "×"}`)
+      .join(" ");
+    doc.text(`   - ${p}: ${w}`, 60, y);
+    y += 14;
+    if (y > 780) {
+      doc.addPage();
+      y = 40;
+    }
+  });
+  doc.text(
+    `Ketepatan Input Fodks: ${state.target.ketepatanFodks ? "Ya" : "Tidak"}`,
+    40,
+    y
+  );
+  y += 20;
+
+  if (y > 760) {
+    doc.addPage();
+    y = 40;
+  }
+
+  // SPARTA
+  doc.setFont("helvetica", "bold");
+  doc.text("SPARTA Project Tracking", 40, y);
+  y += 14;
+  doc.setFont("helvetica", "normal");
+  doc.text(`Deadline: ${state.sparta.deadline || "-"}`, 40, y);
+  y += 16;
+  state.sparta.steps.forEach((done, i) => {
+    doc.text(
+      `   - ${i + 1}. ${UDI_STEPS[i]}: ${done ? "Selesai" : "Belum"}`,
+      60,
+      y
+    );
+    y += 14;
+    if (y > 780) {
+      doc.addPage();
+      y = 40;
+    }
+  });
+  if (state.sparta.progressText) {
+    const s = doc.splitTextToSize(
+      `Progress: ${state.sparta.progressText}`,
+      515
+    );
+    s.forEach((t) => {
+      doc.text(t, 40, y);
+      y += 14;
+      if (y > 780) {
+        doc.addPage();
+        y = 40;
+      }
+    });
+  }
+  if (state.sparta.nextAction) {
+    const s = doc.splitTextToSize(
+      `Next Action: ${state.sparta.nextAction}`,
+      515
+    );
+    s.forEach((t) => {
+      doc.text(t, 40, y);
+      y += 14;
+      if (y > 780) {
+        doc.addPage();
+        y = 40;
+      }
+    });
+  }
+
+  const filename = `SITREP-${date}.pdf`;
+  if (autoDownload) doc.save(filename);
+  return doc;
 }
 
 /* =========================== SIMPLE TAB =========================== */
