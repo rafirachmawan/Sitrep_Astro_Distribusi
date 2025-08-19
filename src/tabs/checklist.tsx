@@ -1,19 +1,19 @@
 "use client";
 
-import React, { useMemo, useState, useEffect } from "react";
-import { ClipboardList, CheckCircle2 } from "lucide-react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
+import { ClipboardList, CheckCircle2, ArrowRight } from "lucide-react";
 import type { ChecklistState, RowValue, SectionKey } from "@/lib/types";
 import { OptionsGroup, NumberWithSuffix, ScoreSelect } from "./common";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 
 /* ============================================================
-   OVERRIDE STORAGE (per-role) — judul section, label baris, opsi, suffix
+   OVERRIDE STORAGE (per-role)
    ============================================================ */
 type RowOverride = {
   label?: string;
-  options?: string[]; // utk row kind: "options"
-  suffix?: string; // utk row kind: "number"
+  options?: string[];
+  suffix?: string;
 };
 type ChecklistOverrides = {
   sections?: Partial<Record<SectionKey, { title?: string }>>;
@@ -72,7 +72,6 @@ type RowDef =
       extra?: { type: "text" | "currency"; placeholder?: string }[];
     };
 
-/*  ⚠️ Tabs: “faktur” dipakai sebagai “Penjualan”. “retur” disembunyikan. */
 const SECTION_TABS: { key: SectionKey; label: string }[] = [
   { key: "kas", label: "Kas Kecil" },
   { key: "buku", label: "Buku Penunjang" },
@@ -81,8 +80,7 @@ const SECTION_TABS: { key: SectionKey; label: string }[] = [
   { key: "pengiriman", label: "Pengiriman" },
   { key: "setoran", label: "Setoran Bank" },
   { key: "pembelian", label: "Proses Pembelian" },
-  { key: "faktur", label: "Penjualan" }, // <-- gabungan faktur+retur
-  // { key: "retur", label: "Retur Penjualan" }, // disembunyikan
+  { key: "faktur", label: "Penjualan" },
   { key: "marketing", label: "Marketing" },
 ];
 
@@ -165,7 +163,6 @@ export default function ChecklistArea({
             { kind: "score", key: "score-performa", label: "Score Performa" },
           ],
         },
-
         buku: {
           title: "Buku Penunjang",
           rows: [
@@ -189,7 +186,6 @@ export default function ChecklistArea({
             },
           ],
         },
-
         ar: {
           title: "AR",
           rows: [
@@ -219,8 +215,6 @@ export default function ChecklistArea({
             },
           ],
         },
-
-        /* ===================== KLAIM ===================== */
         klaim: {
           title: "Klaim",
           rows: [
@@ -250,8 +244,6 @@ export default function ChecklistArea({
             },
           ],
         },
-
-        /* ===================== PENGIRIMAN ===================== */
         pengiriman: {
           title: "Pengiriman",
           rows: [
@@ -307,8 +299,6 @@ export default function ChecklistArea({
             },
           ],
         },
-
-        /* ===================== SETORAN BANK ===================== */
         setoran: {
           title: "Setoran Bank",
           rows: [
@@ -332,8 +322,6 @@ export default function ChecklistArea({
             },
           ],
         },
-
-        /* ===================== PROSES PEMBELIAN ===================== */
         pembelian: {
           title: "Proses Pembelian",
           rows: [
@@ -363,8 +351,6 @@ export default function ChecklistArea({
             },
           ],
         },
-
-        /* ===================== PENJUALAN (gabungan faktur + retur) ===================== */
         faktur: {
           title: "Penjualan",
           rows: [
@@ -386,7 +372,6 @@ export default function ChecklistArea({
               label: "Jumlah Order Jual belum terinput",
               suffix: "faktur",
             },
-
             {
               kind: "number",
               key: "retur-terinput",
@@ -406,7 +391,6 @@ export default function ChecklistArea({
               label: "Jumlah Retur Jual belum terinput",
               suffix: "faktur",
             },
-
             {
               kind: "compound",
               key: "faktur-perlu-pajak",
@@ -420,7 +404,6 @@ export default function ChecklistArea({
               label:
                 "New Product/Perubahan Harga sudah setting harga dan skema diskon",
               options: ["Sudah", "Belum"],
-              // note: satu input — isi alasan / hari belum disetting
               extra: [
                 { type: "text", placeholder: "Alasan / hari belum disetting…" },
               ],
@@ -434,11 +417,7 @@ export default function ChecklistArea({
             },
           ],
         },
-
-        /* tidak dipakai, dibiarkan kosong agar tipe aman */
         retur: { title: "Retur (legacy)", rows: [] },
-
-        /* ===================== MARKETING ===================== */
         marketing: {
           title: "Marketing",
           rows: [
@@ -530,6 +509,14 @@ export default function ChecklistArea({
     setRev((x) => x + 1);
   };
 
+  // ===== NEXT BUTTON HANDLER =====
+  const tabIndex = SECTION_TABS.findIndex((t) => t.key === secActive);
+  const isLastTab = tabIndex === SECTION_TABS.length - 1;
+  const goNext = () => {
+    if (isLastTab) return;
+    setSecActive(SECTION_TABS[tabIndex + 1].key);
+  };
+
   return (
     <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
       <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between gap-2">
@@ -612,7 +599,7 @@ export default function ChecklistArea({
             <input
               value={section.title}
               onChange={(e) => updateSectionTitle(secActive, e.target.value)}
-              className="min-w-[220px] w-full sm:w-96 rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
+              className="min-w=[220px] w-full sm:w-96 rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
               placeholder="Judul section…"
             />
           ) : (
@@ -620,10 +607,11 @@ export default function ChecklistArea({
           )}
         </div>
 
+        {/* Header (4/3/5) & samakan padding kiri kolom Status */}
         <div className="hidden sm:grid grid-cols-12 text-[13px] font-medium text-slate-600 border-y bg-slate-50">
-          <div className="col-span-6 py-2.5 px-2">Area Tanggung Jawab</div>
-          <div className="col-span-4 py-2.5 px-2">Status / Isian</div>
-          <div className="col-span-2 py-2.5 px-2">Catatan</div>
+          <div className="col-span-4 py-2.5 px-2">Area Tanggung Jawab</div>
+          <div className="col-span-3 py-2.5 px-2 pl-3">Status / Isian</div>
+          <div className="col-span-5 py-2.5 px-2">Keterangan</div>
         </div>
 
         {section.rows.length === 0 ? (
@@ -657,12 +645,36 @@ export default function ChecklistArea({
           </div>
         )}
       </div>
+
+      {/* Bottom bar: Next button (kanan bawah) */}
+      <div className="px-3 sm:px-6 pb-5 pt-3 border-t bg-white flex justify-end">
+        <button
+          type="button"
+          onClick={goNext}
+          disabled={isLastTab}
+          className={
+            "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium " +
+            (isLastTab
+              ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+              : "bg-blue-600 text-white hover:bg-blue-700 shadow")
+          }
+          title={
+            isLastTab
+              ? "Sudah di bagian terakhir"
+              : "Lanjut ke bagian berikutnya"
+          }
+          aria-label={isLastTab ? "Selesai" : "Next"}
+        >
+          {isLastTab ? "Selesai" : "Next"}
+          {!isLastTab && <ArrowRight className="w-4 h-4" />}
+        </button>
+      </div>
     </div>
   );
 }
 
 /* ============================================================
-   ROW COMPONENT (dengan UI edit superadmin)
+   ROW COMPONENT
    ============================================================ */
 function ChecklistRow({
   row,
@@ -682,14 +694,30 @@ function ChecklistRow({
   onChange: (v: RowValue) => void;
 }) {
   const [note, setNote] = useState(value?.note || "");
+
+  // Auto-grow textarea
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
+  const adjustHeight = () => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
   useEffect(() => {
     if (value && value.note !== note) onChange({ ...(value as any), note });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note]);
 
+  useEffect(() => {
+    adjustHeight();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taRef.current, value?.note]);
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-12 items-start bg-white">
-      <div className="sm:col-span-6 py-3 px-2 text-sm">
+      {/* Area / label (4/12) */}
+      <div className="sm:col-span-4 py-3 px-2 text-sm">
         {editable ? (
           <input
             value={(row as any).label}
@@ -702,7 +730,8 @@ function ChecklistRow({
         )}
       </div>
 
-      <div className="sm:col-span-4 py-3 px-2">
+      {/* Status / Isian (3/12) — lurus dg header (pl-3) */}
+      <div className="sm:col-span-3 py-3 px-2 pl-3">
         <div className="sm:hidden text-xs text-slate-500 mb-1">
           Status / Isian
         </div>
@@ -806,13 +835,16 @@ function ChecklistRow({
         )}
       </div>
 
-      <div className="sm:col-span-2 py-3 px-2">
-        <div className="sm:hidden text-xs text-slate-500 mb-1">Catatan</div>
-        <input
+      {/* Keterangan (5/12) — lebih lebar, auto-grow */}
+      <div className="sm:col-span-5 py-3 px-2">
+        <div className="sm:hidden text-xs text-slate-500 mb-1">Keterangan</div>
+        <textarea
+          ref={taRef}
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="Catatan..."
-          className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+          onInput={adjustHeight}
+          placeholder="Keterangan..."
+          className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 resize-none overflow-y-auto min-h-[40px] max-h-40"
         />
       </div>
     </div>
