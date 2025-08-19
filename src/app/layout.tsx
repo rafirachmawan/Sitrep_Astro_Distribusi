@@ -1,11 +1,6 @@
-import type { Metadata } from "next";
 import "./globals.css";
-import { AuthProvider } from "@/components/AuthProvider";
-
-export const metadata: Metadata = {
-  title: "SITREP Daily",
-  description: "Leader Monitoring Daily",
-};
+// import { AppStateProvider } from "@/lib/appState"; // kalau ada
+import AuthProvider from "@/components/AuthProvider"; // <-- TANPA kurung kurawal
 
 export default function RootLayout({
   children,
@@ -14,8 +9,12 @@ export default function RootLayout({
 }) {
   return (
     <html lang="id">
-      <body className="bg-gray-100 text-gray-900">
-        <AuthProvider>{children}</AuthProvider>
+      <body>
+        <AuthProvider>
+          {/* <AppStateProvider> kalau kamu pakai context tambahan */}
+          {children}
+          {/* </AppStateProvider> */}
+        </AuthProvider>
       </body>
     </html>
   );

@@ -1,63 +1,85 @@
 "use client";
-import { createContext, useContext, useEffect, useState } from "react";
-import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  signOut,
-  User,
-} from "firebase/auth";
-import { auth, db } from "@/lib/firebase";
-import { doc, getDoc } from "firebase/firestore";
 
-type Role = "salesman" | "admin" | "gudang";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 
-type AuthState = {
-  user: User | null;
-  role: Role | null;
-  loading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
-  signOutApp: () => Promise<void>;
+/** ==== Definisi Role/User ==== */
+export type Role = "superadmin" | "admin" | "sales" | "gudang";
+
+export type User = {
+  id: string;
+  name: string;
+  role: Role;
 };
 
-const Ctx = createContext<AuthState | null>(null);
+type AuthContextType = {
+  user: User | null;
+  role: Role | null;
+  signIn: (payload: { name: string; role: Role }) => void;
+  signOut: () => void;
+};
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const STORAGE_KEY = "sitrep-auth";
+
+/** ==== Provider (default export) ==== */
+export default function AuthProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [user, setUser] = useState<User | null>(null);
-  const [role, setRole] = useState<Role | null>(null);
-  const [loading, setLoading] = useState(true);
 
+  // load dari localStorage saat mount
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
-      if (u) {
-        const snap = await getDoc(doc(db, "users", u.uid));
-        setRole((snap.data()?.role as Role) ?? null);
-      } else {
-        setRole(null);
-      }
-      setLoading(false);
-    });
-    return () => unsub();
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) setUser(JSON.parse(raw));
+    } catch {}
   }, []);
 
-  const signIn = async (email: string, password: string) => {
-    setLoading(true);
-    await signInWithEmailAndPassword(auth, email, password);
-    setLoading(false);
-  };
-  const signOutApp = async () => {
-    await signOut(auth);
-  };
+  // persist ke localStorage saat berubah
+  useEffect(() => {
+    if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
+    else localStorage.removeItem(STORAGE_KEY);
+  }, [user]);
 
-  return (
-    <Ctx.Provider value={{ user, role, loading, signIn, signOutApp }}>
-      {children}
-    </Ctx.Provider>
+  const signIn: AuthContextType["signIn"] = ({ name, role }) =>
+    setUser({ id: crypto.randomUUID(), name, role });
+
+  const signOut = () => setUser(null);
+
+  const value = useMemo<AuthContextType>(
+    () => ({ user, role: user?.role ?? null, signIn, signOut }),
+    [user]
   );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+/** ==== Hook akses auth ==== */
 export function useAuth() {
-  const v = useContext(Ctx);
-  if (!v) throw new Error("useAuth must be used inside <AuthProvider>");
-  return v;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth harus dipakai di dalam <AuthProvider />");
+  return ctx;
+}
+
+/** ==== Guard role opsional ==== */
+export function RequireRole({
+  allow,
+  fallback = null,
+  children,
+}: {
+  allow: Role[];
+  fallback?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  const { role } = useAuth();
+  if (!role || !allow.includes(role)) return <>{fallback}</>;
+  return <>{children}</>;
 }
