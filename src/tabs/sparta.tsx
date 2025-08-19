@@ -67,10 +67,35 @@ function writeCatalog(items: ProjectDef[]) {
 }
 
 /* -------------------------- Util -------------------------- */
+// Parse aman untuk "YYYY-MM-DD" sebagai tanggal lokal (hindari offset timezone)
+function parseYMD(ymd?: string): Date | null {
+  if (!ymd) return null;
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
+
+function formatDeadlineWithDay(deadline?: string): string | null {
+  const dt = parseYMD(deadline);
+  if (!dt) return null;
+  // Contoh: "Rabu, 20 Agustus 2025"
+  return new Intl.DateTimeFormat("id-ID", {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(dt);
+}
+
+function weekdayNameId(deadline?: string): string | null {
+  const dt = parseYMD(deadline);
+  if (!dt) return null;
+  return new Intl.DateTimeFormat("id-ID", { weekday: "long" }).format(dt);
+}
+
 function daysLeft(deadline?: string) {
-  if (!deadline) return null;
-  const d = new Date(deadline);
-  if (Number.isNaN(+d)) return null;
+  const d = parseYMD(deadline);
+  if (!d) return null;
   const today = new Date();
   const base = new Date(
     today.getFullYear(),
@@ -79,6 +104,7 @@ function daysLeft(deadline?: string) {
   ).getTime();
   return Math.ceil((d.getTime() - base) / (1000 * 60 * 60 * 24));
 }
+
 function clampBoolArray(arr: boolean[] | undefined, len: number): boolean[] {
   const a = Array.isArray(arr) ? arr.slice(0, len) : [];
   while (a.length < len) a.push(false);
@@ -308,6 +334,8 @@ export default function SpartaTracking({
                 Math.max(1, proj.steps.length)) *
                 100
             );
+            const formattedDeadline = formatDeadlineWithDay(proj.deadline);
+            const weekday = weekdayNameId(proj.deadline);
 
             return (
               <div
@@ -336,17 +364,26 @@ export default function SpartaTracking({
                       <CalendarDays className="h-4 w-4 text-slate-500" />
                       <span className="text-slate-600">Deadline:</span>
                       {manage ? (
-                        <input
-                          type="date"
-                          value={proj.deadline || ""}
-                          onChange={(e) =>
-                            updateProject(proj.id, { deadline: e.target.value })
-                          }
-                          className="rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-amber-500"
-                        />
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="date"
+                            value={proj.deadline || ""}
+                            onChange={(e) =>
+                              updateProject(proj.id, {
+                                deadline: e.target.value,
+                              })
+                            }
+                            className="rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-amber-500"
+                          />
+                          {weekday && (
+                            <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">
+                              {weekday}
+                            </span>
+                          )}
+                        </div>
                       ) : (
                         <span className="font-medium text-slate-800">
-                          {proj.deadline ? proj.deadline : "-"}
+                          {formattedDeadline ?? "-"}
                         </span>
                       )}
                     </div>
@@ -441,32 +478,35 @@ export default function SpartaTracking({
                       </div>
                     ) : (
                       <div className="grid grid-cols-1 gap-2">
-                        {proj.steps.map((text, i) => (
-                          <label
-                            key={i}
-                            className="flex items-start gap-2 text-sm"
-                          >
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 mt-0.5 accent-blue-600"
-                              checked={prog.steps[i]}
-                              onChange={() => {
-                                const next = prog.steps.slice();
-                                next[i] = !next[i];
-                                setProgress(proj.id, { steps: next });
-                              }}
-                            />
-                            <span
-                              className={
-                                prog.steps[i]
-                                  ? "line-through text-slate-400"
-                                  : "text-slate-800"
-                              }
+                        {proj.steps.map((text, i) => {
+                          const current = prog.steps[i];
+                          return (
+                            <label
+                              key={i}
+                              className="flex items-start gap-2 text-sm"
                             >
-                              {i + 1}. {text}
-                            </span>
-                          </label>
-                        ))}
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 mt-0.5 accent-blue-600"
+                                checked={current}
+                                onChange={() => {
+                                  const next = prog.steps.slice();
+                                  next[i] = !next[i];
+                                  setProgress(proj.id, { steps: next });
+                                }}
+                              />
+                              <span
+                                className={
+                                  current
+                                    ? "line-through text-slate-400"
+                                    : "text-slate-800"
+                                }
+                              >
+                                {i + 1}. {text}
+                              </span>
+                            </label>
+                          );
+                        })}
                       </div>
                     )}
                   </div>
