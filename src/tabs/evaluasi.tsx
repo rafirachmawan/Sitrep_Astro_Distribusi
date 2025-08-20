@@ -1,11 +1,7 @@
 "use client";
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Users2, Plus, Trash2 } from "lucide-react";
-import type {
-  AppState,
-  EvaluasiAttitude,
-  EvaluasiKompetensi,
-} from "@/lib/types";
+import type { AppState, EvaluasiAttitude } from "@/lib/types";
 import { ScoreSelect } from "./common";
 import { useAuth } from "@/components/AuthProvider";
 
@@ -105,7 +101,7 @@ function readOv(): EvalOverrides {
   if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(EVAL_OV_KEY);
-    return raw ? (JSON.parse(raw) as EvalOverrides) : {};
+    return raw ? (JSON.parse(raw) as unknown as EvalOverrides) : {};
   } catch {
     return {};
   }
@@ -152,6 +148,21 @@ function clampScores<T extends { key?: string; code?: string }>(
   }
   return next;
 }
+
+type ScoresNotes = {
+  scores: Record<string, number>;
+  notes: Record<string, string>;
+};
+const getDyn = <T,>(obj: unknown, key: string, fallback: T): T => {
+  const rec = (obj as Record<string, unknown>) || {};
+  const v = rec[key] as T | undefined;
+  return v === undefined ? fallback : v;
+};
+const setDyn = (obj: unknown, key: string, value: unknown) => {
+  const rec: Record<string, unknown> = { ...(obj as Record<string, unknown>) };
+  rec[key] = value;
+  return rec;
+};
 
 /* =========================
    Component
@@ -231,7 +242,7 @@ export default function EvaluasiTim({
   // person terpilih
   const [who, setWho] = useState<Person>("laras");
   const evalKey = `evaluasi_${who}`;
-  const evaluasiText: string = ((data as any)[evalKey] as string) ?? "";
+  const evaluasiText = getDyn<string>(data as unknown, evalKey, "");
 
   const stop = (e: React.SyntheticEvent) => e.stopPropagation();
 
@@ -395,27 +406,23 @@ export default function EvaluasiTim({
             onItemsChange={(arr) =>
               setOv((p) => ({ ...p, attitudeItems: arr }))
             }
-            data={
-              ((data as any)[`attitude_${who}`] as EvaluasiAttitude) ?? {
-                scores: {},
-                notes: {},
-              }
-            }
-            onDataChange={(scores, notes) =>
-              onChange({
-                ...(data as any),
-                [`attitude_${who}`]: {
-                  ...(((data as any)[
-                    `attitude_${who}`
-                  ] as EvaluasiAttitude) ?? {
-                    scores: {},
-                    notes: {},
-                  }),
-                  scores,
-                  notes,
-                },
-              } as any)
-            }
+            data={getDyn<EvaluasiAttitude>(data as unknown, `attitude_${who}`, {
+              scores: {},
+              notes: {},
+            })}
+            onDataChange={(scores, notes) => {
+              const base = getDyn<EvaluasiAttitude>(
+                data as unknown,
+                `attitude_${who}`,
+                { scores: {}, notes: {} }
+              );
+              const next = setDyn(data as unknown, `attitude_${who}`, {
+                ...base,
+                scores,
+                notes,
+              });
+              onChange(next as AppState["evaluasi"]);
+            }}
           />
         )}
 
@@ -434,18 +441,34 @@ export default function EvaluasiTim({
               setOv((p) => ({ ...p, kompetensiItems: arr }))
             }
             data={
-              (data as any)[`kompetensi_${who}`] ?? (data as any).kompetensi
+              (getDyn<ScoresNotes | undefined>(
+                data as unknown,
+                `kompetensi_${who}`,
+                undefined
+              ) ??
+                getDyn<ScoresNotes | undefined>(
+                  data as unknown,
+                  "kompetensi",
+                  undefined
+                ) ?? { scores: {}, notes: {} }) as ScoresNotes
             }
-            onDataChange={(payload) =>
-              onChange({
-                ...(data as any),
-                [`kompetensi_${who}`]: {
-                  ...((data as any)[`kompetensi_${who}`] ??
-                    (data as any).kompetensi),
-                  ...payload,
-                },
-              } as any)
-            }
+            onDataChange={(payload) => {
+              const prev = getDyn<ScoresNotes | undefined>(
+                data as unknown,
+                `kompetensi_${who}`,
+                undefined
+              ) ??
+                getDyn<ScoresNotes | undefined>(
+                  data as unknown,
+                  "kompetensi",
+                  undefined
+                ) ?? { scores: {}, notes: {} };
+              const nextObj = setDyn(data as unknown, `kompetensi_${who}`, {
+                ...prev,
+                ...payload,
+              });
+              onChange(nextObj as AppState["evaluasi"]);
+            }}
           />
         )}
 
@@ -463,27 +486,22 @@ export default function EvaluasiTim({
             onItemsChange={(arr) =>
               setOv((p) => ({ ...p, prestasiItems: arr }))
             }
-            data={
-              ((data as any)[`prestasi_${who}`] as {
-                scores: Record<string, number>;
-                notes: Record<string, string>;
-              }) ?? {
-                scores: {},
-                notes: {},
-              }
-            }
-            onDataChange={(payload) =>
-              onChange({
-                ...(data as any),
-                [`prestasi_${who}`]: {
-                  ...(((data as any)[`prestasi_${who}`] as any) ?? {
-                    scores: {},
-                    notes: {},
-                  }),
-                  ...payload,
-                },
-              } as any)
-            }
+            data={getDyn<ScoresNotes>(data as unknown, `prestasi_${who}`, {
+              scores: {},
+              notes: {},
+            })}
+            onDataChange={(payload) => {
+              const prev = getDyn<ScoresNotes>(
+                data as unknown,
+                `prestasi_${who}`,
+                { scores: {}, notes: {} }
+              );
+              const nextObj = setDyn(data as unknown, `prestasi_${who}`, {
+                ...prev,
+                ...payload,
+              });
+              onChange(nextObj as AppState["evaluasi"]);
+            }}
           />
         )}
 
@@ -499,27 +517,22 @@ export default function EvaluasiTim({
             items={SOP_ITEMS}
             editable={isSuper && editMode}
             onItemsChange={(arr) => setOv((p) => ({ ...p, sopItems: arr }))}
-            data={
-              ((data as any)[`kepatuhan_${who}`] as {
-                scores: Record<string, number>;
-                notes: Record<string, string>;
-              }) ?? {
-                scores: {},
-                notes: {},
-              }
-            }
-            onDataChange={(payload) =>
-              onChange({
-                ...(data as any),
-                [`kepatuhan_${who}`]: {
-                  ...(((data as any)[`kepatuhan_${who}`] as any) ?? {
-                    scores: {},
-                    notes: {},
-                  }),
-                  ...payload,
-                },
-              } as any)
-            }
+            data={getDyn<ScoresNotes>(data as unknown, `kepatuhan_${who}`, {
+              scores: {},
+              notes: {},
+            })}
+            onDataChange={(payload) => {
+              const prev = getDyn<ScoresNotes>(
+                data as unknown,
+                `kepatuhan_${who}`,
+                { scores: {}, notes: {} }
+              );
+              const nextObj = setDyn(data as unknown, `kepatuhan_${who}`, {
+                ...prev,
+                ...payload,
+              });
+              onChange(nextObj as AppState["evaluasi"]);
+            }}
           />
         )}
 
@@ -540,12 +553,10 @@ export default function EvaluasiTim({
               <textarea
                 rows={3}
                 value={evaluasiText}
-                onChange={(e) =>
-                  onChange({
-                    ...(data as any),
-                    [evalKey]: e.target.value,
-                  } as any)
-                }
+                onChange={(e) => {
+                  const next = setDyn(data as unknown, evalKey, e.target.value);
+                  onChange(next as AppState["evaluasi"]);
+                }}
                 placeholder={`Catatan evaluasi untuk ${PERSON_LABEL[who]}…`}
                 className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
               />
@@ -648,7 +659,6 @@ function AttitudeForm({
                             const next = items.slice();
                             next[i] = { ...next[i], code: v };
                             onItemsChange(next);
-                            // skor akan reclamp di useEffect
                           }}
                           placeholder="Kode"
                           className="rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-amber-500"
@@ -790,13 +800,8 @@ function SimpleForm({
   items: SimpleItem[];
   editable: boolean;
   onItemsChange: (items: SimpleItem[]) => void;
-  data: { scores: Record<string, number>; notes: Record<string, string> };
-  onDataChange: (
-    payload: Partial<{
-      scores: Record<string, number>;
-      notes: Record<string, string>;
-    }>
-  ) => void;
+  data: ScoresNotes;
+  onDataChange: (payload: Partial<ScoresNotes>) => void;
 }) {
   const [scores, setScores] = useState<Record<string, number>>(
     clampScores(items, data?.scores, (it) => it.key)

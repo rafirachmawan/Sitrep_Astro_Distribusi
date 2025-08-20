@@ -6,8 +6,30 @@ import type { SpartaState } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 
-/* -------------------------- Catalog (superadmin) -------------------------- */
+/* -------------------------- Types -------------------------- */
 type TargetRole = Exclude<Role, "superadmin">;
+
+export type ProjectProgress = {
+  steps: boolean[];
+  progressText: string;
+  nextAction: string;
+  kendala: string;
+};
+
+// pastikan state punya field progress (state baru)
+type SpartaStateWithProgress = SpartaState & {
+  projectsProgress?: Record<string, ProjectProgress>;
+};
+
+// state lama (kompatibilitas)
+type LegacyFields = {
+  steps?: boolean[];
+  deadline?: string;
+  progressText?: string;
+  nextAction?: string;
+};
+type SpartaStateAny = SpartaStateWithProgress & LegacyFields;
+
 type ProjectDef = {
   id: string;
   title: string;
@@ -16,6 +38,7 @@ type ProjectDef = {
   targetRole: TargetRole; // proyek ini untuk role apa
 };
 
+/* -------------------------- Catalog (superadmin) -------------------------- */
 const CATALOG_KEY = "sitrep-sparta-catalog-v3"; // bump versi
 const TARGET_ROLES: TargetRole[] = ["admin", "sales", "gudang"];
 
@@ -134,43 +157,39 @@ export default function SpartaTracking({
 
   // Back-compat: migrasi struktur lama → projectsProgress (sekali)
   useEffect(() => {
-    const anyData = data as any;
+    const legacy = data as SpartaStateAny;
     if (
-      !anyData.projectsProgress &&
-      (Array.isArray(anyData.steps) ||
-        anyData.deadline ||
-        anyData.progressText ||
-        anyData.nextAction)
+      !legacy.projectsProgress &&
+      (Array.isArray(legacy.steps) ||
+        legacy.deadline ||
+        legacy.progressText ||
+        legacy.nextAction)
     ) {
       const first = catalog[0];
       if (first) {
-        const prog = {
+        const prog: Record<string, ProjectProgress> = {
           [first.id]: {
-            steps: clampBoolArray(anyData.steps, first.steps.length),
-            progressText: anyData.progressText ?? "",
-            nextAction: anyData.nextAction ?? "",
+            steps: clampBoolArray(legacy.steps, first.steps.length),
+            progressText: legacy.progressText ?? "",
+            nextAction: legacy.nextAction ?? "",
             kendala: "",
           },
         };
-        onChange({ ...(data as any), projectsProgress: prog } as any);
+        const nextState: SpartaStateWithProgress = {
+          ...(data as object),
+          projectsProgress: prog,
+        } as SpartaStateWithProgress;
+        onChange(nextState as SpartaState);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Helper get/set progress per proyek (state per user)
-  type ProjectProgress = {
-    steps: boolean[];
-    progressText: string;
-    nextAction: string;
-    kendala: string; // <-- baru
-  };
   const getProgress = (id: string, stepLen: number): ProjectProgress => {
-    const all = ((data as any).projectsProgress || {}) as Record<
-      string,
-      ProjectProgress
-    >;
-    const cur = all[id] || {
+    const map: Record<string, ProjectProgress> =
+      (data as SpartaStateWithProgress).projectsProgress ?? {};
+    const cur = map[id] ?? {
       steps: [],
       progressText: "",
       nextAction: "",
@@ -183,19 +202,25 @@ export default function SpartaTracking({
       kendala: cur.kendala ?? "",
     };
   };
+
   const setProgress = (id: string, patch: Partial<ProjectProgress>) => {
-    const all = ((data as any).projectsProgress || {}) as Record<
-      string,
-      ProjectProgress
-    >;
-    const cur = all[id] || {
+    const prevMap: Record<string, ProjectProgress> =
+      (data as SpartaStateWithProgress).projectsProgress ?? {};
+    const cur: ProjectProgress = prevMap[id] ?? {
       steps: [],
       progressText: "",
       nextAction: "",
       kendala: "",
     };
-    const nextAll = { ...all, [id]: { ...cur, ...patch } };
-    onChange({ ...(data as any), projectsProgress: nextAll } as any);
+    const nextAll: Record<string, ProjectProgress> = {
+      ...prevMap,
+      [id]: { ...cur, ...patch },
+    };
+    const nextState: SpartaStateWithProgress = {
+      ...(data as object),
+      projectsProgress: nextAll,
+    } as SpartaStateWithProgress;
+    onChange(nextState as SpartaState);
   };
 
   // --- Actions (kelola proyek, hanya superadmin) ---
@@ -214,14 +239,16 @@ export default function SpartaTracking({
   const deleteProject = (id: string) => {
     if (!confirm("Hapus proyek ini?")) return;
     setCatalog((c) => c.filter((x) => x.id !== id));
-    const all = ((data as any).projectsProgress || {}) as Record<
-      string,
-      ProjectProgress
-    >;
-    if (all[id]) {
-      const next = { ...all };
-      delete next[id];
-      onChange({ ...(data as any), projectsProgress: next } as any);
+
+    const prevMap: Record<string, ProjectProgress> =
+      (data as SpartaStateWithProgress).projectsProgress ?? {};
+    if (prevMap[id]) {
+      const { [id]: _, ...rest } = prevMap;
+      const nextState: SpartaStateWithProgress = {
+        ...(data as object),
+        projectsProgress: rest,
+      } as SpartaStateWithProgress;
+      onChange(nextState as SpartaState);
     }
   };
 
@@ -281,7 +308,9 @@ export default function SpartaTracking({
             <select
               className="rounded-md border-slate-300 text-sm"
               value={viewRole}
-              onChange={(e) => setViewRole(e.target.value as any)}
+              onChange={(e) =>
+                setViewRole(e.target.value as TargetRole | "semua")
+              }
             >
               <option value="semua">Semua</option>
               {TARGET_ROLES.map((r) => (

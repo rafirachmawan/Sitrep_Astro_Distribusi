@@ -17,7 +17,9 @@ type PdfEntry = {
   submittedAt: string;
   name: string;
   role: string;
-  pdfDataUrl: string;
+  pdfDataUrl: string; // data:URL (local) atau http(s) (cloud)
+  storage?: "local" | "remote";
+  key?: string;
 };
 
 const PERSONS = ["laras", "emi", "novi"] as const;
@@ -85,7 +87,7 @@ function loadHistory(): PdfEntry[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    return raw ? (JSON.parse(raw) as PdfEntry[]) : [];
+    return raw ? (JSON.parse(raw) as unknown as PdfEntry[]) : [];
   } catch {
     return [];
   }
@@ -97,6 +99,7 @@ function saveHistory(items: PdfEntry[]) {
 /* =========================
    Signature Pad (fixed)
    ========================= */
+
 function SignaturePad({
   onChange,
 }: {
@@ -136,29 +139,38 @@ function SignaturePad({
     ctx.stroke();
   }, []);
 
-  const getPos = (e: any) => {
+  const getPos = (
+    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
+  ) => {
     const canvas = canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    const p = e.touches?.[0] ?? e;
-    return { x: p.clientX - rect.left, y: p.clientY - rect.top };
+    if ("touches" in e) {
+      const t = e.touches[0];
+      return { x: t.clientX - rect.left, y: t.clientY - rect.top };
+    }
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  const start = (e: any) => {
+  const start = (
+    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
+  ) => {
     drawingRef.current = true;
     const ctx = canvasRef.current!.getContext("2d")!;
     const p = getPos(e);
     ctx.beginPath();
     ctx.moveTo(p.x, p.y);
-    e.preventDefault?.();
+    e.preventDefault();
   };
-  const move = (e: any) => {
+  const move = (
+    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
+  ) => {
     if (!drawingRef.current) return;
     const ctx = canvasRef.current!.getContext("2d")!;
     const p = getPos(e);
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
     setEmpty(false);
-    e.preventDefault?.();
+    e.preventDefault();
   };
   const end = () => {
     drawingRef.current = false;
@@ -218,6 +230,7 @@ function SignaturePad({
 /* =========================
    Checklist → array text
    ========================= */
+
 function renderChecklist(checklist: ChecklistState) {
   const out: {
     section: string;
@@ -263,31 +276,38 @@ function renderChecklist(checklist: ChecklistState) {
 }
 
 /* =========================
-   Helpers
+   Helpers (type-safe)
    ========================= */
-const isPrimitive = (v: any) =>
+
+const isPrimitive = (v: unknown): v is string | number | boolean =>
   ["string", "number", "boolean"].includes(typeof v);
-const isBoolArray = (a: any) =>
+const isBoolArray = (a: unknown): a is boolean[] =>
   Array.isArray(a) && a.every((x) => typeof x === "boolean");
-const isPlainObject = (v: any) =>
-  v && typeof v === "object" && !Array.isArray(v);
+const isRecord = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === "object" && !Array.isArray(v);
 
 const escapeHtml = (s: string) =>
   s.replace(
     /[&<>"']/g,
     (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[
-        c
-      ]!)
+      ((
+        {
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        } as const
+      )[c]!)
   );
 
-const hasAnyTruthy = (v: any): boolean => {
+const hasAnyTruthy = (v: unknown): boolean => {
   if (v == null) return false;
   if (typeof v === "boolean") return v;
   if (typeof v === "number") return true;
   if (typeof v === "string") return v.trim().length > 0;
   if (Array.isArray(v)) return v.length > 0 && v.some(hasAnyTruthy);
-  if (isPlainObject(v)) return Object.values(v).some(hasAnyTruthy);
+  if (isRecord(v)) return Object.values(v).some(hasAnyTruthy);
   return !!v;
 };
 
@@ -296,28 +316,56 @@ const labelStatusChip = (filled: boolean) =>
     filled ? "Diisi" : "Kosong"
   }</span>`;
 
-function getTheme(evaluasi: any): Theme {
-  const hari: 1 | 2 | 3 | 4 | 5 | 6 =
-    (evaluasi?.attitude?.hari as any) ?? (evaluasi?.hari as any) ?? 1;
-  return DAY_THEME[hari] ?? "attitude";
+/* =========================
+   Evaluasi types + helpers
+   ========================= */
+
+type ScoreValue = string | number;
+type PersonEval = {
+  scores?: Record<string, ScoreValue>;
+  notes?: Record<string, string>;
+};
+type PersonSection = Partial<Record<Person, PersonEval>> & {
+  byPerson?: Partial<Record<Person, PersonEval>>;
+};
+
+type Evaluasi = {
+  hari?: 1 | 2 | 3 | 4 | 5 | 6;
+  attitude?: {
+    hari?: 1 | 2 | 3 | 4 | 5 | 6;
+    scores?: Record<string, ScoreValue>;
+    notes?: Record<string, string>;
+  };
+  kompetensi?: PersonSection;
+  prestasi?: PersonSection;
+  kepatuhan?: PersonSection;
+};
+
+function getTheme(evaluasi: Evaluasi): Theme {
+  const hari =
+    evaluasi.attitude?.hari ??
+    (evaluasi as { hari?: 1 | 2 | 3 | 4 | 5 | 6 }).hari ??
+    1;
+  return DAY_THEME[hari as 1 | 2 | 3 | 4 | 5 | 6] ?? "attitude";
 }
+
 function getByPerson(
-  evaluasi: any,
+  evaluasi: Evaluasi,
   kind: "kompetensi" | "prestasi" | "kepatuhan",
   person: Person
-) {
-  return (
-    evaluasi?.[`${kind}_${person}`] ??
-    evaluasi?.[kind]?.[person] ??
-    evaluasi?.[kind]?.byPerson?.[person] ??
-    evaluasi?.[`${kind}ByPerson`]?.[person] ??
-    {}
-  );
+): PersonEval {
+  const sec = evaluasi[kind];
+  if (!sec) return {};
+  const by =
+    (sec.byPerson as Partial<Record<Person, PersonEval>> | undefined) ??
+    (sec as Partial<Record<Person, PersonEval>>);
+  return (by?.[person] ?? {}) as PersonEval;
 }
 
 /* =========================
    SPARTA: Catalog v3 + progress per-user
    ========================= */
+
 const SPARTA_CATALOG_KEY = "sitrep-sparta-catalog-v3";
 type SpartaCatalogItem = {
   id: string;
@@ -347,26 +395,40 @@ function readSpartaCatalog(): SpartaCatalogItem[] {
   try {
     const raw = localStorage.getItem(SPARTA_CATALOG_KEY);
     if (raw) {
-      const arr = JSON.parse(raw) as any[];
+      const arr = JSON.parse(raw) as unknown as Array<
+        Partial<SpartaCatalogItem>
+      >;
       return arr.map((p) => ({
         targetRole: "admin",
+        steps: [],
+        deadline: "",
+        id: "",
+        title: "",
         ...p,
       })) as SpartaCatalogItem[];
     }
     const rawV2 = localStorage.getItem("sitrep-sparta-catalog-v2");
     if (rawV2) {
-      const arr = JSON.parse(rawV2) as any[];
+      const arr = JSON.parse(rawV2) as unknown as Array<
+        Partial<SpartaCatalogItem>
+      >;
       return arr.map((p) => ({
-        targetRole: p.targetRole ?? "admin",
+        targetRole: (p.targetRole ?? "admin") as "admin" | "sales" | "gudang",
+        steps: [],
+        deadline: "",
+        id: "",
+        title: "",
         ...p,
       })) as SpartaCatalogItem[];
     }
     const rawV1 = localStorage.getItem("sitrep-sparta-catalog-v1");
     if (rawV1) {
-      const arr = JSON.parse(rawV1) as any[];
+      const arr = JSON.parse(rawV1) as unknown as Array<
+        Omit<SpartaCatalogItem, "targetRole">
+      >;
       return arr.map((p) => ({
-        targetRole: "admin",
         ...p,
+        targetRole: "admin",
       })) as SpartaCatalogItem[];
     }
     return defaultSpartaCatalog();
@@ -391,7 +453,19 @@ function daysLeftFromStr(deadline?: string) {
   ).getTime();
   return Math.ceil((d.getTime() - base) / 86400000);
 }
-function extractProjectsFromSparta(sparta: any, userRole: string | undefined) {
+
+type SpartaProgress = {
+  steps: boolean[];
+  progressText: string;
+  nextAction: string;
+  kendala: string;
+};
+type SpartaStateLike = { projectsProgress?: Record<string, SpartaProgress> };
+
+function extractProjectsFromSparta(
+  sparta: SpartaStateLike | undefined,
+  userRole: string | undefined
+) {
   const catalog = readSpartaCatalog();
   const role = (userRole || "admin") as
     | "admin"
@@ -403,13 +477,10 @@ function extractProjectsFromSparta(sparta: any, userRole: string | undefined) {
       ? catalog
       : catalog.filter((p) => p.targetRole === role);
 
-  type Prog = {
-    steps: boolean[];
-    progressText: string;
-    nextAction: string;
-    kendala: string;
-  };
-  const progressMap = (sparta?.projectsProgress || {}) as Record<string, Prog>;
+  const progressMap = (sparta?.projectsProgress || {}) as Record<
+    string,
+    SpartaProgress
+  >;
 
   return visible.map((p) => {
     const prog = progressMap[p.id] || {
@@ -442,57 +513,83 @@ function extractProjectsFromSparta(sparta: any, userRole: string | undefined) {
 /* =========================
    Target & Achievement – extractor
    ========================= */
-function extractTarget(target: any) {
-  if (!target) return { type: "empty" } as const;
 
-  const list = target.goals ?? target.items ?? target.rows ?? target.list;
+type TargetView =
+  | { type: "empty" }
+  | { type: "kpi"; rows: Array<Record<string, unknown>> }
+  | { type: "table"; cols: string[]; rows: Array<Record<string, unknown>> }
+  | { type: "kv"; kv: Record<string, unknown> };
+
+function extractTarget(target: unknown): TargetView {
+  if (!target || !isRecord(target)) return { type: "empty" };
+
+  const list =
+    (target as Record<string, unknown>)["goals"] ??
+    (target as Record<string, unknown>)["items"] ??
+    (target as Record<string, unknown>)["rows"] ??
+    (target as Record<string, unknown>)["list"];
+
   if (Array.isArray(list) && list.length) {
-    const pickName = (r: any) =>
-      (r?.title ?? r?.name ?? r?.kpi ?? "") as string;
-    const pickTarget = (r: any) => (r?.target ?? r?.plan ?? "") as any;
-    const pickActual = (r: any) =>
-      (r?.actual ?? r?.real ?? r?.realisasi ?? r?.achieved ?? "") as any;
-    const pickPercent = (r: any) =>
-      (r?.percent ?? r?.persen ?? r?.achievement ?? "") as any;
+    const rows = list.filter(isRecord) as Array<Record<string, unknown>>;
+
+    const pick = (r: Record<string, unknown>, keys: string[]) =>
+      keys.map((k) => r[k]).find((v) => v !== undefined);
 
     const looksLikeKPI =
-      list.some(
-        (r: any) =>
-          pickName(r) || pickTarget(r) || pickActual(r) || pickPercent(r)
-      ) || false;
+      rows.some((r) => {
+        const hasName = !!(pick(r, ["title", "name", "kpi"]) as
+          | string
+          | undefined);
+        const hasTgt = pick(r, ["target", "plan"]) !== undefined;
+        const hasAct =
+          pick(r, ["actual", "real", "realisasi", "achieved"]) !== undefined;
+        const hasPct =
+          pick(r, ["percent", "persen", "achievement"]) !== undefined;
+        return hasName || hasTgt || hasAct || hasPct;
+      }) || false;
 
     if (looksLikeKPI) {
-      return {
-        type: "kpi",
-        rows: list.map((r: any) => ({
-          name: pickName(r) || "",
-          target: pickTarget(r) ?? "",
-          actual: pickActual(r) ?? "",
-          percent: pickPercent(r) ?? "",
-          notes: r?.notes ?? r?.catatan ?? "",
-        })),
-      } as const;
+      return { type: "kpi", rows };
     }
 
     const cols = Array.from(
-      list.reduce<Set<string>>((s, r) => {
+      rows.reduce<Set<string>>((s, r) => {
         Object.keys(r || {}).forEach((k) => s.add(k));
         return s;
       }, new Set())
     );
-    return { type: "table", cols, rows: list } as const;
+
+    return { type: "table", cols, rows };
   }
 
-  if (typeof target === "object" && Object.keys(target).length) {
-    return { type: "kv", kv: target } as const;
+  if (Object.keys(target).length) {
+    return { type: "kv", kv: target as Record<string, unknown> };
   }
 
-  return { type: "empty" } as const;
+  return { type: "empty" };
 }
 
 /* =========================
    Komponen Utama
    ========================= */
+
+type AppLike = AppState &
+  Partial<{
+    evaluasi: Evaluasi;
+    sparta: SpartaStateLike;
+    target: unknown;
+    agenda: {
+      entries: Array<{
+        date: string;
+        updatedAt?: string;
+        plan?: string[];
+        realisasi?: string[];
+        planSubmitted?: boolean;
+        realSubmitted?: boolean;
+      }>;
+    };
+  }>;
+
 export default function Lampiran({ data }: { data: AppState }) {
   const { user } = useAuth();
   const [sigDataUrl, setSigDataUrl] = useState<string | null>(null);
@@ -502,7 +599,14 @@ export default function Lampiran({ data }: { data: AppState }) {
 
   const printRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => setHistory(loadHistory()), []);
+  // Ambil dari Supabase; kalau gagal, fallback local
+  useEffect(() => {
+    (async () => {
+      const ok = await refreshRiwayatFromSupabase();
+      if (!ok) setHistory(loadHistory());
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filtered = useMemo(
     () =>
@@ -511,23 +615,71 @@ export default function Lampiran({ data }: { data: AppState }) {
   );
 
   const checklistBlocks = useMemo(
-    () => renderChecklist(data.checklist as any),
-    [data.checklist]
+    () => renderChecklist((data as AppLike).checklist as ChecklistState),
+    [data]
   );
 
   // Evaluasi
-  const theme = getTheme((data as any).evaluasi || {});
-  const evalData = (data as any).evaluasi || {};
+  const theme = getTheme((data as unknown as AppLike).evaluasi ?? {});
+  const evalData = ((data as unknown as AppLike).evaluasi ?? {}) as Evaluasi;
 
   // Project & Target
   const projectList = useMemo(
-    () => extractProjectsFromSparta((data as any).sparta, user?.role),
-    [data.sparta, user?.role]
+    () =>
+      extractProjectsFromSparta(
+        (data as unknown as AppLike).sparta,
+        user?.role
+      ),
+    [data, user?.role]
   );
   const targetView = useMemo(
-    () => extractTarget((data as any).target),
-    [data.target]
+    () => extractTarget((data as unknown as AppLike).target),
+    [data]
   );
+
+  // ------- Helper: refresh riwayat dari API list -------
+  async function refreshRiwayatFromSupabase() {
+    try {
+      const userId =
+        (user as { id?: string; email?: string; name?: string } | undefined)
+          ?.id ??
+        user?.email ??
+        user?.name ??
+        "unknown";
+      const role = user?.role || "admin";
+      const res = await fetch(
+        `/api/lampiran/list?userId=${encodeURIComponent(
+          userId
+        )}&role=${encodeURIComponent(role)}`
+      );
+      if (!res.ok) return false;
+      const json = (await res.json()) as {
+        items: Array<{
+          filename: string;
+          dateISO: string;
+          url: string;
+          key: string;
+          submittedAt?: string;
+        }>;
+      };
+      if (!json?.items) return false;
+      const mapped: PdfEntry[] = json.items.map((it) => ({
+        id: it.key,
+        filename: it.filename,
+        dateISO: it.dateISO,
+        submittedAt: it.submittedAt || new Date().toISOString(),
+        name: user?.name || "-",
+        role: user?.role || "-",
+        pdfDataUrl: it.url,
+        storage: "remote",
+        key: it.key,
+      }));
+      setHistory(mapped);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   /* -------- Layout PDF -------- */
   const buildPrintLayout = () => {
@@ -548,7 +700,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       .section{margin-top:18px;}
       .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;}
       .muted{color:#64748b;}
-      .banner{background:#1e40af;color:#fff;padding:14px 16px;border-radius:14px;}
+      .banner{background:#dbeafe;color:#1e3a8a;padding:14px 16px;border-radius:14px;}
       .info-grid{display:flex;gap:12px;margin-top:12px;}
       .card{border:1px solid #e6e8f0;border-radius:12px;padding:10px 12px;flex:1;background:#fff;}
       .card .label{color:#6b7280;font-size:12px;}
@@ -559,52 +711,33 @@ export default function Lampiran({ data }: { data: AppState }) {
       .subhead{font-weight:700;margin:6px 0 8px;color:#0f172a;}
       .mb8{margin-bottom:8px;}
       .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;}
-
-      .chip{
-        display:inline-flex; align-items:center; justify-content:center;
-        height:22px; padding:0 10px; border-radius:999px;
-        border:1px solid #e5e7eb; background:#fff;
-        font-size:11px; font-weight:700; line-height:1;
-      }
+      .chip{display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;font-size:11px;font-weight:700;line-height:1;}
       .chip.ok{background:#ecfdf5;border-color:#86efac;color:#065f46;}
       .chip.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
       .chip.over{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
-
-      .sigwrap{page-break-inside:avoid;}
-      .sigbox{
-        position:relative;
-        margin-top:12px;border:1px dashed #cbd5e1;border-radius:12px;
-        padding:12px;height:140px;display:flex;align-items:center;justify-content:center;background:#fcfcfe;
-      }
+      .sigwrap{page-break-inside:avoid;margin-top:18px;}
+      .sigtitle{text-align:right;margin:0 0 6px 0;}
+      .sigrow{display:flex;justify-content:flex-end;}
+      .sigbox{position:relative;width:360px;margin-top:6px;border:1px dashed #cbd5e1;border-radius:12px;padding:12px;height:140px;display:flex;align-items:center;justify-content:center;background:#fcfdff;}
       .sigbox img{max-height:96px;display:block;margin:auto;object-fit:contain;}
-      .sigline{position:absolute;left:12px;right:12px;bottom:12px;height:2px;background:#0f172a;opacity:.9;}
-      .foot{margin-top:8px;color:#64748b;font-size:11px;}
+      .sigline{position:absolute;left:12px;right:12px;bottom:12px;height:2px;background:#0f172a;opacity:.85;}
+      .foot{margin-top:6px;color:#64748b;font-size:11px;text-align:right;}
       .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;}
       .pro-card{border:1px solid #e6e8f0;border-radius:16px;background:#fff;padding:14px;box-shadow:0 1px 0 rgba(16,24,40,.02);}
       .pro-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
       .pro-title{font-weight:800;color:#0f172a;}
       .steps-panel{border:1px solid #eef2f7;border-radius:12px;background:#fcfdff;padding:10px 12px;}
-
       .progress{height:10px;background:#eff3fb;border-radius:999px;overflow:hidden}
       .progress>div{height:100%;background:#2563eb;transition:width .2s ease}
-
       .chk{list-style:none;margin:0;padding:0}
       .step{display:flex;gap:8px;align-items:center;margin:6px 0}
-      .icon{
-        box-sizing:border-box;
-        display:inline-flex; width:16px; height:16px;
-        border-radius:4px; border:1px solid #cbd5e1;
-        align-items:center; justify-content:center;
-        font-size:11px; line-height:1; color:#94a3b8; background:#fff;
-      }
+      .icon{box-sizing:border-box;display:inline-flex;width:16px;height:16px;border-radius:4px;border:1px solid #cbd5e1;align-items:center;justify-content:center;font-size:11px;line-height:1;color:#94a3b8;background:#fff;}
       .done .icon{background:#10b981;border-color:#10b981;color:#fff}
       .label{line-height:1.35}
       .done .label{text-decoration:line-through;color:#6b7280}
-
       .kpi th:nth-child(1){width:28%}
       .kpi th:nth-child(2),.kpi th:nth-child(3),.kpi th:nth-child(4){width:16%}
       .kpi th:nth-child(5){width:24%}
-
       .ul-kv{margin:0;padding-left:18px}
     `;
     root.appendChild(st);
@@ -613,7 +746,6 @@ export default function Lampiran({ data }: { data: AppState }) {
     page.className = "page";
     root.appendChild(page);
 
-    // HEADER
     const header = document.createElement("div");
     header.className = "banner";
     header.innerHTML = `
@@ -622,7 +754,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       <div class="muted">Tanggal: ${todayISO()}</div>`;
     page.appendChild(header);
 
-    // INFO
     const info = document.createElement("div");
     info.className = "info-grid";
     info.innerHTML = `
@@ -635,7 +766,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       <div class="card"><div class="label">Depo</div><div style="font-weight:700">TULUNGAGUNG</div></div>`;
     page.appendChild(info);
 
-    // CHECKLIST
     const ck = document.createElement("div");
     ck.className = "section";
     ck.innerHTML = `<div class="title">Rangkuman Checklist</div>`;
@@ -662,7 +792,6 @@ export default function Lampiran({ data }: { data: AppState }) {
     });
     page.appendChild(ck);
 
-    // EVALUASI
     const evalSec = document.createElement("div");
     evalSec.className = "section";
     const titleMap: Record<Theme, string> = {
@@ -686,8 +815,10 @@ export default function Lampiran({ data }: { data: AppState }) {
         tb.insertAdjacentHTML(
           "beforeend",
           `<tr><td>[${i.code}] ${i.title}</td><td><b>${
-            scores[i.code] ?? ""
-          }</b></td><td>${notes[i.code] || ""}</td></tr>`
+            (scores as Record<string, unknown>)[i.code] ?? ""
+          }</b></td><td>${
+            (notes as Record<string, string | undefined>)[i.code] || ""
+          }</td></tr>`
         );
       });
       tbl.appendChild(tb);
@@ -708,8 +839,10 @@ export default function Lampiran({ data }: { data: AppState }) {
         KOMPETENSI_ITEMS.forEach((i) => {
           tb.insertAdjacentHTML(
             "beforeend",
-            `<tr><td>${i.title}</td><td><b>${scores[i.key] ?? ""}</b></td><td>${
-              notes[i.key] || ""
+            `<tr><td>${i.title}</td><td><b>${
+              (scores as Record<string, unknown>)[i.key] ?? ""
+            }</b></td><td>${
+              (notes as Record<string, string | undefined>)[i.key] || ""
             }</td></tr>`
           );
         });
@@ -735,8 +868,10 @@ export default function Lampiran({ data }: { data: AppState }) {
           tb.insertAdjacentHTML(
             "beforeend",
             `<tr><td>${i.title}</td><td><b>${
-              scores?.[i.key] ?? ""
-            }</b></td><td>${notes?.[i.key] || ""}</td></tr>`
+              (scores as Record<string, unknown>)[i.key] ?? ""
+            }</b></td><td>${
+              (notes as Record<string, string | undefined>)[i.key] || ""
+            }</td></tr>`
           );
         });
         tbl.appendChild(tb);
@@ -746,13 +881,12 @@ export default function Lampiran({ data }: { data: AppState }) {
     }
     page.appendChild(evalSec);
 
-    // =========== TARGET & ACHIEVEMENT (UI-style with Status) ===========
+    // TARGET & ACHIEVEMENT
     const tgtSec = document.createElement("div");
     tgtSec.className = "section";
     tgtSec.innerHTML = `<div class="title">Target & Achievement</div>`;
 
-    // helpers to render value nicely
-    const valueToHTML = (v: any): string => {
+    const valueToHTML = (v: unknown): string => {
       if (v == null || v === "") return "";
       if (typeof v === "boolean") return v ? "Ya" : "–";
       if (typeof v === "number") return String(v);
@@ -767,15 +901,15 @@ export default function Lampiran({ data }: { data: AppState }) {
             .map((x) =>
               isPrimitive(x)
                 ? String(x)
-                : typeof x === "object"
+                : isRecord(x)
                 ? JSON.stringify(x)
                 : String(x)
             )
             .join(", ")
         );
       }
-      if (isPlainObject(v)) {
-        const entries = Object.entries(v as Record<string, any>);
+      if (isRecord(v)) {
+        const entries = Object.entries(v);
         const rows = entries
           .map(([k, val]) => {
             if (isBoolArray(val)) {
@@ -810,20 +944,29 @@ export default function Lampiran({ data }: { data: AppState }) {
       tbl.className = "table striped kpi";
       tbl.innerHTML = `<thead><tr><th>KPI</th><th>Target</th><th>Realisasi</th><th>%</th><th>Catatan</th><th>Status</th></tr></thead>`;
       const tb = document.createElement("tbody");
-      (targetView as any).rows.forEach((r: any) => {
+      targetView.rows.forEach((r) => {
         const filled =
-          hasAnyTruthy(r.target) ||
-          hasAnyTruthy(r.actual) ||
-          hasAnyTruthy(r.percent) ||
-          hasAnyTruthy(r.notes);
+          hasAnyTruthy(r["target"]) ||
+          hasAnyTruthy(r["plan"]) ||
+          hasAnyTruthy(
+            r["actual"] ?? r["real"] ?? r["realisasi"] ?? r["achieved"]
+          ) ||
+          hasAnyTruthy(r["percent"] ?? r["persen"] ?? r["achievement"]) ||
+          hasAnyTruthy(r["notes"] ?? r["catatan"]);
         tb.insertAdjacentHTML(
           "beforeend",
           `<tr>
-            <td>${escapeHtml(r.name || "")}</td>
-            <td>${valueToHTML(r.target)}</td>
-            <td>${valueToHTML(r.actual)}</td>
-            <td>${valueToHTML(r.percent)}</td>
-            <td>${escapeHtml(r.notes || "")}</td>
+            <td>${escapeHtml(
+              String(r["title"] ?? r["name"] ?? r["kpi"] ?? "")
+            )}</td>
+            <td>${valueToHTML(r["target"] ?? r["plan"])}</td>
+            <td>${valueToHTML(
+              r["actual"] ?? r["real"] ?? r["realisasi"] ?? r["achieved"]
+            )}</td>
+            <td>${valueToHTML(
+              r["percent"] ?? r["persen"] ?? r["achievement"]
+            )}</td>
+            <td>${escapeHtml(String(r["notes"] ?? r["catatan"] ?? ""))}</td>
             <td>${labelStatusChip(filled)}</td>
           </tr>`
         );
@@ -831,7 +974,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       tbl.appendChild(tb);
       tgtSec.appendChild(tbl);
     } else if (targetView.type === "table") {
-      const cols = (targetView as any).cols as string[];
+      const cols = targetView.cols;
       const tbl = document.createElement("table");
       tbl.className = "table striped";
       const thead = document.createElement("thead");
@@ -840,7 +983,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         .join("")}<th>Status</th></tr>`;
       tbl.appendChild(thead);
       const tb = document.createElement("tbody");
-      (targetView as any).rows.forEach((row: any) => {
+      targetView.rows.forEach((row) => {
         const filled = hasAnyTruthy(row);
         tb.insertAdjacentHTML(
           "beforeend",
@@ -852,7 +995,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       tbl.appendChild(tb);
       tgtSec.appendChild(tbl);
     } else if (targetView.type === "kv") {
-      const kv = (targetView as any).kv as Record<string, any>;
+      const kv = targetView.kv;
       const tbl = document.createElement("table");
       tbl.className = "table striped";
       tbl.innerHTML = `<colgroup><col style="width:35%"><col style="width:45%"><col style="width:20%"></colgroup>
@@ -884,7 +1027,19 @@ export default function Lampiran({ data }: { data: AppState }) {
     const spSec = document.createElement("div");
     spSec.className = "section";
     spSec.innerHTML = `<div class="title">Project Tracking (SPARTA)</div>`;
-    const renderCard = (p: any, idx: number) => {
+    const renderCard = (
+      p: {
+        name: string;
+        ownerRole: string;
+        deadline: string;
+        daysLeft: number | null;
+        steps: Array<{ label: string; done?: boolean }>;
+        percent: number;
+        nextAction?: string;
+        kendala?: string;
+      },
+      idx: number
+    ) => {
       const card = document.createElement("div");
       card.className = "pro-card";
       let chip = "";
@@ -937,7 +1092,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         p.steps && p.steps.length ? p.steps : [{ label: "" }, { label: "" }];
       const ul = document.createElement("ul");
       ul.className = "chk";
-      steps.forEach((s: any) => {
+      steps.forEach((s) => {
         ul.insertAdjacentHTML(
           "beforeend",
           `<li class="step ${s.done ? "done" : ""}">
@@ -960,6 +1115,7 @@ export default function Lampiran({ data }: { data: AppState }) {
             name: "",
             ownerRole: "",
             deadline: "",
+            daysLeft: null,
             percent: 0,
             steps: [{ label: "" }],
           },
@@ -967,9 +1123,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         )
       );
     } else {
-      projectList.forEach((p: any, idx: number) =>
-        spSec.appendChild(renderCard(p, idx))
-      );
+      projectList.forEach((p, idx) => spSec.appendChild(renderCard(p, idx)));
     }
     page.appendChild(spSec);
 
@@ -977,7 +1131,8 @@ export default function Lampiran({ data }: { data: AppState }) {
     const agSec = document.createElement("div");
     agSec.className = "section";
     agSec.innerHTML = `<div class="title">Agenda & Jadwal</div>`;
-    const agenda = (data as any).agenda?.entries || [];
+    const agenda = ((data as unknown as AppLike).agenda?.entries ??
+      []) as AppLike["agenda"]["entries"];
     if (!agenda.length) {
       const block = document.createElement("div");
       block.className = "mb8";
@@ -993,39 +1148,43 @@ export default function Lampiran({ data }: { data: AppState }) {
       block.appendChild(tbl);
       agSec.appendChild(block);
     } else {
-      const sorted = [...agenda].sort((a: any, b: any) =>
+      const sorted = [...agenda].sort((a, b) =>
         a.date === b.date
-          ? a.updatedAt < b.updatedAt
-            ? 1
-            : -1
+          ? a.updatedAt && b.updatedAt
+            ? a.updatedAt < b.updatedAt
+              ? 1
+              : -1
+            : 0
           : a.date < b.date
           ? 1
           : -1
       );
-      const groups: Record<string, any[]> = {};
-      sorted.forEach((e: any) => (groups[e.date] ||= []).push(e));
+      const groups: Record<string, AppLike["agenda"]["entries"]> = {};
+      sorted.forEach((e) =>
+        (
+          (groups[e.date] ||= [] as NonNullable<(typeof groups)[string]>) as []
+        ).push(e)
+      );
       Object.entries(groups).forEach(([tgl, items]) => {
         const block = document.createElement("div");
         block.className = "mb8";
         block.innerHTML = `<div class="subhead">${tgl}</div>`;
-        items.forEach((e: any, i: number) => {
+        items.forEach((e, i) => {
           const tbl = document.createElement("table");
           tbl.className = "table striped";
+          const planHtml = (e.plan ?? [])
+            .map((x) => `<li>${escapeHtml(x)}</li>`)
+            .join("");
+          const realHtml = (e.realisasi ?? [])
+            .map((x) => `<li>${escapeHtml(x)}</li>`)
+            .join("");
           tbl.innerHTML = `<colgroup><col style="width:20%"><col style="width:80%"></colgroup>
             <tbody>
               <tr><th>Plan ${i + 1}</th><td>${
-            e.plan?.length
-              ? `<ul class="ul-kv">${e.plan
-                  .map((x: string) => `<li>${escapeHtml(x)}</li>`)
-                  .join("")}</ul>`
-              : ""
+            planHtml ? `<ul class="ul-kv">${planHtml}</ul>` : ""
           }</td></tr>
               <tr><th>Realisasi ${i + 1}</th><td>${
-            e.realisasi?.length
-              ? `<ul class="ul-kv">${e.realisasi
-                  .map((x: string) => `<li>${escapeHtml(x)}</li>`)
-                  .join("")}</ul>`
-              : ""
+            realHtml ? `<ul class="ul-kv">${realHtml}</ul>` : ""
           }</td></tr>
               <tr><th>Status</th><td>
                 <span class="pill">${
@@ -1047,7 +1206,12 @@ export default function Lampiran({ data }: { data: AppState }) {
     // TTD
     const sigWrap = document.createElement("div");
     sigWrap.className = "section sigwrap";
-    sigWrap.innerHTML = `<div class="title">Tanda Tangan</div>`;
+    const sigTitle = document.createElement("div");
+    sigTitle.className = "title sigtitle";
+    sigTitle.textContent = "Tanda Tangan";
+    sigWrap.appendChild(sigTitle);
+    const sigRow = document.createElement("div");
+    sigRow.className = "sigrow";
     const sigBox = document.createElement("div");
     sigBox.className = "sigbox";
     if (sigDataUrl) {
@@ -1060,7 +1224,8 @@ export default function Lampiran({ data }: { data: AppState }) {
     const line = document.createElement("div");
     line.className = "sigline";
     sigBox.appendChild(line);
-    sigWrap.appendChild(sigBox);
+    sigRow.appendChild(sigBox);
+    sigWrap.appendChild(sigRow);
     const foot = document.createElement("div");
     foot.className = "foot";
     foot.textContent = `Ditandatangani oleh ${user?.name || ""} (${
@@ -1072,7 +1237,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     return root;
   };
 
-  /* -------- Export PDF -------- */
+  /* -------- Export PDF + Upload ke Supabase -------- */
   const submitAndGenerate = async () => {
     if (!sigDataUrl) {
       alert("Mohon tanda tangan terlebih dahulu.");
@@ -1082,7 +1247,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     try {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
         import("html2canvas"),
-        import("jspdf") as any,
+        import("jspdf") as unknown as Promise<{ jsPDF: any }>,
       ]);
 
       const root = buildPrintLayout();
@@ -1130,8 +1295,35 @@ export default function Lampiran({ data }: { data: AppState }) {
 
       const date = todayISO();
       const filename = `${date}.pdf`;
-      const pdfDataUrl = pdf.output("datauristring") as string;
 
+      // Upload ke Supabase via API
+      try {
+        const arrayBuffer = pdf.output("arraybuffer") as ArrayBuffer;
+        const userId =
+          (user as { id?: string; email?: string; name?: string } | undefined)
+            ?.id ??
+          user?.email ??
+          user?.name ??
+          "unknown";
+        const role = user?.role || "admin";
+
+        const res = await fetch(
+          `/api/lampiran/upload?userId=${encodeURIComponent(
+            userId
+          )}&role=${encodeURIComponent(role)}&date=${encodeURIComponent(date)}`,
+          {
+            method: "POST",
+            headers: { "content-type": "application/pdf" },
+            body: arrayBuffer,
+          }
+        );
+        if (res.ok) await refreshRiwayatFromSupabase();
+      } catch (e) {
+        console.warn("Upload error:", e);
+      }
+
+      // Simpan local sebagai backup + unduh
+      const pdfDataUrl = pdf.output("datauristring") as string;
       const entry: PdfEntry = {
         id: uuid(),
         filename,
@@ -1140,6 +1332,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         name: user?.name || "-",
         role: user?.role || "-",
         pdfDataUrl,
+        storage: "local",
       };
       const next = [entry, ...history];
       setHistory(next);
@@ -1156,11 +1349,37 @@ export default function Lampiran({ data }: { data: AppState }) {
     }
   };
 
-  const removeEntry = (id: string) => {
-    if (!confirm("Hapus riwayat PDF ini dari penyimpanan browser?")) return;
-    const next = history.filter((h) => h.id !== id);
-    setHistory(next);
-    saveHistory(next);
+  // Hapus riwayat (local / cloud)
+  const removeEntry = async (id: string) => {
+    const entry = history.find((h) => h.id === id);
+    if (!entry) return;
+    const yes = confirm(
+      entry.storage === "remote"
+        ? "Hapus file dari cloud (Supabase) dan daftar riwayat?"
+        : "Hapus item dari riwayat lokal (browser)?"
+    );
+    if (!yes) return;
+
+    try {
+      if (entry.storage === "remote" && entry.key) {
+        const res = await fetch(
+          `/api/lampiran/delete?key=${encodeURIComponent(entry.key)}`,
+          { method: "POST" }
+        );
+        if (!res.ok) {
+          const msg = await res.json().catch(() => ({} as { error?: string }));
+          alert(`Gagal hapus cloud: ${msg.error || res.statusText}`);
+        }
+        await refreshRiwayatFromSupabase();
+      } else {
+        const next = history.filter((h) => h.id !== id);
+        setHistory(next);
+        saveHistory(next);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Terjadi kesalahan saat menghapus.");
+    }
   };
 
   return (
@@ -1272,16 +1491,22 @@ export default function Lampiran({ data }: { data: AppState }) {
                         <a
                           href={h.pdfDataUrl}
                           download={h.filename}
+                          target={h.storage === "remote" ? "_blank" : undefined}
                           className="inline-flex items-center gap-1 text-blue-700 hover:underline"
                         >
                           <Download className="h-4 w-4" /> {h.filename}
+                          {h.storage === "remote" ? " (cloud)" : ""}
                         </a>
                       </td>
                       <td className="py-2 px-2">
                         <button
                           onClick={() => removeEntry(h.id)}
                           className="inline-flex items-center gap-1 px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
-                          title="Hapus dari riwayat (localStorage)"
+                          title={
+                            h.storage === "remote"
+                              ? "Hapus dari cloud"
+                              : "Hapus dari riwayat (localStorage)"
+                          }
                         >
                           <Trash2 className="h-4 w-4" /> Hapus
                         </button>

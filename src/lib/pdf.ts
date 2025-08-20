@@ -1,20 +1,25 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import type { UserOptions } from "jspdf-autotable";
 import type { AppState, RowValue, Principal } from "./types";
 import { PRINCIPALS } from "./types";
+
+type Kind<K extends RowValue["kind"]> = Extract<RowValue, { kind: K }>;
+type AutoTableDoc = jsPDF & { lastAutoTable?: { finalY: number } };
 
 export function generatePdf(
   archive: { date: string; state: AppState; signatureDataUrl?: string },
   autoDownload = true
 ) {
   const { date, state, signatureDataUrl } = archive;
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  const doc: jsPDF = new jsPDF({ unit: "pt", format: "a4" });
   const BLUE: [number, number, number] = [29, 78, 216];
   const SLATE: [number, number, number] = [71, 85, 105];
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
 
-  const headerFooter = () => {
+  // cocokkan tipe didDrawPage (abaikan argumennya)
+  const headerFooter: NonNullable<UserOptions["didDrawPage"]> = () => {
     doc.setFillColor(...BLUE);
     doc.rect(40, 20, pageW - 80, 28, "F");
     doc.setTextColor(255, 255, 255);
@@ -24,30 +29,37 @@ export function generatePdf(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
     doc.text(date, pageW - 50, 39, { align: "right" });
+
     doc.setTextColor(120);
     doc.setFontSize(9);
     const pageStr = `Hal. ${doc.internal.getNumberOfPages()}`;
     doc.text(pageStr, pageW - 50, pageH - 16, { align: "right" });
     doc.text(`${state.header.leader} • ${state.header.depo}`, 50, pageH - 16);
   };
-  const commonTableOpts = {
-    theme: "grid" as const,
+
+  const commonTableOpts: Partial<UserOptions> = {
+    theme: "grid",
     headStyles: {
       fillColor: BLUE,
       textColor: 255,
-      fontStyle: "bold" as const,
-      halign: "left" as const,
+      fontStyle: "bold",
+      halign: "left",
     },
     styles: {
       font: "helvetica",
       fontSize: 9,
       cellPadding: 5,
-      textColor: SLATE as any,
+      textColor: SLATE,
     },
-    alternateRowStyles: { fillColor: [246, 248, 252] as any },
+    alternateRowStyles: {
+      fillColor: [246, 248, 252] as [number, number, number],
+    },
     margin: { left: 40, right: 40 },
     didDrawPage: headerFooter,
   };
+
+  const getFinalY = (d: jsPDF) =>
+    (d as AutoTableDoc).lastAutoTable?.finalY ?? 0;
 
   doc.setTextColor(...SLATE);
   doc.setFont("helvetica", "normal");
@@ -67,17 +79,18 @@ export function generatePdf(
     doc.text(title, 40, y + 18);
     y += 28;
   };
-  const valToString = (v: RowValue | undefined) => {
+
+  const valToString = (v?: RowValue): string => {
     if (!v) return "-";
     switch (v.kind) {
       case "options":
         return v.value ?? "-";
       case "number":
-        return (v as any).value || "-";
+        return String((v as Kind<"number">).value ?? "-");
       case "score":
-        return String((v as any).value ?? "-");
+        return String((v as Kind<"score">).value ?? "-");
       case "compound": {
-        const c = v as any;
+        const c = v as Kind<"compound">;
         const extras = [c.extras?.text, c.extras?.currency]
           .filter(Boolean)
           .join(" • ");
@@ -106,7 +119,7 @@ export function generatePdf(
         2: { cellWidth: "auto" },
       },
     });
-    y = (doc as any).lastAutoTable.finalY + 16;
+    y = getFinalY(doc) + 16;
   };
   pushSection("Kas Kecil", state.checklist.kas);
   pushSection("Buku Penunjang", state.checklist.buku);
@@ -114,14 +127,12 @@ export function generatePdf(
 
   // EVALUASI
   sectionTitle("Evaluasi Tim");
-  const attScores = state.evaluasi.attitude.scores || {};
+  const attScores: Record<string, number> =
+    state.evaluasi.attitude.scores || {};
   const attAvg =
     Object.keys(attScores).length > 0
       ? Math.round(
-          (Object.values(attScores).reduce(
-            (a: number, b: any) => a + (b as number),
-            0
-          ) /
+          (Object.values(attScores).reduce((a, b) => a + b, 0) /
             Object.keys(attScores).length) *
             10
         ) / 10
@@ -140,16 +151,17 @@ export function generatePdf(
       1: { cellWidth: 70, halign: "center" },
       2: { cellWidth: "auto" },
     },
-    foot: [[`Rata-rata`, String(attAvg), ""]],
+    foot: [["Rata-rata", String(attAvg), ""]],
     footStyles: {
       fillColor: [234, 240, 255],
-      textColor: SLATE as any,
-      fontStyle: "bold" as const,
+      textColor: SLATE,
+      fontStyle: "bold",
     },
   });
-  y = (doc as any).lastAutoTable.finalY + 16;
+  y = getFinalY(doc) + 16;
 
-  const komScores = state.evaluasi.kompetensi.scores || {};
+  const komScores: Record<string, number> =
+    state.evaluasi.kompetensi.scores || {};
   autoTable(doc, {
     ...commonTableOpts,
     startY: y,
@@ -165,7 +177,7 @@ export function generatePdf(
       2: { cellWidth: "auto" },
     },
   });
-  y = (doc as any).lastAutoTable.finalY + 10;
+  y = getFinalY(doc) + 10;
 
   if (state.evaluasi.kompetensi.kesalahanMingguIni) {
     doc.setFont("helvetica", "bold");
@@ -194,7 +206,8 @@ export function generatePdf(
       1: { cellWidth: 80, halign: "center" },
     },
   });
-  y = (doc as any).lastAutoTable.finalY + 10;
+  y = getFinalY(doc) + 10;
+
   doc.setFont("helvetica", "normal");
   doc.text(
     `Target selesai bulan ini: ${state.target.targetSelesai || "-"}`,
@@ -227,15 +240,16 @@ export function generatePdf(
       4: { halign: "center" },
     },
   });
-  y = (doc as any).lastAutoTable.finalY + 16;
+  y = getFinalY(doc) + 16;
 
   // SPARTA
   sectionTitle("SPARTA Project Tracking");
-  const steps = state.sparta.steps || [];
+  const steps: boolean[] = state.sparta.steps || [];
   const percent = Math.round((steps.filter(Boolean).length / 4) * 100);
   doc.text(`Deadline: ${state.sparta.deadline || "-"}`, 40, y + 12);
   doc.text(`Progress: ${percent}%`, pageW - 40, y + 12, { align: "right" });
   y += 20;
+
   autoTable(doc, {
     ...commonTableOpts,
     startY: y,
@@ -248,7 +262,7 @@ export function generatePdf(
     ],
     columnStyles: { 0: { cellWidth: 360 }, 1: { halign: "center" } },
   });
-  y = (doc as any).lastAutoTable.finalY + 12;
+  y = getFinalY(doc) + 12;
 
   if (state.sparta.progressText) {
     doc.setFont("helvetica", "bold");
@@ -281,7 +295,7 @@ export function generatePdf(
       ]),
       columnStyles: { 0: { cellWidth: 260 }, 1: { cellWidth: "auto" } },
     });
-    y = (doc as any).lastAutoTable.finalY + 16;
+    y = getFinalY(doc) + 16;
   } else {
     doc.setFont("helvetica", "normal");
     doc.text("(Tidak ada agenda yang dicatat untuk hari ini)", 40, y + 12);
