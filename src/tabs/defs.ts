@@ -1,3 +1,5 @@
+// src/tabs/defs.ts
+import type { ElementType } from "react";
 import {
   ClipboardList,
   Users2,
@@ -12,7 +14,7 @@ import type { TabKey } from "@/lib/types";
 export const TABS: ReadonlyArray<{
   key: TabKey;
   label: string;
-  icon: React.ElementType;
+  icon: ElementType;
 }> = [
   { key: "checklist", label: "Checklist Area", icon: ClipboardList },
   { key: "evaluasi", label: "Evaluasi Tim", icon: Users2 },

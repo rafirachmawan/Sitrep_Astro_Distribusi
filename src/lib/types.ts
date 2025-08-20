@@ -22,13 +22,18 @@ export type SectionKey =
 
 export type RowValue =
   | { kind: "options"; value: string | null; note?: string }
-  | { kind: "number"; value: string; note?: string; suffix?: string }
+  | { kind: "number"; value: string; suffix?: string; note?: string }
   | { kind: "score"; value: number; note?: string }
   | {
       kind: "compound";
       value: string | null;
-      extras?: { text?: string; currency?: string };
       note?: string;
+      extras?: {
+        text?: string;
+        currency?: string;
+        /** tambahan agar input angka di compound valid secara tipe */
+        number?: string;
+      };
     };
 
 export type ChecklistState = Record<
@@ -102,3 +107,16 @@ export type AuthUser = {
 export type AuthState = {
   user: AuthUser | null;
 };
+
+// src/lib/types.ts
+
+// ...ekspor/tipe lain
+
+export type TabKey =
+  | "checklist"
+  | "evaluasi"
+  | "target"
+  | "sparta"
+  | "agenda"
+  | "lampiran"
+  | "achievement";

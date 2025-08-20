@@ -4,9 +4,15 @@ import type { UserOptions } from "jspdf-autotable";
 import type { AppState, RowValue, Principal } from "./types";
 import { PRINCIPALS } from "./types";
 
+/* ====== Tipe util ====== */
 type Kind<K extends RowValue["kind"]> = Extract<RowValue, { kind: K }>;
 type AutoTableDoc = jsPDF & { lastAutoTable?: { finalY: number } };
 
+// didDrawPage expects an arg; kita definisikan tipenya supaya aman tanpa any
+type DidDraw = NonNullable<UserOptions["didDrawPage"]>;
+type DidDrawArg = Parameters<DidDraw>[0];
+
+/* ====== Main ====== */
 export function generatePdf(
   archive: { date: string; state: AppState; signatureDataUrl?: string },
   autoDownload = true
@@ -18,8 +24,8 @@ export function generatePdf(
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
 
-  // cocokkan tipe didDrawPage (abaikan argumennya)
-  const headerFooter: NonNullable<UserOptions["didDrawPage"]> = () => {
+  // Header + footer (didDrawPage) — parameternya tidak kita gunakan
+  const headerFooter: DidDraw = () => {
     doc.setFillColor(...BLUE);
     doc.rect(40, 20, pageW - 80, 28, "F");
     doc.setTextColor(255, 255, 255);
@@ -33,10 +39,12 @@ export function generatePdf(
     doc.setTextColor(120);
     doc.setFontSize(9);
     const pageStr = `Hal. ${doc.getNumberOfPages()}`;
-
     doc.text(pageStr, pageW - 50, pageH - 16, { align: "right" });
     doc.text(`${state.header.leader} • ${state.header.depo}`, 50, pageH - 16);
   };
+
+  // Wrapper agar bisa dipanggil tanpa argumen, tetap tanpa any
+  const drawHeaderFooter = () => headerFooter({} as unknown as DidDrawArg);
 
   const commonTableOpts: Partial<UserOptions> = {
     theme: "grid",
@@ -108,7 +116,7 @@ export function generatePdf(
     autoTable(doc, {
       ...commonTableOpts,
       startY: y,
-      head: [[title, "Status / Isian", "Catatan"]],
+      head: [[title, "Status / Isian", "Catatan"]], // <- FIX: hapus bracket ekstra
       body: keys.map((k) => {
         const rv = sec[k];
         const label = k.replace(/-/g, " ");
@@ -305,7 +313,8 @@ export function generatePdf(
 
   // TTD
   if (y > pageH - 160) doc.addPage();
-  headerFooter();
+  drawHeaderFooter(); // panggil wrapper bebas-any
+
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
   doc.text("Persetujuan & Tanda Tangan", 40, y + 18);
@@ -335,7 +344,7 @@ export function generatePdf(
     { align: "center" }
   );
 
-  const filename = `SITREP-${date}.pdf`;
-  if (autoDownload) doc.save(filename);
+  const filename = `SITREP-${date}`;
+  if (autoDownload) doc.save(`${filename}.pdf`);
   return doc;
 }

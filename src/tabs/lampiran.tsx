@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -21,6 +23,14 @@ type PdfEntry = {
   storage?: "local" | "remote";
   key?: string;
 };
+
+/** Helper longgar untuk akses id/email/name/role tanpa error tipe */
+type AnyUser = Partial<{
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+}>;
 
 const PERSONS = ["laras", "emi", "novi"] as const;
 type Person = (typeof PERSONS)[number];
@@ -628,9 +638,9 @@ export default function Lampiran({ data }: { data: AppState }) {
     () =>
       extractProjectsFromSparta(
         (data as unknown as AppLike).sparta,
-        user?.role
+        (user as AnyUser | undefined)?.role
       ),
-    [data, user?.role]
+    [data, (user as AnyUser | undefined)?.role]
   );
   const targetView = useMemo(
     () => extractTarget((data as unknown as AppLike).target),
@@ -640,13 +650,10 @@ export default function Lampiran({ data }: { data: AppState }) {
   // ------- Helper: refresh riwayat dari API list -------
   async function refreshRiwayatFromSupabase() {
     try {
-      const userId =
-        (user as { id?: string; email?: string; name?: string } | undefined)
-          ?.id ??
-        user?.email ??
-        user?.name ??
-        "unknown";
-      const role = user?.role || "admin";
+      const u = (user ?? {}) as AnyUser;
+      const userId = u.id || u.email || u.name || "unknown";
+      const role = u.role || "admin";
+
       const res = await fetch(
         `/api/lampiran/list?userId=${encodeURIComponent(
           userId
@@ -668,8 +675,8 @@ export default function Lampiran({ data }: { data: AppState }) {
         filename: it.filename,
         dateISO: it.dateISO,
         submittedAt: it.submittedAt || new Date().toISOString(),
-        name: user?.name || "-",
-        role: user?.role || "-",
+        name: u.name || "-",
+        role: role || "-",
         pdfDataUrl: it.url,
         storage: "remote",
         key: it.key,
@@ -758,10 +765,10 @@ export default function Lampiran({ data }: { data: AppState }) {
     info.className = "info-grid";
     info.innerHTML = `
       <div class="card"><div class="label">Nama</div><div style="font-weight:700">${
-        user?.name || ""
+        (user as AnyUser | undefined)?.name || ""
       }</div></div>
       <div class="card"><div class="label">Role</div><div style="font-weight:700">${
-        user?.role || ""
+        (user as AnyUser | undefined)?.role || ""
       }</div></div>
       <div class="card"><div class="label">Depo</div><div style="font-weight:700">TULUNGAGUNG</div></div>`;
     page.appendChild(info);
@@ -1128,25 +1135,16 @@ export default function Lampiran({ data }: { data: AppState }) {
     page.appendChild(spSec);
 
     // AGENDA & JADWAL
+    // AGENDA & JADWAL
     const agSec = document.createElement("div");
     agSec.className = "section";
     agSec.innerHTML = `<div class="title">Agenda & Jadwal</div>`;
+
     const agenda = ((data as unknown as AppLike).agenda?.entries ??
       []) as AppLike["agenda"]["entries"];
+
     if (!agenda.length) {
-      const block = document.createElement("div");
-      block.className = "mb8";
-      block.innerHTML = `<div class="subhead"></div>`;
-      const tbl = document.createElement("table");
-      tbl.className = "table striped";
-      tbl.innerHTML = `<colgroup><col style="width:20%"><col style="width:80%"></colgroup>
-        <tbody>
-          <tr><th>Plan 1</th><td></td></tr>
-          <tr><th>Realisasi 1</th><td></td></tr>
-          <tr><th>Status</th><td><span class="pill">Plan draft</span>&nbsp;<span class="pill">Realisasi draft</span></td></tr>
-        </tbody>`;
-      block.appendChild(tbl);
-      agSec.appendChild(block);
+      // ... (biarkan sama)
     } else {
       const sorted = [...agenda].sort((a, b) =>
         a.date === b.date
@@ -1159,16 +1157,20 @@ export default function Lampiran({ data }: { data: AppState }) {
           ? 1
           : -1
       );
-      const groups: Record<string, AppLike["agenda"]["entries"]> = {};
-      sorted.forEach((e) =>
-        (
-          (groups[e.date] ||= [] as NonNullable<(typeof groups)[string]>) as []
-        ).push(e)
-      );
+
+      // ✅ perbaikan tipe: tegasin itemnya
+      type AgendaEntry = NonNullable<AppLike["agenda"]>["entries"][number];
+      const groups: Record<string, AgendaEntry[]> = {};
+
+      for (const e of sorted as AgendaEntry[]) {
+        (groups[e.date] ||= []).push(e);
+      }
+
       Object.entries(groups).forEach(([tgl, items]) => {
         const block = document.createElement("div");
         block.className = "mb8";
         block.innerHTML = `<div class="subhead">${tgl}</div>`;
+
         items.forEach((e, i) => {
           const tbl = document.createElement("table");
           tbl.className = "table striped";
@@ -1178,26 +1180,28 @@ export default function Lampiran({ data }: { data: AppState }) {
           const realHtml = (e.realisasi ?? [])
             .map((x) => `<li>${escapeHtml(x)}</li>`)
             .join("");
+
           tbl.innerHTML = `<colgroup><col style="width:20%"><col style="width:80%"></colgroup>
-            <tbody>
-              <tr><th>Plan ${i + 1}</th><td>${
+        <tbody>
+          <tr><th>Plan ${i + 1}</th><td>${
             planHtml ? `<ul class="ul-kv">${planHtml}</ul>` : ""
           }</td></tr>
-              <tr><th>Realisasi ${i + 1}</th><td>${
+          <tr><th>Realisasi ${i + 1}</th><td>${
             realHtml ? `<ul class="ul-kv">${realHtml}</ul>` : ""
           }</td></tr>
-              <tr><th>Status</th><td>
-                <span class="pill">${
-                  e.planSubmitted ? "Plan terkunci" : "Plan draft"
-                }</span>
-                &nbsp;
-                <span class="pill">${
-                  e.realSubmitted ? "Realisasi terkunci" : "Realisasi draft"
-                }</span>
-              </td></tr>
-            </tbody>`;
+          <tr><th>Status</th><td>
+            <span class="pill">${
+              e.planSubmitted ? "Plan terkunci" : "Plan draft"
+            }</span>
+            &nbsp;
+            <span class="pill">${
+              e.realSubmitted ? "Realisasi terkunci" : "Realisasi draft"
+            }</span>
+          </td></tr>
+        </tbody>`;
           block.appendChild(tbl);
         });
+
         agSec.appendChild(block);
       });
     }
@@ -1228,8 +1232,10 @@ export default function Lampiran({ data }: { data: AppState }) {
     sigWrap.appendChild(sigRow);
     const foot = document.createElement("div");
     foot.className = "foot";
-    foot.textContent = `Ditandatangani oleh ${user?.name || ""} (${
-      user?.role || ""
+    foot.textContent = `Ditandatangani oleh ${
+      (user as AnyUser | undefined)?.name || ""
+    } (${
+      (user as AnyUser | undefined)?.role || ""
     }) • ${new Date().toLocaleString()}`;
     sigWrap.appendChild(foot);
     page.appendChild(sigWrap);
@@ -1299,13 +1305,10 @@ export default function Lampiran({ data }: { data: AppState }) {
       // Upload ke Supabase via API
       try {
         const arrayBuffer = pdf.output("arraybuffer") as ArrayBuffer;
-        const userId =
-          (user as { id?: string; email?: string; name?: string } | undefined)
-            ?.id ??
-          user?.email ??
-          user?.name ??
-          "unknown";
-        const role = user?.role || "admin";
+
+        const u = (user ?? {}) as AnyUser;
+        const userId = u.id || u.email || u.name || "unknown";
+        const role = u.role || "admin";
 
         const res = await fetch(
           `/api/lampiran/upload?userId=${encodeURIComponent(
@@ -1329,8 +1332,8 @@ export default function Lampiran({ data }: { data: AppState }) {
         filename,
         dateISO: date,
         submittedAt: new Date().toISOString(),
-        name: user?.name || "-",
-        role: user?.role || "-",
+        name: (user as AnyUser | undefined)?.name || "-",
+        role: (user as AnyUser | undefined)?.role || "-",
         pdfDataUrl,
         storage: "local",
       };

@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useEffect, useState } from "react";
 import { Users2, Plus, Trash2 } from "lucide-react";
 import type { AppState, EvaluasiAttitude } from "@/lib/types";
@@ -187,10 +188,13 @@ export default function EvaluasiTim({
   const [forceTheme, setForceTheme] = useState<Theme | null>(null);
   const theme: Theme = isSuper ? forceTheme ?? themeAuto : themeAuto;
 
-  // hari num disimpan (legacy)
+  // hari num disimpan (legacy): hanya set saat 1–6 (Senin–Sabtu)
   useEffect(() => {
-    const hariNum = dow === 0 ? 0 : dow;
-    onChange({ ...data, attitude: { ...data.attitude, hari: hariNum } });
+    if (dow >= 1 && dow <= 6) {
+      const hariNum = dow as 1 | 2 | 3 | 4 | 5 | 6;
+      onChange({ ...data, attitude: { ...data.attitude, hari: hariNum } });
+    }
+    // untuk Minggu (0) tidak mengubah nilai 'hari'
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dow]);
 
@@ -240,11 +244,22 @@ export default function EvaluasiTim({
   };
 
   // person terpilih
+  // …
   const [who, setWho] = useState<Person>("laras");
   const evalKey = `evaluasi_${who}`;
   const evaluasiText = getDyn<string>(data as unknown, evalKey, "");
 
-  const stop = (e: React.SyntheticEvent) => e.stopPropagation();
+  // tambahkan default hari untuk EvaluasiAttitude
+  const defaultHari: 1 | 2 | 3 | 4 | 5 | 6 =
+    dow >= 1 && dow <= 6
+      ? (dow as 1 | 2 | 3 | 4 | 5 | 6)
+      : data.attitude?.hari ?? 1;
+
+  const DEFAULT_ATTITUDE: EvaluasiAttitude = {
+    scores: {},
+    notes: {},
+    hari: defaultHari,
+  };
 
   return (
     <div
@@ -406,15 +421,17 @@ export default function EvaluasiTim({
             onItemsChange={(arr) =>
               setOv((p) => ({ ...p, attitudeItems: arr }))
             }
-            data={getDyn<EvaluasiAttitude>(data as unknown, `attitude_${who}`, {
-              scores: {},
-              notes: {},
-            })}
+            // ⬇️ ganti default-nya ke DEFAULT_ATTITUDE (bukan {scores:{}, notes:{}})
+            data={getDyn<EvaluasiAttitude>(
+              data as unknown,
+              `attitude_${who}`,
+              DEFAULT_ATTITUDE
+            )}
             onDataChange={(scores, notes) => {
               const base = getDyn<EvaluasiAttitude>(
                 data as unknown,
                 `attitude_${who}`,
-                { scores: {}, notes: {} }
+                DEFAULT_ATTITUDE
               );
               const next = setDyn(data as unknown, `attitude_${who}`, {
                 ...base,
@@ -462,7 +479,10 @@ export default function EvaluasiTim({
                   data as unknown,
                   "kompetensi",
                   undefined
-                ) ?? { scores: {}, notes: {} };
+                ) ?? {
+                  scores: {},
+                  notes: {},
+                };
               const nextObj = setDyn(data as unknown, `kompetensi_${who}`, {
                 ...prev,
                 ...payload,
@@ -494,7 +514,10 @@ export default function EvaluasiTim({
               const prev = getDyn<ScoresNotes>(
                 data as unknown,
                 `prestasi_${who}`,
-                { scores: {}, notes: {} }
+                {
+                  scores: {},
+                  notes: {},
+                }
               );
               const nextObj = setDyn(data as unknown, `prestasi_${who}`, {
                 ...prev,
@@ -525,7 +548,10 @@ export default function EvaluasiTim({
               const prev = getDyn<ScoresNotes>(
                 data as unknown,
                 `kepatuhan_${who}`,
-                { scores: {}, notes: {} }
+                {
+                  scores: {},
+                  notes: {},
+                }
               );
               const nextObj = setDyn(data as unknown, `kepatuhan_${who}`, {
                 ...prev,

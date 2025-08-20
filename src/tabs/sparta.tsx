@@ -59,25 +59,37 @@ function defaultCatalog(): ProjectDef[] {
   ];
 }
 
+// helper normalisasi → hindari properti duplikat & pastikan field wajib terisi
+function normalizeProject(p: Partial<ProjectDef>): ProjectDef {
+  return {
+    id: p.id ?? crypto.randomUUID(),
+    title: p.title ?? "Proyek",
+    steps: Array.isArray(p.steps) ? p.steps : [],
+    deadline: p.deadline ?? "",
+    targetRole: (p.targetRole ?? "admin") as TargetRole,
+  };
+}
+
 function readCatalog(): ProjectDef[] {
   if (typeof window === "undefined") return defaultCatalog();
   try {
+    // v3
     const raw = localStorage.getItem(CATALOG_KEY);
     if (raw) {
-      const arr = JSON.parse(raw) as ProjectDef[];
-      // normalisasi bila ada item lama tanpa targetRole
-      return arr.map((p) => ({ targetRole: "admin", ...p }));
+      const arr = JSON.parse(raw) as Array<Partial<ProjectDef>>;
+      return arr.map(normalizeProject);
     }
-    // fallback dari versi lama jika ada
+    // v2
     const rawV2 = localStorage.getItem("sitrep-sparta-catalog-v2");
     if (rawV2) {
-      const arr = JSON.parse(rawV2) as ProjectDef[];
-      return arr.map((p) => ({ targetRole: p.targetRole ?? "admin", ...p }));
+      const arr = JSON.parse(rawV2) as Array<Partial<ProjectDef>>;
+      return arr.map(normalizeProject);
     }
+    // v1 (tanpa targetRole)
     const rawV1 = localStorage.getItem("sitrep-sparta-catalog-v1");
     if (rawV1) {
       const old = JSON.parse(rawV1) as Array<Omit<ProjectDef, "targetRole">>;
-      return old.map((p) => ({ ...p, targetRole: "admin" as TargetRole }));
+      return old.map((p) => normalizeProject({ ...p, targetRole: "admin" }));
     }
     return defaultCatalog();
   } catch {

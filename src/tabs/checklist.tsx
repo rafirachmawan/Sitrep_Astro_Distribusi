@@ -669,7 +669,7 @@ type RVOptions = Extract<RowValue, { kind: "options" }>;
 type RVNumber = Extract<RowValue, { kind: "number" }>;
 type RVScore = Extract<RowValue, { kind: "score" }>;
 type RVCompound = Extract<RowValue, { kind: "compound" }>;
-type CompoundExtras = NonNullable<RVCompound["extras"]> & { number?: string };
+type CompoundExtras = NonNullable<RVCompound["extras"]>;
 
 function ChecklistRow({
   row,
@@ -705,7 +705,6 @@ function ChecklistRow({
 
   useEffect(() => {
     adjustHeight();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value?.note]);
 
   const hasTextExtra =
