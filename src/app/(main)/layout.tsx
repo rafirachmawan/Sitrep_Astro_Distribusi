@@ -1,20 +1,10 @@
-import type { Metadata } from "next";
-import AuthProvider from "@/components/AuthProvider";
+// Layout untuk area yang butuh login
+import AuthGuard from "@/components/AuthGuard";
 
-export const metadata: Metadata = {
-  title: "SITREP Daily",
-};
-
-export default function RootLayout({
+export default function MainLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  return (
-    <html lang="id">
-      <body className="bg-gray-100 text-gray-900">
-        <AuthProvider>{children}</AuthProvider>
-      </body>
-    </html>
-  );
+  return <AuthGuard>{children}</AuthGuard>;
 }
