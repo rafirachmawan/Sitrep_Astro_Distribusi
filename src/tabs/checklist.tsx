@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useMemo, useState, useEffect, useRef } from "react";
-import { ClipboardList, CheckCircle2, ArrowRight } from "lucide-react";
+import { ClipboardList, CheckCircle2 } from "lucide-react";
 import type { ChecklistState, RowValue, SectionKey } from "@/lib/types";
 import { OptionsGroup, NumberWithSuffix, ScoreSelect } from "./common";
 import { useAuth } from "@/components/AuthProvider";
@@ -69,7 +69,8 @@ type RowDef =
       key: string;
       label: string;
       options: string[];
-      extra?: { type: "text" | "currency"; placeholder?: string }[];
+      // tambahkan jenis "number" utk input angka
+      extra?: { type: "text" | "currency" | "number"; placeholder?: string }[];
     };
 
 const SECTION_TABS: { key: SectionKey; label: string }[] = [
@@ -108,11 +109,13 @@ export default function ChecklistArea({
         kas: {
           title: "Kas Kecil",
           rows: [
+            // saldo-kas-kecil → compound (Cocok/Tidak + Rp)
             {
-              kind: "options",
+              kind: "compound",
               key: "saldo-kas-kecil",
               label: "Saldo Kas Kecil",
               options: ["Cocok", "Tidak Cocok"],
+              extra: [{ type: "currency", placeholder: "123" }],
             },
             {
               kind: "number",
@@ -144,15 +147,13 @@ export default function ChecklistArea({
               label: "Dokumentasi Bukti Biaya",
               options: ["Valid", "Perlu Validasi"],
             },
+            // MODIF: Dropping Kas Kecil → opsi "Ada/Tidak" + input angka "Jumlah Form"
             {
               kind: "compound",
               key: "dropping-kas-kecil",
               label: "Dropping Kas Kecil",
-              options: ["Ada Form", "Tidak"],
-              extra: [
-                { type: "text", placeholder: "Penjelasan..." },
-                { type: "currency", placeholder: "Nilai" },
-              ],
+              options: ["Ada", "Tidak"],
+              extra: [{ type: "number", placeholder: "Jumlah Form" }],
             },
             {
               kind: "options",
@@ -160,9 +161,10 @@ export default function ChecklistArea({
               label: "Serah Terima dengan FAT",
               options: ["Sesuai", "Tidak Sesuai"],
             },
-            { kind: "score", key: "score-performa", label: "Score Performa" },
+            // HAPUS: { kind: "score", key: "score-performa", label: "Score Performa" },
           ],
         },
+
         buku: {
           title: "Buku Penunjang",
           rows: [
@@ -186,6 +188,7 @@ export default function ChecklistArea({
             },
           ],
         },
+
         ar: {
           title: "AR",
           rows: [
@@ -215,6 +218,7 @@ export default function ChecklistArea({
             },
           ],
         },
+
         klaim: {
           title: "Klaim",
           rows: [
@@ -244,6 +248,7 @@ export default function ChecklistArea({
             },
           ],
         },
+
         pengiriman: {
           title: "Pengiriman",
           rows: [
@@ -299,6 +304,7 @@ export default function ChecklistArea({
             },
           ],
         },
+
         setoran: {
           title: "Setoran Bank",
           rows: [
@@ -322,6 +328,7 @@ export default function ChecklistArea({
             },
           ],
         },
+
         pembelian: {
           title: "Proses Pembelian",
           rows: [
@@ -351,6 +358,7 @@ export default function ChecklistArea({
             },
           ],
         },
+
         faktur: {
           title: "Penjualan",
           rows: [
@@ -417,7 +425,9 @@ export default function ChecklistArea({
             },
           ],
         },
+
         retur: { title: "Retur (legacy)", rows: [] },
+
         marketing: {
           title: "Marketing",
           rows: [
@@ -453,7 +463,10 @@ export default function ChecklistArea({
           if (idx >= 0) {
             const r = clone[sec].rows[idx] as any;
             if (patch.label) r.label = patch.label;
-            if (r.kind === "options" && patch.options)
+            if (
+              (r.kind === "options" || r.kind === "compound") &&
+              patch.options
+            )
               r.options = patch.options;
             if (r.kind === "number" && "suffix" in patch)
               r.suffix = patch.suffix;
@@ -509,12 +522,11 @@ export default function ChecklistArea({
     setRev((x) => x + 1);
   };
 
-  // ===== NEXT BUTTON HANDLER =====
-  const tabIndex = SECTION_TABS.findIndex((t) => t.key === secActive);
-  const isLastTab = tabIndex === SECTION_TABS.length - 1;
+  // Next button
   const goNext = () => {
-    if (isLastTab) return;
-    setSecActive(SECTION_TABS[tabIndex + 1].key);
+    const idx = SECTION_TABS.findIndex((t) => t.key === secActive);
+    const next = SECTION_TABS[(idx + 1) % SECTION_TABS.length].key;
+    setSecActive(next);
   };
 
   return (
@@ -599,7 +611,7 @@ export default function ChecklistArea({
             <input
               value={section.title}
               onChange={(e) => updateSectionTitle(secActive, e.target.value)}
-              className="min-w=[220px] w-full sm:w-96 rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
+              className="min-w-[220px] w-full sm:w-96 rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
               placeholder="Judul section…"
             />
           ) : (
@@ -607,7 +619,7 @@ export default function ChecklistArea({
           )}
         </div>
 
-        {/* Header (4/3/5) & samakan padding kiri kolom Status */}
+        {/* Header 4/3/5 */}
         <div className="hidden sm:grid grid-cols-12 text-[13px] font-medium text-slate-600 border-y bg-slate-50">
           <div className="col-span-4 py-2.5 px-2">Area Tanggung Jawab</div>
           <div className="col-span-3 py-2.5 px-2 pl-3">Status / Isian</div>
@@ -644,30 +656,17 @@ export default function ChecklistArea({
             })}
           </div>
         )}
-      </div>
 
-      {/* Bottom bar: Next button (kanan bawah) */}
-      <div className="px-3 sm:px-6 pb-5 pt-3 border-t bg-white flex justify-end">
-        <button
-          type="button"
-          onClick={goNext}
-          disabled={isLastTab}
-          className={
-            "inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium " +
-            (isLastTab
-              ? "bg-slate-200 text-slate-500 cursor-not-allowed"
-              : "bg-blue-600 text-white hover:bg-blue-700 shadow")
-          }
-          title={
-            isLastTab
-              ? "Sudah di bagian terakhir"
-              : "Lanjut ke bagian berikutnya"
-          }
-          aria-label={isLastTab ? "Selesai" : "Next"}
-        >
-          {isLastTab ? "Selesai" : "Next"}
-          {!isLastTab && <ArrowRight className="w-4 h-4" />}
-        </button>
+        {/* NEXT button */}
+        <div className="mt-4 flex justify-end">
+          <button
+            onClick={goNext}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+            title="Ke section berikutnya"
+          >
+            Next →
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -714,6 +713,26 @@ function ChecklistRow({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taRef.current, value?.note]);
 
+  const hasTextExtra =
+    row.kind === "compound" && row.extra?.some((e) => e.type === "text");
+  const hasCurrencyExtra =
+    row.kind === "compound" && row.extra?.some((e) => e.type === "currency");
+  const hasNumberExtra =
+    row.kind === "compound" && row.extra?.some((e) => e.type === "number");
+
+  const textPlaceholder =
+    row.kind === "compound"
+      ? row.extra?.find((e) => e.type === "text")?.placeholder
+      : undefined;
+  const currencyPlaceholder =
+    row.kind === "compound"
+      ? row.extra?.find((e) => e.type === "currency")?.placeholder
+      : undefined;
+  const numberPlaceholder =
+    row.kind === "compound"
+      ? row.extra?.find((e) => e.type === "number")?.placeholder
+      : undefined;
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-12 items-start bg-white">
       {/* Area / label (4/12) */}
@@ -730,18 +749,19 @@ function ChecklistRow({
         )}
       </div>
 
-      {/* Status / Isian (3/12) — lurus dg header (pl-3) */}
+      {/* Status / Isian (3/12) */}
       <div className="sm:col-span-3 py-3 px-2 pl-3">
         <div className="sm:hidden text-xs text-slate-500 mb-1">
           Status / Isian
         </div>
 
-        {editable && row.kind === "options" && (
+        {/* SUPERADMIN edit opsi/suffix */}
+        {editable && (row.kind === "options" || row.kind === "compound") && (
           <input
             defaultValue={(row.options || []).join(", ")}
             onBlur={(e) => onEditOptions(e.target.value)}
             className="mb-2 w-full rounded-lg border-slate-300 text-xs focus:ring-2 focus:ring-amber-500"
-            placeholder="Opsi dipisah koma"
+            placeholder="Opsi dipisah koma (mis: Cocok, Tidak Cocok)"
             title="Edit opsi (pisah dengan koma). Klik di luar untuk menyimpan."
           />
         )}
@@ -755,6 +775,7 @@ function ChecklistRow({
           />
         )}
 
+        {/* Nilai utama */}
         {row.kind === "options" && (
           <OptionsGroup
             options={row.options}
@@ -790,52 +811,88 @@ function ChecklistRow({
                   extras: {
                     text: (value as any)?.extras?.text,
                     currency: (value as any)?.extras?.currency,
+                    number: (value as any)?.extras?.number,
                   },
                 })
               }
             />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              <input
-                placeholder={row.extra?.[0]?.placeholder}
-                value={(value as any)?.extras?.text ?? ""}
-                onChange={(e) =>
-                  onChange({
-                    kind: "compound",
-                    value: (value as any)?.value ?? null,
-                    note,
-                    extras: {
-                      text: e.target.value,
-                      currency: (value as any)?.extras?.currency,
-                    },
-                  })
-                }
-                className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
-              />
-              {row.extra?.[1]?.type === "currency" && (
-                <input
-                  placeholder={row.extra?.[1]?.placeholder}
-                  value={(value as any)?.extras?.currency ?? ""}
-                  onChange={(e) =>
-                    onChange({
-                      kind: "compound",
-                      value: (value as any)?.value ?? null,
-                      note,
-                      extras: {
-                        text: (value as any)?.extras?.text,
-                        currency: e.target.value,
-                      },
-                    })
-                  }
-                  inputMode="numeric"
-                  className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
-                />
-              )}
-            </div>
+
+            {(hasTextExtra || hasCurrencyExtra || hasNumberExtra) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {hasTextExtra && (
+                  <input
+                    placeholder={textPlaceholder}
+                    value={(value as any)?.extras?.text ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        kind: "compound",
+                        value: (value as any)?.value ?? null,
+                        note,
+                        extras: {
+                          text: e.target.value,
+                          currency: (value as any)?.extras?.currency,
+                          number: (value as any)?.extras?.number,
+                        },
+                      })
+                    }
+                    className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                  />
+                )}
+
+                {hasCurrencyExtra && (
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
+                      Rp
+                    </span>
+                    <input
+                      placeholder={currencyPlaceholder || "Rp ..."}
+                      value={(value as any)?.extras?.currency ?? ""}
+                      onChange={(e) =>
+                        onChange({
+                          kind: "compound",
+                          value: (value as any)?.value ?? null,
+                          note,
+                          extras: {
+                            text: (value as any)?.extras?.text,
+                            currency: e.target.value,
+                            number: (value as any)?.extras?.number,
+                          },
+                        })
+                      }
+                      inputMode="numeric"
+                      className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 pl-10"
+                    />
+                  </div>
+                )}
+
+                {hasNumberExtra && (
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    placeholder={numberPlaceholder || "Jumlah"}
+                    value={(value as any)?.extras?.number ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        kind: "compound",
+                        value: (value as any)?.value ?? null,
+                        note,
+                        extras: {
+                          text: (value as any)?.extras?.text,
+                          currency: (value as any)?.extras?.currency,
+                          number: e.target.value,
+                        },
+                      })
+                    }
+                    className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                  />
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Keterangan (5/12) — lebih lebar, auto-grow */}
+      {/* Keterangan (5/12) — textarea auto-grow */}
       <div className="sm:col-span-5 py-3 px-2">
         <div className="sm:hidden text-xs text-slate-500 mb-1">Keterangan</div>
         <textarea
