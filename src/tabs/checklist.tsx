@@ -7,9 +7,7 @@ import { OptionsGroup, NumberWithSuffix, ScoreSelect } from "./common";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 
-/* ============================================================
-   OVERRIDE STORAGE (per-role)
-   ============================================================ */
+/* ================= OVERRIDES ================= */
 type RowOverride = {
   label?: string;
   options?: string[];
@@ -57,9 +55,7 @@ function mergeSectionTitle(
   return { ...src, sections };
 }
 
-/* ============================================================
-   DEFINISI ROW
-   ============================================================ */
+/* ================= DEFINISI ROW ================= */
 type RowDef =
   | { kind: "options"; key: string; label: string; options: string[] }
   | { kind: "number"; key: string; label: string; suffix?: string }
@@ -69,7 +65,6 @@ type RowDef =
       key: string;
       label: string;
       options: string[];
-      // tambahkan jenis "number" utk input angka
       extra?: { type: "text" | "currency" | "number"; placeholder?: string }[];
     };
 
@@ -85,9 +80,7 @@ const SECTION_TABS: { key: SectionKey; label: string }[] = [
   { key: "marketing", label: "Marketing" },
 ];
 
-/* ============================================================
-   COMPONENT
-   ============================================================ */
+/* ================= COMPONENT ================= */
 export default function ChecklistArea({
   data,
   onChange,
@@ -109,7 +102,6 @@ export default function ChecklistArea({
         kas: {
           title: "Kas Kecil",
           rows: [
-            // saldo-kas-kecil → compound (Cocok/Tidak + Rp)
             {
               kind: "compound",
               key: "saldo-kas-kecil",
@@ -147,7 +139,6 @@ export default function ChecklistArea({
               label: "Dokumentasi Bukti Biaya",
               options: ["Valid", "Perlu Validasi"],
             },
-            // MODIF: Dropping Kas Kecil → opsi "Ada/Tidak" + input angka "Jumlah Form"
             {
               kind: "compound",
               key: "dropping-kas-kecil",
@@ -161,10 +152,8 @@ export default function ChecklistArea({
               label: "Serah Terima dengan FAT",
               options: ["Sesuai", "Tidak Sesuai"],
             },
-            // HAPUS: { kind: "score", key: "score-performa", label: "Score Performa" },
           ],
         },
-
         buku: {
           title: "Buku Penunjang",
           rows: [
@@ -188,7 +177,6 @@ export default function ChecklistArea({
             },
           ],
         },
-
         ar: {
           title: "AR",
           rows: [
@@ -218,7 +206,6 @@ export default function ChecklistArea({
             },
           ],
         },
-
         klaim: {
           title: "Klaim",
           rows: [
@@ -248,7 +235,6 @@ export default function ChecklistArea({
             },
           ],
         },
-
         pengiriman: {
           title: "Pengiriman",
           rows: [
@@ -304,7 +290,6 @@ export default function ChecklistArea({
             },
           ],
         },
-
         setoran: {
           title: "Setoran Bank",
           rows: [
@@ -328,7 +313,6 @@ export default function ChecklistArea({
             },
           ],
         },
-
         pembelian: {
           title: "Proses Pembelian",
           rows: [
@@ -358,7 +342,6 @@ export default function ChecklistArea({
             },
           ],
         },
-
         faktur: {
           title: "Penjualan",
           rows: [
@@ -425,9 +408,7 @@ export default function ChecklistArea({
             },
           ],
         },
-
         retur: { title: "Retur (legacy)", rows: [] },
-
         marketing: {
           title: "Marketing",
           rows: [
@@ -446,33 +427,44 @@ export default function ChecklistArea({
   const overrides = useMemo(() => readRoleOverrides(viewRole), [viewRole, rev]);
 
   const FINAL_MAP = useMemo(() => {
-    const clone: Record<SectionKey, { title: string; rows: RowDef[] }> =
-      JSON.parse(JSON.stringify(BASE_MAP));
+    // deep clone bertipe
+    const clone = (Object.keys(BASE_MAP) as SectionKey[]).reduce((acc, k) => {
+      const sec = BASE_MAP[k];
+      acc[k] = {
+        title: sec.title,
+        rows: sec.rows.map((r) => ({ ...r })) as RowDef[],
+      };
+      return acc;
+    }, {} as Record<SectionKey, { title: string; rows: RowDef[] }>);
+
+    // apply overrides
     if (overrides.sections) {
-      for (const sec of Object.keys(overrides.sections) as SectionKey[]) {
-        const t = overrides.sections[sec]?.title;
+      (Object.keys(overrides.sections) as SectionKey[]).forEach((sec) => {
+        const t = overrides.sections?.[sec]?.title;
         if (t) clone[sec].title = t;
-      }
+      });
     }
     if (overrides.rows) {
-      for (const sec of Object.keys(overrides.rows) as SectionKey[]) {
-        const rmap = overrides.rows[sec] || {};
-        for (const rowKey of Object.keys(rmap)) {
+      (Object.keys(overrides.rows) as SectionKey[]).forEach((sec) => {
+        const rmap = overrides.rows?.[sec] || {};
+        Object.keys(rmap).forEach((rowKey) => {
           const patch = rmap[rowKey]!;
           const idx = clone[sec].rows.findIndex((r) => r.key === rowKey);
           if (idx >= 0) {
-            const r = clone[sec].rows[idx] as any;
+            const r = clone[sec].rows[idx];
             if (patch.label) r.label = patch.label;
+            if (r.kind === "number" && patch.suffix !== undefined) {
+              r.suffix = patch.suffix;
+            }
             if (
               (r.kind === "options" || r.kind === "compound") &&
               patch.options
-            )
+            ) {
               r.options = patch.options;
-            if (r.kind === "number" && "suffix" in patch)
-              r.suffix = patch.suffix;
+            }
           }
-        }
-      }
+        });
+      });
     }
     return clone;
   }, [BASE_MAP, overrides]);
@@ -486,15 +478,13 @@ export default function ChecklistArea({
   const updateSectionTitle = (sec: SectionKey, title: string) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
-    const next = mergeSectionTitle(cur, sec, title);
-    writeRoleOverrides(viewRole, next);
+    writeRoleOverrides(viewRole, mergeSectionTitle(cur, sec, title));
     setRev((x) => x + 1);
   };
   const updateRowLabel = (sec: SectionKey, rowKey: string, label: string) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
-    const next = mergeRowOverride(cur, sec, rowKey, { label });
-    writeRoleOverrides(viewRole, next);
+    writeRoleOverrides(viewRole, mergeRowOverride(cur, sec, rowKey, { label }));
     setRev((x) => x + 1);
   };
   const updateRowOptions = (sec: SectionKey, rowKey: string, csv: string) => {
@@ -504,15 +494,19 @@ export default function ChecklistArea({
       .map((s) => s.trim())
       .filter(Boolean);
     const cur = readRoleOverrides(viewRole);
-    const next = mergeRowOverride(cur, sec, rowKey, { options: opts });
-    writeRoleOverrides(viewRole, next);
+    writeRoleOverrides(
+      viewRole,
+      mergeRowOverride(cur, sec, rowKey, { options: opts })
+    );
     setRev((x) => x + 1);
   };
   const updateRowSuffix = (sec: SectionKey, rowKey: string, suffix: string) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
-    const next = mergeRowOverride(cur, sec, rowKey, { suffix });
-    writeRoleOverrides(viewRole, next);
+    writeRoleOverrides(
+      viewRole,
+      mergeRowOverride(cur, sec, rowKey, { suffix })
+    );
     setRev((x) => x + 1);
   };
   const resetOverrides = () => {
@@ -522,7 +516,6 @@ export default function ChecklistArea({
     setRev((x) => x + 1);
   };
 
-  // Next button
   const goNext = () => {
     const idx = SECTION_TABS.findIndex((t) => t.key === secActive);
     const next = SECTION_TABS[(idx + 1) % SECTION_TABS.length].key;
@@ -571,7 +564,7 @@ export default function ChecklistArea({
         )}
       </div>
 
-      {/* Info instruksi */}
+      {/* Info */}
       <div className="px-3 sm:px-6 py-4">
         <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl p-3">
           <div className="mt-0.5 h-5 w-5 flex items-center justify-center rounded-full bg-blue-100">
@@ -604,7 +597,7 @@ export default function ChecklistArea({
         </div>
       </div>
 
-      {/* Section title + grid */}
+      {/* Section */}
       <div className="px-3 sm:px-6 pb-4">
         <div className="mb-3 text-sm font-semibold text-slate-700 flex items-center gap-2">
           {editMode ? (
@@ -657,7 +650,6 @@ export default function ChecklistArea({
           </div>
         )}
 
-        {/* NEXT button */}
         <div className="mt-4 flex justify-end">
           <button
             onClick={goNext}
@@ -672,9 +664,13 @@ export default function ChecklistArea({
   );
 }
 
-/* ============================================================
-   ROW COMPONENT
-   ============================================================ */
+/* ================= ROW ================= */
+type RVOptions = Extract<RowValue, { kind: "options" }>;
+type RVNumber = Extract<RowValue, { kind: "number" }>;
+type RVScore = Extract<RowValue, { kind: "score" }>;
+type RVCompound = Extract<RowValue, { kind: "compound" }>;
+type CompoundExtras = NonNullable<RVCompound["extras"]> & { number?: string };
+
 function ChecklistRow({
   row,
   value,
@@ -694,7 +690,6 @@ function ChecklistRow({
 }) {
   const [note, setNote] = useState(value?.note || "");
 
-  // Auto-grow textarea
   const taRef = useRef<HTMLTextAreaElement | null>(null);
   const adjustHeight = () => {
     const el = taRef.current;
@@ -704,14 +699,14 @@ function ChecklistRow({
   };
 
   useEffect(() => {
-    if (value && value.note !== note) onChange({ ...(value as any), note });
+    if (value && value.note !== note) onChange({ ...value, note });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note]);
 
   useEffect(() => {
     adjustHeight();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taRef.current, value?.note]);
+  }, [value?.note]);
 
   const hasTextExtra =
     row.kind === "compound" && row.extra?.some((e) => e.type === "text");
@@ -733,29 +728,41 @@ function ChecklistRow({
       ? row.extra?.find((e) => e.type === "number")?.placeholder
       : undefined;
 
+  // current values per-kind (tanpa any)
+  const optVal: RVOptions["value"] | null =
+    value?.kind === "options" ? value.value : null;
+  const numStr: string =
+    value?.kind === "number" ? String((value as RVNumber).value ?? "") : "";
+  const scoreVal: number =
+    value?.kind === "score" ? (value as RVScore).value : 3;
+  const compVal: RVCompound | undefined =
+    value?.kind === "compound" ? (value as RVCompound) : undefined;
+  const compExtras: CompoundExtras | undefined = compVal?.extras as
+    | CompoundExtras
+    | undefined;
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-12 items-start bg-white">
-      {/* Area / label (4/12) */}
+      {/* Label */}
       <div className="sm:col-span-4 py-3 px-2 text-sm">
         {editable ? (
           <input
-            value={(row as any).label}
+            value={row.label}
             onChange={(e) => onEditLabel(e.target.value)}
             className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
             placeholder="Nama area/pertanyaan…"
           />
         ) : (
-          (row as any).label
+          row.label
         )}
       </div>
 
-      {/* Status / Isian (3/12) */}
+      {/* Status / Isian */}
       <div className="sm:col-span-3 py-3 px-2 pl-3">
         <div className="sm:hidden text-xs text-slate-500 mb-1">
           Status / Isian
         </div>
 
-        {/* SUPERADMIN edit opsi/suffix */}
         {editable && (row.kind === "options" || row.kind === "compound") && (
           <input
             defaultValue={(row.options || []).join(", ")}
@@ -775,18 +782,17 @@ function ChecklistRow({
           />
         )}
 
-        {/* Nilai utama */}
         {row.kind === "options" && (
           <OptionsGroup
             options={row.options}
-            value={(value as any)?.value ?? null}
+            value={optVal}
             onChange={(v) => onChange({ kind: "options", value: v, note })}
           />
         )}
         {row.kind === "number" && (
           <NumberWithSuffix
             suffix={row.suffix}
-            value={(value as any)?.value ?? ""}
+            value={numStr}
             onChange={(v) =>
               onChange({ kind: "number", value: v, suffix: row.suffix, note })
             }
@@ -794,7 +800,7 @@ function ChecklistRow({
         )}
         {row.kind === "score" && (
           <ScoreSelect
-            value={(value as any)?.value ?? 3}
+            value={scoreVal}
             onChange={(v) => onChange({ kind: "score", value: v, note })}
           />
         )}
@@ -802,16 +808,16 @@ function ChecklistRow({
           <div className="space-y-2">
             <OptionsGroup
               options={row.options}
-              value={(value as any)?.value ?? null}
+              value={compVal?.value ?? null}
               onChange={(v) =>
                 onChange({
                   kind: "compound",
                   value: v,
                   note,
                   extras: {
-                    text: (value as any)?.extras?.text,
-                    currency: (value as any)?.extras?.currency,
-                    number: (value as any)?.extras?.number,
+                    text: compExtras?.text,
+                    currency: compExtras?.currency,
+                    number: compExtras?.number,
                   },
                 })
               }
@@ -822,16 +828,16 @@ function ChecklistRow({
                 {hasTextExtra && (
                   <input
                     placeholder={textPlaceholder}
-                    value={(value as any)?.extras?.text ?? ""}
+                    value={compExtras?.text ?? ""}
                     onChange={(e) =>
                       onChange({
                         kind: "compound",
-                        value: (value as any)?.value ?? null,
+                        value: compVal?.value ?? null,
                         note,
                         extras: {
                           text: e.target.value,
-                          currency: (value as any)?.extras?.currency,
-                          number: (value as any)?.extras?.number,
+                          currency: compExtras?.currency,
+                          number: compExtras?.number,
                         },
                       })
                     }
@@ -846,16 +852,16 @@ function ChecklistRow({
                     </span>
                     <input
                       placeholder={currencyPlaceholder || "Rp ..."}
-                      value={(value as any)?.extras?.currency ?? ""}
+                      value={compExtras?.currency ?? ""}
                       onChange={(e) =>
                         onChange({
                           kind: "compound",
-                          value: (value as any)?.value ?? null,
+                          value: compVal?.value ?? null,
                           note,
                           extras: {
-                            text: (value as any)?.extras?.text,
+                            text: compExtras?.text,
                             currency: e.target.value,
-                            number: (value as any)?.extras?.number,
+                            number: compExtras?.number,
                           },
                         })
                       }
@@ -870,15 +876,15 @@ function ChecklistRow({
                     type="number"
                     inputMode="numeric"
                     placeholder={numberPlaceholder || "Jumlah"}
-                    value={(value as any)?.extras?.number ?? ""}
+                    value={compExtras?.number ?? ""}
                     onChange={(e) =>
                       onChange({
                         kind: "compound",
-                        value: (value as any)?.value ?? null,
+                        value: compVal?.value ?? null,
                         note,
                         extras: {
-                          text: (value as any)?.extras?.text,
-                          currency: (value as any)?.extras?.currency,
+                          text: compExtras?.text,
+                          currency: compExtras?.currency,
                           number: e.target.value,
                         },
                       })
@@ -892,7 +898,7 @@ function ChecklistRow({
         )}
       </div>
 
-      {/* Keterangan (5/12) — textarea auto-grow */}
+      {/* Keterangan */}
       <div className="sm:col-span-5 py-3 px-2">
         <div className="sm:hidden text-xs text-slate-500 mb-1">Keterangan</div>
         <textarea

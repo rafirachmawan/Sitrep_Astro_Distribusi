@@ -32,7 +32,8 @@ export function generatePdf(
 
     doc.setTextColor(120);
     doc.setFontSize(9);
-    const pageStr = `Hal. ${doc.internal.getNumberOfPages()}`;
+    const pageStr = `Hal. ${doc.getNumberOfPages()}`;
+
     doc.text(pageStr, pageW - 50, pageH - 16, { align: "right" });
     doc.text(`${state.header.leader} • ${state.header.depo}`, 50, pageH - 16);
   };
