@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import type { Route } from "next"; // ⬅️ tambah ini
 import type { Role } from "@/components/AuthProvider";
 import { useAuth } from "@/components/AuthProvider";
 import { Lock, LogIn } from "lucide-react";
@@ -48,7 +49,7 @@ export default function LoginPage() {
     try {
       // Login sukses → isi AuthProvider (persist ke localStorage oleh provider)
       signIn({ name: acc.displayName, role: acc.role });
-      router.push("/");
+      router.push("/" as Route);
     } finally {
       setSubmitting(false);
     }
