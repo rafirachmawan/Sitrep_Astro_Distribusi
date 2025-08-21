@@ -1280,19 +1280,40 @@ export default function Lampiran({ data }: { data: AppState }) {
         scale: 2,
         foreignObjectRendering: true,
         onclone: (doc: Document) => {
-          const clonedRoot = doc.getElementById("pdf-print-root");
-          doc
-            .querySelectorAll('link[rel="stylesheet"], style')
-            .forEach((el) => {
-              if (!clonedRoot || !clonedRoot.contains(el)) {
-                el.parentNode?.removeChild(el);
-              }
-            });
+          const clonedRoot = doc.getElementById(
+            "pdf-print-root"
+          ) as HTMLElement | null;
+          if (!clonedRoot) return;
+
+          // 1) Hapus SEMUA style global di <head>
+          doc.head
+            .querySelectorAll('style,link[rel="stylesheet"]')
+            .forEach((el) => el.remove());
+
+          // 2) Sisakan hanya #pdf-print-root di <body>
+          Array.from(doc.body.children).forEach((el) => {
+            if (el !== clonedRoot) el.remove();
+          });
+
+          // 3) Reset html/body agar tidak bawa kelas/tema yang mengandung oklch
+          doc.documentElement.removeAttribute("class");
           doc.documentElement.removeAttribute("data-theme");
-          (doc.documentElement as HTMLElement).style.setProperty(
-            "color-scheme",
-            "light"
-          );
+          doc.body.removeAttribute("class");
+          doc.body.style.cssText =
+            "margin:0;padding:0;background:#fff;color:#111827;";
+
+          // 4) Hard reset di root (double safety)
+          (clonedRoot.style as any).all = "initial";
+          clonedRoot.style.display = "block";
+
+          // 5) Jika ada inline style yang kebetulan mengandung oklch, buang
+          clonedRoot
+            .querySelectorAll<HTMLElement>('[style*="oklch("]')
+            .forEach((el) => {
+              el.style.removeProperty("color");
+              el.style.removeProperty("background");
+              el.style.removeProperty("background-color");
+            });
         },
       });
 
