@@ -137,7 +137,7 @@ const THEME_BY_DOW: Record<number, Theme> = {
 /* =========================
    Helper
    ========================= */
-const stop = (e: { stopPropagation(): void }) => e.stopPropagation();
+// const stop = (e: { stopPropagation(): void }) => e.stopPropagation();
 
 function clampScores<T extends { key?: string; code?: string }>(
   items: T[],
@@ -255,12 +255,7 @@ export default function EvaluasiTim({
   };
 
   return (
-    <div
-      className="bg-white border rounded-2xl shadow-sm overflow-hidden"
-      onClick={stop}
-      onMouseDown={stop}
-      onPointerDown={stop}
-    >
+    <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
       {/* Header */}
       <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
