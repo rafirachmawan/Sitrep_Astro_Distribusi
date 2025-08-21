@@ -137,7 +137,7 @@ const THEME_BY_DOW: Record<number, Theme> = {
 /* =========================
    Helper
    ========================= */
-const stop: React.MouseEventHandler<any> = (e) => e.stopPropagation();
+const stop = (e: { stopPropagation(): void }) => e.stopPropagation();
 
 function clampScores<T extends { key?: string; code?: string }>(
   items: T[],
