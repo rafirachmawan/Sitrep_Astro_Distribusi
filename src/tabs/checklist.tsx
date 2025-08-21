@@ -701,15 +701,43 @@ function ChecklistRow({
     adjustHeight();
   }, [value?.note]);
 
+  const hasTextExtra =
+    row.kind === "compound" && row.extra?.some((e) => e.type === "text");
+  const hasCurrencyExtra =
+    row.kind === "compound" && row.extra?.some((e) => e.type === "currency");
+  const hasNumberExtra =
+    row.kind === "compound" && row.extra?.some((e) => e.type === "number");
+
+  const textPlaceholder =
+    row.kind === "compound"
+      ? row.extra?.find((e) => e.type === "text")?.placeholder
+      : undefined;
+  const currencyPlaceholder =
+    row.kind === "compound"
+      ? row.extra?.find((e) => e.type === "currency")?.placeholder
+      : undefined;
+  const numberPlaceholder =
+    row.kind === "compound"
+      ? row.extra?.find((e) => e.type === "number")?.placeholder
+      : undefined;
+
   const optVal = value?.kind === "options" ? value.value : null;
   const numStr = value?.kind === "number" ? String(value.value ?? "") : "";
   const scoreVal = value?.kind === "score" ? value.value : 3;
   const compVal = value?.kind === "compound" ? value : undefined;
   const compExtras = compVal?.extras;
 
+  const formatIDR = (digitStr?: string) => {
+    if (!digitStr) return "";
+    const n = Number(digitStr);
+    if (isNaN(n)) return "";
+    return new Intl.NumberFormat("id-ID").format(n);
+  };
+  const toDigits = (s: string) => (s || "").replace(/[^\d]/g, "");
+
   const INPUT_BASE =
-    "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center " +
-    "focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
+    "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center " +
+    "placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-12 items-start bg-white">
@@ -733,13 +761,14 @@ function ChecklistRow({
           Status / Isian
         </div>
 
-        <div className="border-2 border-slate-300 rounded-lg p-2 bg-slate-50 shadow-sm">
+        {/* 🔹 Tambahkan border wrapper di sini */}
+        <div className="border border-slate-300 rounded-lg p-2 bg-slate-50">
           {editable && (row.kind === "options" || row.kind === "compound") && (
             <input
               defaultValue={(row.options || []).join(", ")}
               onBlur={(e) => onEditOptions(e.target.value)}
               className={`${INPUT_BASE} mb-2`}
-              placeholder="Opsi dipisah koma"
+              placeholder="Opsi dipisah koma (mis: Cocok, Tidak Cocok)"
             />
           )}
           {editable && row.kind === "number" && (
@@ -747,7 +776,7 @@ function ChecklistRow({
               defaultValue={row.suffix || ""}
               onBlur={(e) => onEditSuffix(e.target.value)}
               className={`${INPUT_BASE} mb-2`}
-              placeholder="Suffix (pcs, faktur, kali)"
+              placeholder="Suffix (mis: pcs, faktur, kali)"
             />
           )}
 
@@ -787,6 +816,79 @@ function ChecklistRow({
                   })
                 }
               />
+
+              {(hasTextExtra || hasCurrencyExtra || hasNumberExtra) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {hasTextExtra && (
+                    <input
+                      placeholder={textPlaceholder}
+                      value={compExtras?.text ?? ""}
+                      onChange={(e) =>
+                        onChange({
+                          kind: "compound",
+                          value: compVal?.value ?? null,
+                          note,
+                          extras: {
+                            text: e.target.value,
+                            currency: compExtras?.currency,
+                            number: compExtras?.number,
+                          },
+                        })
+                      }
+                      className={INPUT_BASE}
+                    />
+                  )}
+
+                  {hasCurrencyExtra && (
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
+                        Rp.
+                      </span>
+                      <input
+                        placeholder={currencyPlaceholder || "contoh: 4.235.523"}
+                        value={formatIDR(compExtras?.currency)}
+                        onChange={(e) => {
+                          const rawDigits = toDigits(e.target.value);
+                          onChange({
+                            kind: "compound",
+                            value: compVal?.value ?? null,
+                            note,
+                            extras: {
+                              text: compExtras?.text,
+                              currency: rawDigits,
+                              number: compExtras?.number,
+                            },
+                          });
+                        }}
+                        inputMode="numeric"
+                        className={`${INPUT_BASE} pl-12`}
+                      />
+                    </div>
+                  )}
+
+                  {hasNumberExtra && (
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      placeholder={numberPlaceholder || "Jumlah"}
+                      value={compExtras?.number ?? ""}
+                      onChange={(e) =>
+                        onChange({
+                          kind: "compound",
+                          value: compVal?.value ?? null,
+                          note,
+                          extras: {
+                            text: compExtras?.text,
+                            currency: compExtras?.currency,
+                            number: e.target.value,
+                          },
+                        })
+                      }
+                      className={INPUT_BASE}
+                    />
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
