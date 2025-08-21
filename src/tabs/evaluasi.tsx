@@ -137,7 +137,7 @@ const THEME_BY_DOW: Record<number, Theme> = {
 /* =========================
    Helper
    ========================= */
-// default sekarang 0 (kosong)
+// Default sekarang 0 (kosong/"–"), bukan 3.
 function clampScores<T extends { key?: string; code?: string }>(
   items: T[],
   old: Record<string, number> | undefined,
