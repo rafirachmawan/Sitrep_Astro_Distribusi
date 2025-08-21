@@ -6,6 +6,8 @@ import type { AppState, EvaluasiAttitude } from "@/lib/types";
 import { ScoreSelect } from "./common";
 import { useAuth } from "@/components/AuthProvider";
 
+import { ScoreSelectNullable } from "./common";
+
 /* =========================
    Tema / Person
    ========================= */
@@ -720,9 +722,9 @@ function AttitudeForm({
 
             <div className="sm:col-span-2">
               <div className="sm:hidden text-xs text-slate-500 mb-1">Skor</div>
-              <ScoreSelect
+              <ScoreSelectNullable
                 key={`${who}-${item.code}`}
-                value={getScore(item.code)} // undefined/0 => tampil “–”
+                value={getScore(item.code)} // bisa undefined -> tampil "–"
                 onChange={(v) => setScore(item.code, v)}
               />
             </div>
@@ -900,9 +902,9 @@ function SimpleForm({
 
             <div className="sm:col-span-2">
               <div className="sm:hidden text-xs text-slate-500 mb-1">Skor</div>
-              <ScoreSelect
+              <ScoreSelectNullable
                 key={`${who}-${item.key}`}
-                value={scores[item.key] ?? 0} // 0 => “–”
+                value={scores[item.key] ?? 0} // 0/undefined -> "–"
                 onChange={(v) =>
                   setScores((p) => ({ ...p, [item.key]: v ?? 0 }))
                 }

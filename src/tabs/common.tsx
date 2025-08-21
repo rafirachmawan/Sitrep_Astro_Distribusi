@@ -18,7 +18,7 @@ export function ThemedSelect(
   );
 }
 
-/** Warna dot untuk skor; kosong/0 => abu-abu */
+/** Warna dot skor; kosong/0 => abu-abu */
 export function scoreDot(score?: number | null) {
   if (!score || score === 0) return "bg-slate-300";
   if (score <= 2) return "bg-rose-500";
@@ -26,29 +26,70 @@ export function scoreDot(score?: number | null) {
   return "bg-emerald-500";
 }
 
-/**
- * ScoreSelect
- * - value boleh undefined/null/0 => tampilkan placeholder "–"
- * - onChange mengirim number | undefined (undefined = kosong)
- */
+/* -----------------------------------------------------------
+   1) STRICT: ScoreSelect → hanya number 1..5 (tanpa "–")
+   Dipakai di checklist, dsb (tidak pernah undefined).
+----------------------------------------------------------- */
 export function ScoreSelect({
+  value,
+  onChange,
+  disabled,
+  className = "",
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <div className={"flex items-center gap-2 " + className}>
+      <span className={"h-2.5 w-2.5 rounded-full " + scoreDot(value)} />
+      <ThemedSelect
+        disabled={disabled}
+        value={String(value)}
+        onChange={(e) => onChange(Number(e.target.value))}
+      >
+        {[1, 2, 3, 4, 5].map((n) => (
+          <option key={n} value={n}>
+            {n}
+          </option>
+        ))}
+      </ThemedSelect>
+    </div>
+  );
+}
+
+/* -----------------------------------------------------------
+   2) LOOSE: ScoreSelectNullable → boleh kosong “–”
+   value boleh undefined/null/string | number.
+   onChange mengirim number | undefined (undefined = kosong).
+   Dipakai khusus di Evaluasi per orang.
+----------------------------------------------------------- */
+export function ScoreSelectNullable({
   value,
   onChange,
   disabled,
   className = "",
   placeholder = "–",
 }: {
-  value?: number | null;
+  value?: number | string | null;
   onChange: (v: number | undefined) => void;
   disabled?: boolean;
   className?: string;
   placeholder?: string;
 }) {
-  const stringValue = value == null || value === 0 ? "" : String(value);
+  const num =
+    typeof value === "string"
+      ? value === ""
+        ? undefined
+        : Number(value)
+      : value ?? undefined;
+
+  const stringValue = num == null || num === 0 ? "" : String(num);
 
   return (
     <div className={"flex items-center gap-2 " + className}>
-      <span className={"h-2.5 w-2.5 rounded-full " + scoreDot(value)} />
+      <span className={"h-2.5 w-2.5 rounded-full " + scoreDot(num)} />
       <ThemedSelect
         disabled={disabled}
         value={stringValue}
