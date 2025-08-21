@@ -7,9 +7,7 @@ import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 
-/* ============================================================
-   Overrides per role (disimpan di localStorage)
-   ============================================================ */
+/* ================= OVERRIDES ================= */
 type TargetOverrides = {
   copy?: {
     klaimTitle?: string;
@@ -57,9 +55,7 @@ function patchPrincipalLabel(
   return { ...src, principals };
 }
 
-/* ============================================================
-   Komponen utama
-   ============================================================ */
+/* ================= COMPONENT ================= */
 export default function TargetAchievement({
   data,
   onChange,
@@ -127,7 +123,6 @@ export default function TargetAchievement({
       },
     });
 
-  // styling input konsisten
   const INPUT_BASE =
     "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
 
@@ -171,7 +166,7 @@ export default function TargetAchievement({
 
   return (
     <div className="space-y-6">
-      {/* Header + kontrol superadmin */}
+      {/* Header */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
@@ -215,7 +210,7 @@ export default function TargetAchievement({
           )}
         </div>
 
-        {/* Bagian 1: Klaim selesai */}
+        {/* ===== Bagian 1: Klaim selesai ===== */}
         <div className="p-3 sm:p-6">
           <div className="mb-3 text-sm font-semibold text-slate-700 flex items-center gap-2">
             {editMode ? (
@@ -235,7 +230,8 @@ export default function TargetAchievement({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            {/* penting: min-w agar kolom 3 tidak “hilang” */}
+            <table className="w-full min-w-[680px] text-sm">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="text-left py-2 px-2">Jenis</th>
@@ -253,6 +249,7 @@ export default function TargetAchievement({
                           onBlur={(e) => savePrincipalLabel(p, e.target.value)}
                           className={INPUT_BASE}
                           placeholder={`Nama principal untuk ${p}`}
+                          title="Ubah nama tampilan principal lalu klik di luar untuk menyimpan"
                         />
                       ) : (
                         principalLabel(p)
@@ -285,7 +282,7 @@ export default function TargetAchievement({
             </table>
           </div>
 
-          {/* Target selesai + Deadlinenya */}
+          {/* Target selesai + Deadlinenya (global) */}
           <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mt-5">
             <div className="sm:col-span-8" />
             <div className="sm:col-span-4 space-y-3">
@@ -328,7 +325,7 @@ export default function TargetAchievement({
         </div>
       </div>
 
-      {/* Bagian 2: Mingguan */}
+      {/* ===== Bagian 2: Mingguan ===== */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 font-semibold text-slate-800">
           {editMode ? (
@@ -343,7 +340,7 @@ export default function TargetAchievement({
           )}
         </div>
         <div className="p-3 sm:p-6 overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full min-w-[760px] text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="text-left py-2 px-2">Prinsipal</th>
@@ -394,7 +391,7 @@ export default function TargetAchievement({
         </div>
       </div>
 
-      {/* Bagian 3: FODKS */}
+      {/* ===== Bagian 3: FODKS ===== */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 font-semibold text-slate-800">
           {editMode ? (
