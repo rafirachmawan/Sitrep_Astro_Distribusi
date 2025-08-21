@@ -740,6 +740,15 @@ function ChecklistRow({
     | CompoundExtras
     | undefined;
 
+  // --- helper rupiah ---
+  const formatIDR = (digitStr?: string) => {
+    if (!digitStr) return "";
+    const n = Number(digitStr);
+    if (isNaN(n)) return "";
+    return new Intl.NumberFormat("id-ID").format(n);
+  };
+  const toDigits = (s: string) => (s || "").replace(/[^\d]/g, "");
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-12 items-start bg-white">
       {/* Label */}
@@ -847,25 +856,26 @@ function ChecklistRow({
                 {hasCurrencyExtra && (
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
-                      Rp
+                      Rp.
                     </span>
                     <input
-                      placeholder={currencyPlaceholder || "Rp ..."}
-                      value={compExtras?.currency ?? ""}
-                      onChange={(e) =>
+                      placeholder={currencyPlaceholder || "contoh: 4.235.523"}
+                      value={formatIDR(compExtras?.currency)}
+                      onChange={(e) => {
+                        const rawDigits = toDigits(e.target.value);
                         onChange({
                           kind: "compound",
                           value: compVal?.value ?? null,
                           note,
                           extras: {
                             text: compExtras?.text,
-                            currency: e.target.value,
+                            currency: rawDigits,
                             number: compExtras?.number,
                           },
-                        })
-                      }
+                        });
+                      }}
                       inputMode="numeric"
-                      className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 pl-10"
+                      className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 pl-12"
                     />
                   </div>
                 )}
