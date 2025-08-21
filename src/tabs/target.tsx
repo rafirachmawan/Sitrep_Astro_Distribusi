@@ -7,6 +7,15 @@ import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 
+/* ====================== Tipe lokal dengan deadlines ====================== */
+type DeadlinesState = {
+  klaim?: Record<Principal, string>; // YYYY-MM-DD per principal
+  weekly?: Record<Principal, string>; // YYYY-MM-DD per principal
+  targetSelesai?: string; // YYYY-MM-DD
+  fodks?: string; // YYYY-MM-DD
+};
+type LocalTargetState = TargetState & { deadlines?: DeadlinesState };
+
 /* ============================================================
    Overrides per role (disimpan di localStorage)
    ============================================================ */
@@ -17,6 +26,7 @@ type TargetOverrides = {
     weeklyTitle?: string; // Laporan Penjualan ke Prinsipal Mingguan
     fodksTitle?: string; // Ketepatan Waktu Input FODKS
     fodksCheckboxLabel?: string; // Tandai jika tepat waktu
+    deadlineLabel?: string; // Label kolom/field Deadline
   };
   principals?: Record<string, { label?: string }>; // key = Principal
 };
@@ -63,8 +73,8 @@ export default function TargetAchievement({
   data,
   onChange,
 }: {
-  data: TargetState;
-  onChange: (v: TargetState) => void;
+  data: LocalTargetState;
+  onChange: (v: LocalTargetState) => void;
 }) {
   const { role } = useAuth();
   const isSuper = role === "superadmin";
@@ -85,6 +95,7 @@ export default function TargetAchievement({
     fodksTitle: overrides.copy?.fodksTitle ?? "Ketepatan Waktu Input FODKS",
     fodksCheckboxLabel:
       overrides.copy?.fodksCheckboxLabel ?? "Tandai jika tepat waktu",
+    deadlineLabel: overrides.copy?.deadlineLabel ?? "Deadline",
   };
 
   const principalLabel = (p: Principal) =>
@@ -125,6 +136,36 @@ export default function TargetAchievement({
       },
     });
 
+  // helper styling input
+  const INPUT_BASE =
+    "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
+
+  // helpers update deadline
+  const setDeadline = (
+    scope: keyof DeadlinesState,
+    value: string,
+    p?: Principal
+  ) => {
+    const next: DeadlinesState = { ...(data.deadlines || {}) };
+    if (p) {
+      const bucket = {
+        ...(next[scope] as Record<Principal, string> | undefined),
+      };
+      bucket[p] = value;
+      (next as any)[scope] = bucket;
+    } else {
+      (next as any)[scope] = value;
+    }
+    onChange({ ...data, deadlines: next });
+  };
+
+  const getDeadline = (scope: keyof DeadlinesState, p?: Principal) => {
+    const d = data.deadlines || {};
+    if (p)
+      return (d[scope] as Record<Principal, string> | undefined)?.[p] ?? "";
+    return (d[scope] as string | undefined) ?? "";
+  };
+
   return (
     <div className="space-y-6">
       {/* Header + kontrol superadmin */}
@@ -141,7 +182,7 @@ export default function TargetAchievement({
             <div className="flex items-center gap-2">
               <label className="text-sm text-slate-600">Role:</label>
               <select
-                className="rounded-lg border-slate-300 text-sm"
+                className="rounded-xl border-2 border-slate-300 text-sm bg-white px-2 py-1 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                 value={targetRole}
                 onChange={(e) => setTargetRole(e.target.value as Role)}
               >
@@ -178,7 +219,7 @@ export default function TargetAchievement({
               <input
                 defaultValue={copy.klaimTitle}
                 onBlur={(e) => saveCopy("klaimTitle", e.target.value)}
-                className="w-full sm:w-[420px] rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-amber-500"
+                className={`${INPUT_BASE} sm:w-[420px]`}
                 placeholder="Judul bagian klaim…"
                 title="Ubah judul lalu klik di luar untuk menyimpan"
               />
@@ -190,63 +231,70 @@ export default function TargetAchievement({
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
-            <div className="sm:col-span-8">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="hidden sm:table-header-group bg-slate-50 text-slate-600">
-                    <tr>
-                      <th className="text-left py-2 px-2">Jenis</th>
-                      <th className="text-left py-2 px-2">Selesai</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y border rounded-xl bg-white">
-                    {PRINCIPALS.map((p) => (
-                      <tr key={p} className="grid grid-cols-2 sm:table-row">
-                        <td className="py-3 px-2 font-medium text-slate-800">
-                          {editMode ? (
-                            <input
-                              defaultValue={principalLabel(p)}
-                              onBlur={(e) =>
-                                savePrincipalLabel(p, e.target.value)
-                              }
-                              className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-amber-500"
-                              placeholder={`Nama principal untuk ${p}`}
-                              title="Ubah nama tampilan principal lalu klik di luar untuk menyimpan"
-                            />
-                          ) : (
-                            principalLabel(p)
-                          )}
-                        </td>
-                        <td className="py-3 px-2">
-                          <label className="inline-flex items-center gap-2">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 accent-blue-600"
-                              checked={data.klaimSelesai[p]}
-                              onChange={() => toggleKlaim(p)}
-                            />
-                            <span className="text-sm text-slate-700">
-                              Selesai
-                            </span>
-                          </label>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="hidden sm:table-header-group bg-slate-50 text-slate-600">
+                <tr>
+                  <th className="text-left py-2 px-2">Jenis</th>
+                  <th className="text-left py-2 px-2">Selesai</th>
+                  <th className="text-left py-2 px-2">{copy.deadlineLabel}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y border rounded-xl bg-white">
+                {PRINCIPALS.map((p) => (
+                  <tr key={p} className="grid grid-cols-3 sm:table-row">
+                    <td className="py-3 px-2 font-medium text-slate-800">
+                      {editMode ? (
+                        <input
+                          defaultValue={principalLabel(p)}
+                          onBlur={(e) => savePrincipalLabel(p, e.target.value)}
+                          className={INPUT_BASE}
+                          placeholder={`Nama principal untuk ${p}`}
+                          title="Ubah nama tampilan principal lalu klik di luar untuk menyimpan"
+                        />
+                      ) : (
+                        principalLabel(p)
+                      )}
+                    </td>
+                    <td className="py-3 px-2">
+                      <label className="inline-flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 accent-blue-600"
+                          checked={data.klaimSelesai[p]}
+                          onChange={() => toggleKlaim(p)}
+                        />
+                        <span className="text-sm text-slate-700">Selesai</span>
+                      </label>
+                    </td>
+                    <td className="py-3 px-2">
+                      <input
+                        type="date"
+                        className={INPUT_BASE}
+                        value={getDeadline("klaim", p)}
+                        onChange={(e) =>
+                          setDeadline("klaim", e.target.value, p)
+                        }
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-            <div className="sm:col-span-4">
-              <label className="block text-sm font-medium text-slate-700 mb-1">
+          {/* Target selesai + Deadlinenya */}
+          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mt-5">
+            <div className="sm:col-span-8" />
+            <div className="sm:col-span-4 space-y-3">
+              <label className="block text-sm font-medium text-slate-700">
                 {editMode ? (
                   <input
                     defaultValue={copy.targetSelesaiLabel}
                     onBlur={(e) =>
                       saveCopy("targetSelesaiLabel", e.target.value)
                     }
-                    className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-amber-500"
+                    className={INPUT_BASE}
                     placeholder="Label Target Selesai…"
                     title="Ubah label lalu klik di luar untuk menyimpan"
                   />
@@ -261,8 +309,19 @@ export default function TargetAchievement({
                 }
                 inputMode="numeric"
                 placeholder="mis. 10"
-                className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
+                className={INPUT_BASE}
               />
+              <div>
+                <span className="block text-sm font-medium text-slate-700 mb-1">
+                  {copy.deadlineLabel}
+                </span>
+                <input
+                  type="date"
+                  className={INPUT_BASE}
+                  value={getDeadline("targetSelesai")}
+                  onChange={(e) => setDeadline("targetSelesai", e.target.value)}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -275,7 +334,7 @@ export default function TargetAchievement({
             <input
               defaultValue={copy.weeklyTitle}
               onBlur={(e) => saveCopy("weeklyTitle", e.target.value)}
-              className="w-full sm:w-[520px] rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-amber-500"
+              className={`${INPUT_BASE} sm:w-[520px]`}
               placeholder="Judul bagian mingguan…"
               title="Ubah judul lalu klik di luar untuk menyimpan"
             />
@@ -283,48 +342,55 @@ export default function TargetAchievement({
             copy.weeklyTitle
           )}
         </div>
-        <div className="p-3 sm:p-6">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-slate-600">
-                <tr>
-                  <th className="text-left py-2 px-2">Prinsipal</th>
-                  <th className="text-left py-2 px-2">Minggu 1</th>
-                  <th className="text-left py-2 px-2">Minggu 2</th>
-                  <th className="text-left py-2 px-2">Minggu 3</th>
-                  <th className="text-left py-2 px-2">Minggu 4</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y bg-white">
-                {PRINCIPALS.map((p) => (
-                  <tr key={p}>
-                    <td className="py-3 px-2 font-medium text-slate-800">
-                      {editMode ? (
-                        <input
-                          defaultValue={principalLabel(p)}
-                          onBlur={(e) => savePrincipalLabel(p, e.target.value)}
-                          className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-amber-500"
-                          placeholder={`Nama principal untuk ${p}`}
-                        />
-                      ) : (
-                        principalLabel(p)
-                      )}
+        <div className="p-3 sm:p-6 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-slate-600">
+              <tr>
+                <th className="text-left py-2 px-2">Prinsipal</th>
+                <th className="text-left py-2 px-2">Minggu 1</th>
+                <th className="text-left py-2 px-2">Minggu 2</th>
+                <th className="text-left py-2 px-2">Minggu 3</th>
+                <th className="text-left py-2 px-2">Minggu 4</th>
+                <th className="text-left py-2 px-2">{copy.deadlineLabel}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y bg-white">
+              {PRINCIPALS.map((p) => (
+                <tr key={p}>
+                  <td className="py-3 px-2 font-medium text-slate-800">
+                    {editMode ? (
+                      <input
+                        defaultValue={principalLabel(p)}
+                        onBlur={(e) => savePrincipalLabel(p, e.target.value)}
+                        className={INPUT_BASE}
+                        placeholder={`Nama principal untuk ${p}`}
+                      />
+                    ) : (
+                      principalLabel(p)
+                    )}
+                  </td>
+                  {[0, 1, 2, 3].map((w) => (
+                    <td key={w} className="py-3 px-2">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 accent-blue-600"
+                        checked={data.weekly[p][w]}
+                        onChange={() => toggleWeekly(p, w)}
+                      />
                     </td>
-                    {[0, 1, 2, 3].map((w) => (
-                      <td key={w} className="py-3 px-2">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-blue-600"
-                          checked={data.weekly[p][w]}
-                          onChange={() => toggleWeekly(p, w)}
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                  ))}
+                  <td className="py-3 px-2">
+                    <input
+                      type="date"
+                      className={INPUT_BASE}
+                      value={getDeadline("weekly", p)}
+                      onChange={(e) => setDeadline("weekly", e.target.value, p)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -335,7 +401,7 @@ export default function TargetAchievement({
             <input
               defaultValue={copy.fodksTitle}
               onBlur={(e) => saveCopy("fodksTitle", e.target.value)}
-              className="w-full sm:w-[420px] rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-amber-500"
+              className={`${INPUT_BASE} sm:w-[420px]`}
               placeholder="Judul bagian FODKS…"
               title="Ubah judul lalu klik di luar untuk menyimpan"
             />
@@ -343,7 +409,7 @@ export default function TargetAchievement({
             copy.fodksTitle
           )}
         </div>
-        <div className="p-3 sm:p-6">
+        <div className="p-3 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
           <label className="inline-flex items-center gap-2">
             <input
               type="checkbox"
@@ -357,7 +423,7 @@ export default function TargetAchievement({
               <input
                 defaultValue={copy.fodksCheckboxLabel}
                 onBlur={(e) => saveCopy("fodksCheckboxLabel", e.target.value)}
-                className="rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-amber-500"
+                className={INPUT_BASE}
                 placeholder="Label checkbox…"
                 title="Ubah label lalu klik di luar untuk menyimpan"
               />
@@ -367,6 +433,18 @@ export default function TargetAchievement({
               </span>
             )}
           </label>
+
+          <div className="sm:col-span-2">
+            <span className="block text-sm font-medium text-slate-700 mb-1">
+              {copy.deadlineLabel}
+            </span>
+            <input
+              type="date"
+              className={INPUT_BASE}
+              value={getDeadline("fodks")}
+              onChange={(e) => setDeadline("fodks", e.target.value)}
+            />
+          </div>
         </div>
       </div>
     </div>
