@@ -123,12 +123,16 @@ export default function TargetAchievement({
       },
     });
 
+  // styling input konsisten
   const INPUT_BASE =
     "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
+  const INPUT_DISABLED =
+    "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500";
 
   type DeadlineScope = keyof TargetDeadlines;
 
   const setDeadline = (scope: DeadlineScope, value: string, p?: Principal) => {
+    if (!isSuper) return; // admin tidak bisa edit deadline
     const next: TargetDeadlines = { ...data.deadlines };
     switch (scope) {
       case "klaim":
@@ -230,7 +234,6 @@ export default function TargetAchievement({
           </div>
 
           <div className="overflow-x-auto">
-            {/* penting: min-w agar kolom 3 tidak “hilang” */}
             <table className="w-full min-w-[680px] text-sm">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
@@ -269,10 +272,18 @@ export default function TargetAchievement({
                     <td className="py-3 px-2">
                       <input
                         type="date"
-                        className={INPUT_BASE}
+                        disabled={!isSuper}
+                        className={`${INPUT_BASE} ${
+                          !isSuper ? INPUT_DISABLED : ""
+                        }`}
                         value={getDeadline("klaim", p)}
                         onChange={(e) =>
                           setDeadline("klaim", e.target.value, p)
+                        }
+                        title={
+                          !isSuper
+                            ? "Hanya superadmin yang dapat mengubah deadline"
+                            : ""
                         }
                       />
                     </td>
@@ -315,9 +326,15 @@ export default function TargetAchievement({
                 </span>
                 <input
                   type="date"
-                  className={INPUT_BASE}
+                  disabled={!isSuper}
+                  className={`${INPUT_BASE} ${!isSuper ? INPUT_DISABLED : ""}`}
                   value={getDeadline("targetSelesai")}
                   onChange={(e) => setDeadline("targetSelesai", e.target.value)}
+                  title={
+                    !isSuper
+                      ? "Hanya superadmin yang dapat mengubah deadline"
+                      : ""
+                  }
                 />
               </div>
             </div>
@@ -325,7 +342,7 @@ export default function TargetAchievement({
         </div>
       </div>
 
-      {/* ===== Bagian 2: Mingguan ===== */}
+      {/* ===== Bagian 2: Mingguan (tanpa deadline) ===== */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 font-semibold text-slate-800">
           {editMode ? (
@@ -340,7 +357,7 @@ export default function TargetAchievement({
           )}
         </div>
         <div className="p-3 sm:p-6 overflow-x-auto">
-          <table className="w-full min-w-[760px] text-sm">
+          <table className="w-full min-w-[640px] text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="text-left py-2 px-2">Prinsipal</th>
@@ -348,7 +365,6 @@ export default function TargetAchievement({
                 <th className="text-left py-2 px-2">Minggu 2</th>
                 <th className="text-left py-2 px-2">Minggu 3</th>
                 <th className="text-left py-2 px-2">Minggu 4</th>
-                <th className="text-left py-2 px-2">{copy.deadlineLabel}</th>
               </tr>
             </thead>
             <tbody className="divide-y bg-white">
@@ -376,14 +392,6 @@ export default function TargetAchievement({
                       />
                     </td>
                   ))}
-                  <td className="py-3 px-2">
-                    <input
-                      type="date"
-                      className={INPUT_BASE}
-                      value={getDeadline("weekly", p)}
-                      onChange={(e) => setDeadline("weekly", e.target.value, p)}
-                    />
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -435,9 +443,13 @@ export default function TargetAchievement({
             </span>
             <input
               type="date"
-              className={INPUT_BASE}
+              disabled={!isSuper}
+              className={`${INPUT_BASE} ${!isSuper ? INPUT_DISABLED : ""}`}
               value={getDeadline("fodks")}
               onChange={(e) => setDeadline("fodks", e.target.value)}
+              title={
+                !isSuper ? "Hanya superadmin yang dapat mengubah deadline" : ""
+              }
             />
           </div>
         </div>
