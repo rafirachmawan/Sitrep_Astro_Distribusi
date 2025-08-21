@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Users2, Plus, Trash2 } from "lucide-react";
 import type { AppState, EvaluasiAttitude } from "@/lib/types";
 import { ScoreSelect } from "./common";
@@ -135,22 +135,8 @@ const THEME_BY_DOW: Record<number, Theme> = {
 };
 
 /* =========================
-   Helper
+   Helpers
    ========================= */
-// Default sekarang 0 (kosong/"–"), bukan 3.
-function clampScores<T extends { key?: string; code?: string }>(
-  items: T[],
-  old: Record<string, number> | undefined,
-  getKey: (it: T) => string
-) {
-  const next: Record<string, number> = {};
-  for (const it of items) {
-    const k = getKey(it);
-    next[k] = typeof old?.[k] === "number" ? old![k] : 0;
-  }
-  return next;
-}
-
 type ScoresNotes = {
   scores: Record<string, number>;
   notes: Record<string, string>;
@@ -167,9 +153,9 @@ const setDyn = (obj: unknown, key: string, value: unknown) => {
   return rec;
 };
 
-/* =========================
+/* =========================================================
    Component
-   ========================= */
+   ========================================================= */
 export default function EvaluasiTim({
   data,
   onChange,
@@ -190,7 +176,7 @@ export default function EvaluasiTim({
   const [forceTheme, setForceTheme] = useState<Theme | null>(null);
   const theme: Theme = isSuper ? forceTheme ?? themeAuto : themeAuto;
 
-  // simpan hari default (untuk attitude per orang)
+  // simpan hari default (untuk attitude)
   const defaultHari: 1 | 2 | 3 | 4 | 5 | 6 =
     dow >= 1 && dow <= 6 ? (dow as 1 | 2 | 3 | 4 | 5 | 6) : 1;
 
@@ -246,12 +232,16 @@ export default function EvaluasiTim({
   const evalKey = `evaluasi_${who}`;
   const evaluasiText = getDyn<string>(data as unknown, evalKey, "");
 
-  // default attitude state per orang
-  const DEFAULT_ATTITUDE: EvaluasiAttitude = {
+  // attitude global (sesuai tipe kamu)
+  const attitude: EvaluasiAttitude = data.attitude || {
     scores: {},
     notes: {},
     hari: defaultHari,
   };
+
+  // setter util untuk attitude global
+  const setAttitude = (next: EvaluasiAttitude) =>
+    onChange({ ...data, attitude: next });
 
   return (
     <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
@@ -405,26 +395,19 @@ export default function EvaluasiTim({
             onItemsChange={(arr) =>
               setOv((p) => ({ ...p, attitudeItems: arr }))
             }
-            data={getDyn<EvaluasiAttitude>(data as unknown, `attitude_${who}`, {
-              scores: {},
-              notes: {},
-              hari: defaultHari,
-            })}
-            onDataChange={(scores, notes) => {
-              const base = getDyn<EvaluasiAttitude>(
-                data as unknown,
-                `attitude_${who}`,
-                { scores: {}, notes: {}, hari: defaultHari }
-              );
-              const next = setDyn(data as unknown, `attitude_${who}`, {
-                ...base,
-                scores,
-                notes,
-              });
-              onChange(next as AppState["evaluasi"]);
-            }}
+            data={attitude}
+            onDataChange={(nextScores, nextNotes) =>
+              setAttitude({
+                ...attitude,
+                hari: attitude.hari ?? defaultHari,
+                scores: nextScores,
+                notes: nextNotes,
+              })
+            }
           />
         )}
+
+        {/* ==== Opsional: Form lain. Saat ini tidak diubah (biar fokus perbaikan Attitude). ==== */}
 
         {theme === "kompetensi" && (
           <SimpleForm
@@ -456,7 +439,10 @@ export default function EvaluasiTim({
                 data as unknown,
                 `kompetensi_${who}`,
                 undefined
-              ) ?? { scores: {}, notes: {} };
+              ) ?? {
+                scores: {},
+                notes: {},
+              };
               const nextObj = setDyn(data as unknown, `kompetensi_${who}`, {
                 ...prev,
                 ...payload,
@@ -579,7 +565,9 @@ export default function EvaluasiTim({
 }
 
 /* ============================================================
-   Attitude Form — PER ORANG, reset state saat data/items berubah
+   Attitude Form — TANPA state lokal (langsung ke AppState)
+   Skor Catatan disimpan per orang: key = "{person}::{code}"
+   Nilai awal: undefined/0 => tampil "–"
    ============================================================ */
 function AttitudeForm({
   who,
@@ -591,36 +579,49 @@ function AttitudeForm({
   data,
   onDataChange,
 }: {
-  who: string;
+  who: Person;
   title: string;
   setTitle: (t: string) => void;
   items: AttItem[];
   editable: boolean;
   onItemsChange: (items: AttItem[]) => void;
-  data: EvaluasiAttitude; // PER ORANG
+  data: EvaluasiAttitude; // global
   onDataChange: (
     scores: Record<string, number>,
     notes: Record<string, string>
   ) => void;
 }) {
-  const [scores, setScores] = useState<Record<string, number>>(
-    clampScores(items, data?.scores, (it) => it.code)
-  );
-  const [notes, setNotes] = useState<Record<string, string>>(data?.notes || {});
+  const sKey = (code: string) => `${who}::${code}`;
 
-  useEffect(() => {
-    setScores(clampScores(items, data?.scores, (it) => it.code));
-    setNotes(data?.notes || {});
-  }, [data, items]);
+  const getScore = (code: string): number | undefined =>
+    data.scores?.[sKey(code)];
 
-  useEffect(() => onDataChange(scores, notes), [scores, notes, onDataChange]);
+  const getNote = (code: string): string => data.notes?.[sKey(code)] || "";
 
-  const avg =
-    Math.round(
-      (Object.values(scores).reduce((a, b) => a + b, 0) /
-        Math.max(1, items.length)) *
-        10
-    ) / 10;
+  const setScore = (code: string, v: number | undefined) => {
+    const key = sKey(code);
+    const next = { ...(data.scores || {}) };
+    if (v == null || v === 0) delete next[key];
+    else next[key] = v;
+    onDataChange(next, data.notes || {});
+  };
+
+  const setNote = (code: string, txt: string) => {
+    const key = sKey(code);
+    const next = { ...(data.notes || {}) };
+    if (!txt.trim()) delete next[key];
+    else next[key] = txt;
+    onDataChange(data.scores || {}, next);
+  };
+
+  const avg = useMemo(() => {
+    const vals = items
+      .map((it) => getScore(it.code))
+      .filter((x): x is number => typeof x === "number" && x > 0);
+    if (vals.length === 0) return 0;
+    const sum = vals.reduce((a, b) => a + b, 0);
+    return Math.round((sum / vals.length) * 10) / 10;
+  }, [items, data, who]);
 
   return (
     <div className="space-y-4">
@@ -666,7 +667,7 @@ function AttitudeForm({
                           }}
                           placeholder="Kode"
                           className="rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-amber-500"
-                          title="Mengubah KODE akan membuat skor lama tidak terpakai untuk item ini."
+                          title="Mengubah KODE akan memutus histori skor untuk item ini."
                         />
                         <input
                           value={item.title}
@@ -721,8 +722,8 @@ function AttitudeForm({
               <div className="sm:hidden text-xs text-slate-500 mb-1">Skor</div>
               <ScoreSelect
                 key={`${who}-${item.code}`}
-                value={scores[item.code] ?? 0}
-                onChange={(v) => setScores((p) => ({ ...p, [item.code]: v }))}
+                value={getScore(item.code)} // undefined/0 => tampil “–”
+                onChange={(v) => setScore(item.code, v)}
               />
             </div>
 
@@ -731,10 +732,8 @@ function AttitudeForm({
                 Catatan
               </div>
               <input
-                value={notes[item.code] || ""}
-                onChange={(e) =>
-                  setNotes((p) => ({ ...p, [item.code]: e.target.value }))
-                }
+                value={getNote(item.code)}
+                onChange={(e) => setNote(item.code, e.target.value)}
                 placeholder="Catatan..."
                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
@@ -760,7 +759,7 @@ function AttitudeForm({
       </div>
 
       <div className="text-sm text-slate-500">
-        Rata-rata skor (HEBAT):{" "}
+        Rata-rata skor (HEBAT) {`(${who})`}:{" "}
         <span className="font-semibold text-slate-800">
           {isFinite(avg) ? avg : 0}
         </span>
@@ -789,7 +788,9 @@ function AttitudeForm({
 }
 
 /* ============================================================
-   Simple Form — PER ORANG, reset state saat data/items berubah
+   Simple Form (Kompetensi / Prestasi / Kepatuhan)
+   — tetap per orang dengan key dinamis `tema_${who}`
+   — default skor 0 (render “–” jika ScoreSelect support)
    ============================================================ */
 function SimpleForm({
   who,
@@ -810,13 +811,22 @@ function SimpleForm({
   data: ScoresNotes; // PER ORANG
   onDataChange: (payload: Partial<ScoresNotes>) => void;
 }) {
-  const [scores, setScores] = useState<Record<string, number>>(
-    clampScores(items, data?.scores, (it) => it.key)
-  );
+  // state lokal (boleh), tapi default 0 agar tampil “–”
+  const [scores, setScores] = useState<Record<string, number>>(() => {
+    const next: Record<string, number> = {};
+    for (const it of items)
+      next[it.key] =
+        typeof data.scores?.[it.key] === "number" ? data.scores[it.key] : 0;
+    return next;
+  });
   const [notes, setNotes] = useState<Record<string, string>>(data?.notes || {});
 
   useEffect(() => {
-    setScores(clampScores(items, data?.scores, (it) => it.key));
+    const next: Record<string, number> = {};
+    for (const it of items)
+      next[it.key] =
+        typeof data.scores?.[it.key] === "number" ? data.scores[it.key] : 0;
+    setScores(next);
     setNotes(data?.notes || {});
   }, [data, items]);
 
@@ -825,12 +835,12 @@ function SimpleForm({
     [scores, notes, onDataChange]
   );
 
-  const avg =
-    Math.round(
-      (Object.values(scores).reduce((a, b) => a + b, 0) /
-        Math.max(1, items.length)) *
-        10
-    ) / 10;
+  const avg = useMemo(() => {
+    const vals = Object.values(scores).filter((x) => x > 0);
+    if (vals.length === 0) return 0;
+    const sum = vals.reduce((a, b) => a + b, 0);
+    return Math.round((sum / vals.length) * 10) / 10;
+  }, [scores]);
 
   return (
     <div className="space-y-4">
@@ -870,7 +880,7 @@ function SimpleForm({
                     }}
                     placeholder="Key"
                     className="rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-amber-500"
-                    title="Mengubah KEY akan membuat skor lama tidak terpakai untuk item ini."
+                    title="Mengubah KEY akan memutus histori skor untuk item ini."
                   />
                   <input
                     value={item.title}
@@ -892,8 +902,10 @@ function SimpleForm({
               <div className="sm:hidden text-xs text-slate-500 mb-1">Skor</div>
               <ScoreSelect
                 key={`${who}-${item.key}`}
-                value={scores[item.key] ?? 0}
-                onChange={(v) => setScores((p) => ({ ...p, [item.key]: v }))}
+                value={scores[item.key] ?? 0} // 0 => “–”
+                onChange={(v) =>
+                  setScores((p) => ({ ...p, [item.key]: v ?? 0 }))
+                }
               />
             </div>
 

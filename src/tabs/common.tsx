@@ -17,25 +17,47 @@ export function ThemedSelect(
     />
   );
 }
-export function scoreDot(score: number) {
+
+/** Warna dot untuk skor; kosong/0 => abu-abu */
+export function scoreDot(score?: number | null) {
+  if (!score || score === 0) return "bg-slate-300";
   if (score <= 2) return "bg-rose-500";
   if (score === 3) return "bg-amber-500";
   return "bg-emerald-500";
 }
+
+/**
+ * ScoreSelect
+ * - value boleh undefined/null/0 => tampilkan placeholder "–"
+ * - onChange mengirim number | undefined (undefined = kosong)
+ */
 export function ScoreSelect({
   value,
   onChange,
+  disabled,
+  className = "",
+  placeholder = "–",
 }: {
-  value: number;
-  onChange: (v: number) => void;
+  value?: number | null;
+  onChange: (v: number | undefined) => void;
+  disabled?: boolean;
+  className?: string;
+  placeholder?: string;
 }) {
+  const stringValue = value == null || value === 0 ? "" : String(value);
+
   return (
-    <div className="flex items-center gap-2">
+    <div className={"flex items-center gap-2 " + className}>
       <span className={"h-2.5 w-2.5 rounded-full " + scoreDot(value)} />
       <ThemedSelect
-        value={String(value)}
-        onChange={(e) => onChange(Number(e.target.value))}
+        disabled={disabled}
+        value={stringValue}
+        onChange={(e) => {
+          const v = e.target.value === "" ? undefined : Number(e.target.value);
+          onChange(v);
+        }}
       >
+        <option value="">{placeholder}</option>
         {[1, 2, 3, 4, 5].map((n) => (
           <option key={n} value={n}>
             {n}
@@ -45,6 +67,7 @@ export function ScoreSelect({
     </div>
   );
 }
+
 export function NumberWithSuffix({
   suffix,
   value,
@@ -66,6 +89,7 @@ export function NumberWithSuffix({
     </div>
   );
 }
+
 export function OptionsGroup({
   options,
   value,
