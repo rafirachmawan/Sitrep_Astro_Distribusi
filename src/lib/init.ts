@@ -1,8 +1,18 @@
 import type { AppState } from "./types";
+import { PRINCIPALS, type Principal } from "./types"; // ⬅️ tambah import
+
+// helpers untuk bikin record per-principal
+const makeRecord = <T>(val: T) =>
+  Object.fromEntries(PRINCIPALS.map((p) => [p, val])) as Record<Principal, T>;
+
+const makeWeekRecord = () =>
+  Object.fromEntries(
+    PRINCIPALS.map((p) => [p, [false, false, false, false] as boolean[]])
+  ) as Record<Principal, boolean[]>;
 
 export function initAppState(): AppState {
   return {
-    header: { leader: "", target: "", depo: "" }, // <— kosong; akan diisi dari auth
+    header: { leader: "", target: "", depo: "" },
     checklist: {
       kas: {},
       buku: {},
@@ -27,14 +37,17 @@ export function initAppState(): AppState {
     },
     target: {
       targetSelesai: "",
-      klaimSelesai: { FRI: false, SPJ: false, APA: false, WPL: false },
-      weekly: {
-        FRI: [false, false, false, false],
-        SPJ: [false, false, false, false],
-        APA: [false, false, false, false],
-        WPL: [false, false, false, false],
-      },
+      klaimSelesai: makeRecord(false),
+      weekly: makeWeekRecord(),
       ketepatanFodks: false,
+
+      // ⬇️ WAJIB: inisialisasi semua deadline
+      deadlines: {
+        klaim: makeRecord(""),
+        weekly: makeRecord(""),
+        targetSelesai: "",
+        fodks: "",
+      },
     },
     sparta: {
       deadline: "",
