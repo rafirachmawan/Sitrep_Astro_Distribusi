@@ -148,7 +148,7 @@ export default function ChecklistArea({
               extra: [
                 {
                   type: "text",
-                  placeholder: "Nomor Form (cth: TUKC-T-25-001)",
+                  placeholder: "TUKC-T-25-001",
                 },
               ],
             },
@@ -665,6 +665,7 @@ type RVScore = Extract<RowValue, { kind: "score" }>;
 type RVCompound = Extract<RowValue, { kind: "compound" }>;
 type CompoundExtras = NonNullable<RVCompound["extras"]>;
 
+/* ================= ROW ================= */
 function ChecklistRow({
   row,
   value,
@@ -683,8 +684,8 @@ function ChecklistRow({
   onChange: (v: RowValue) => void;
 }) {
   const [note, setNote] = useState(value?.note || "");
-
   const taRef = useRef<HTMLTextAreaElement | null>(null);
+
   const adjustHeight = () => {
     const el = taRef.current;
     if (!el) return;
@@ -694,58 +695,21 @@ function ChecklistRow({
 
   useEffect(() => {
     if (value && value.note !== note) onChange({ ...value, note });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note]);
 
   useEffect(() => {
     adjustHeight();
   }, [value?.note]);
 
-  const hasTextExtra =
-    row.kind === "compound" && row.extra?.some((e) => e.type === "text");
-  const hasCurrencyExtra =
-    row.kind === "compound" && row.extra?.some((e) => e.type === "currency");
-  const hasNumberExtra =
-    row.kind === "compound" && row.extra?.some((e) => e.type === "number");
+  const optVal = value?.kind === "options" ? value.value : null;
+  const numStr = value?.kind === "number" ? String(value.value ?? "") : "";
+  const scoreVal = value?.kind === "score" ? value.value : 3;
+  const compVal = value?.kind === "compound" ? value : undefined;
+  const compExtras = compVal?.extras;
 
-  const textPlaceholder =
-    row.kind === "compound"
-      ? row.extra?.find((e) => e.type === "text")?.placeholder
-      : undefined;
-  const currencyPlaceholder =
-    row.kind === "compound"
-      ? row.extra?.find((e) => e.type === "currency")?.placeholder
-      : undefined;
-  const numberPlaceholder =
-    row.kind === "compound"
-      ? row.extra?.find((e) => e.type === "number")?.placeholder
-      : undefined;
-
-  // current values per-kind
-  const optVal: RVOptions["value"] | null =
-    value?.kind === "options" ? value.value : null;
-  const numStr: string =
-    value?.kind === "number" ? String((value as RVNumber).value ?? "") : "";
-  const scoreVal: number =
-    value?.kind === "score" ? (value as RVScore).value : 3;
-  const compVal: RVCompound | undefined =
-    value?.kind === "compound" ? (value as RVCompound) : undefined;
-  const compExtras: CompoundExtras | undefined = compVal?.extras as
-    | CompoundExtras
-    | undefined;
-
-  // --- helper rupiah ---
-  const formatIDR = (digitStr?: string) => {
-    if (!digitStr) return "";
-    const n = Number(digitStr);
-    if (isNaN(n)) return "";
-    return new Intl.NumberFormat("id-ID").format(n);
-  };
-  const toDigits = (s: string) => (s || "").replace(/[^\d]/g, "");
-
-  // helper class untuk semua input agar konsisten
   const INPUT_BASE =
-    "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
+    "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center " +
+    "focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-12 items-start bg-white">
@@ -769,140 +733,63 @@ function ChecklistRow({
           Status / Isian
         </div>
 
-        {editable && (row.kind === "options" || row.kind === "compound") && (
-          <input
-            defaultValue={(row.options || []).join(", ")}
-            onBlur={(e) => onEditOptions(e.target.value)}
-            className={`${INPUT_BASE} mb-2`}
-            placeholder="Opsi dipisah koma (mis: Cocok, Tidak Cocok)"
-            title="Edit opsi (pisah dengan koma). Klik di luar untuk menyimpan."
-          />
-        )}
-        {editable && row.kind === "number" && (
-          <input
-            defaultValue={row.suffix || ""}
-            onBlur={(e) => onEditSuffix(e.target.value)}
-            className={`${INPUT_BASE} mb-2`}
-            placeholder="Suffix (mis: pcs, faktur, kali)"
-            title="Edit suffix. Klik di luar untuk menyimpan."
-          />
-        )}
+        <div className="border-2 border-slate-300 rounded-lg p-2 bg-slate-50 shadow-sm">
+          {editable && (row.kind === "options" || row.kind === "compound") && (
+            <input
+              defaultValue={(row.options || []).join(", ")}
+              onBlur={(e) => onEditOptions(e.target.value)}
+              className={`${INPUT_BASE} mb-2`}
+              placeholder="Opsi dipisah koma"
+            />
+          )}
+          {editable && row.kind === "number" && (
+            <input
+              defaultValue={row.suffix || ""}
+              onBlur={(e) => onEditSuffix(e.target.value)}
+              className={`${INPUT_BASE} mb-2`}
+              placeholder="Suffix (pcs, faktur, kali)"
+            />
+          )}
 
-        {row.kind === "options" && (
-          <OptionsGroup
-            options={row.options}
-            value={optVal}
-            onChange={(v) => onChange({ kind: "options", value: v, note })}
-          />
-        )}
-        {row.kind === "number" && (
-          <NumberWithSuffix
-            suffix={row.suffix}
-            value={numStr}
-            onChange={(v) =>
-              onChange({ kind: "number", value: v, suffix: row.suffix, note })
-            }
-          />
-        )}
-        {row.kind === "score" && (
-          <ScoreSelect
-            value={scoreVal}
-            onChange={(v) => onChange({ kind: "score", value: v, note })}
-          />
-        )}
-        {row.kind === "compound" && (
-          <div className="space-y-2">
+          {row.kind === "options" && (
             <OptionsGroup
               options={row.options}
-              value={compVal?.value ?? null}
+              value={optVal}
+              onChange={(v) => onChange({ kind: "options", value: v, note })}
+            />
+          )}
+          {row.kind === "number" && (
+            <NumberWithSuffix
+              suffix={row.suffix}
+              value={numStr}
               onChange={(v) =>
-                onChange({
-                  kind: "compound",
-                  value: v,
-                  note,
-                  extras: {
-                    text: compExtras?.text,
-                    currency: compExtras?.currency,
-                    number: compExtras?.number,
-                  },
-                })
+                onChange({ kind: "number", value: v, suffix: row.suffix, note })
               }
             />
-
-            {(hasTextExtra || hasCurrencyExtra || hasNumberExtra) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                {hasTextExtra && (
-                  <input
-                    placeholder={textPlaceholder}
-                    value={compExtras?.text ?? ""}
-                    onChange={(e) =>
-                      onChange({
-                        kind: "compound",
-                        value: compVal?.value ?? null,
-                        note,
-                        extras: {
-                          text: e.target.value,
-                          currency: compExtras?.currency,
-                          number: compExtras?.number,
-                        },
-                      })
-                    }
-                    className={INPUT_BASE}
-                  />
-                )}
-
-                {hasCurrencyExtra && (
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
-                      Rp.
-                    </span>
-                    <input
-                      placeholder={currencyPlaceholder || "contoh: 4.235.523"}
-                      value={formatIDR(compExtras?.currency)}
-                      onChange={(e) => {
-                        const rawDigits = toDigits(e.target.value);
-                        onChange({
-                          kind: "compound",
-                          value: compVal?.value ?? null,
-                          note,
-                          extras: {
-                            text: compExtras?.text,
-                            currency: rawDigits, // simpan RAW digit
-                            number: compExtras?.number,
-                          },
-                        });
-                      }}
-                      inputMode="numeric"
-                      className={`${INPUT_BASE} pl-12`}
-                    />
-                  </div>
-                )}
-
-                {hasNumberExtra && (
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    placeholder={numberPlaceholder || "Jumlah"}
-                    value={compExtras?.number ?? ""}
-                    onChange={(e) =>
-                      onChange({
-                        kind: "compound",
-                        value: compVal?.value ?? null,
-                        note,
-                        extras: {
-                          text: compExtras?.text,
-                          currency: compExtras?.currency,
-                          number: e.target.value,
-                        },
-                      })
-                    }
-                    className={INPUT_BASE}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-        )}
+          )}
+          {row.kind === "score" && (
+            <ScoreSelect
+              value={scoreVal}
+              onChange={(v) => onChange({ kind: "score", value: v, note })}
+            />
+          )}
+          {row.kind === "compound" && (
+            <div className="space-y-2">
+              <OptionsGroup
+                options={row.options}
+                value={compVal?.value ?? null}
+                onChange={(v) =>
+                  onChange({
+                    kind: "compound",
+                    value: v,
+                    note,
+                    extras: compExtras,
+                  })
+                }
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Keterangan */}
@@ -914,7 +801,9 @@ function ChecklistRow({
           onChange={(e) => setNote(e.target.value)}
           onInput={adjustHeight}
           placeholder="Keterangan..."
-          className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 resize-none overflow-y-auto min-h-[40px] max-h-40"
+          className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center 
+                     placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 
+                     focus:border-blue-500 resize-none overflow-y-auto min-h-[40px] max-h-40"
         />
       </div>
     </div>
