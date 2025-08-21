@@ -2,19 +2,10 @@
 
 import React, { useMemo, useState } from "react";
 import { Target as TargetIcon } from "lucide-react";
-import type { TargetState, Principal } from "@/lib/types";
+import type { TargetState, Principal, TargetDeadlines } from "@/lib/types";
 import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
-
-/* ====================== Tipe lokal dengan deadlines ====================== */
-type DeadlinesState = {
-  klaim?: Record<Principal, string>; // YYYY-MM-DD per principal
-  weekly?: Record<Principal, string>; // YYYY-MM-DD per principal
-  targetSelesai?: string; // YYYY-MM-DD
-  fodks?: string; // YYYY-MM-DD
-};
-type LocalTargetState = TargetState & { deadlines?: DeadlinesState };
 
 /* ============================================================
    Overrides per role (disimpan di localStorage)
@@ -73,8 +64,8 @@ export default function TargetAchievement({
   data,
   onChange,
 }: {
-  data: LocalTargetState;
-  onChange: (v: LocalTargetState) => void;
+  data: TargetState;
+  onChange: (v: TargetState) => void;
 }) {
   const { role } = useAuth();
   const isSuper = role === "superadmin";
@@ -140,30 +131,43 @@ export default function TargetAchievement({
   const INPUT_BASE =
     "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
 
-  // helpers update deadline
-  const setDeadline = (
-    scope: keyof DeadlinesState,
-    value: string,
-    p?: Principal
-  ) => {
-    const next: DeadlinesState = { ...(data.deadlines || {}) };
-    if (p) {
-      const bucket = {
-        ...(next[scope] as Record<Principal, string> | undefined),
-      };
-      bucket[p] = value;
-      (next as any)[scope] = bucket;
-    } else {
-      (next as any)[scope] = value;
+  type DeadlineScope = keyof TargetDeadlines; // 'klaim' | 'weekly' | 'targetSelesai' | 'fodks'
+
+  // helpers update deadline (sesuai tipe TargetDeadlines)
+  const setDeadline = (scope: DeadlineScope, value: string, p?: Principal) => {
+    const next: TargetDeadlines = { ...data.deadlines };
+    switch (scope) {
+      case "klaim":
+        if (!p) break;
+        next.klaim = { ...next.klaim, [p]: value };
+        break;
+      case "weekly":
+        if (!p) break;
+        next.weekly = { ...next.weekly, [p]: value };
+        break;
+      case "targetSelesai":
+        next.targetSelesai = value;
+        break;
+      case "fodks":
+        next.fodks = value;
+        break;
     }
     onChange({ ...data, deadlines: next });
   };
 
-  const getDeadline = (scope: keyof DeadlinesState, p?: Principal) => {
-    const d = data.deadlines || {};
-    if (p)
-      return (d[scope] as Record<Principal, string> | undefined)?.[p] ?? "";
-    return (d[scope] as string | undefined) ?? "";
+  const getDeadline = (scope: DeadlineScope, p?: Principal): string => {
+    switch (scope) {
+      case "klaim":
+        return data.deadlines.klaim[p as Principal] ?? "";
+      case "weekly":
+        return data.deadlines.weekly[p as Principal] ?? "";
+      case "targetSelesai":
+        return data.deadlines.targetSelesai ?? "";
+      case "fodks":
+        return data.deadlines.fodks ?? "";
+      default:
+        return "";
+    }
   };
 
   return (

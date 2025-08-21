@@ -60,11 +60,26 @@ export type EvaluasiKompetensi = {
 export const PRINCIPALS = ["FRI", "SPJ", "APA", "WPL"] as const;
 export type Principal = (typeof PRINCIPALS)[number];
 
+/* ================== Tambahan untuk Deadline Target & Achievement ================== */
+export type TargetDeadlines = {
+  /** Deadline penyelesaian klaim per principal (YYYY-MM-DD) */
+  klaim: Record<Principal, string>;
+  /** Deadline laporan mingguan per principal (YYYY-MM-DD) */
+  weekly: Record<Principal, string>;
+  /** Deadline untuk target selesai bulan ini (YYYY-MM-DD) */
+  targetSelesai: string;
+  /** Deadline ketepatan input FODKS (YYYY-MM-DD) */
+  fodks: string;
+};
+
 export type TargetState = {
   targetSelesai: string;
   klaimSelesai: Record<Principal, boolean>;
   weekly: Record<Principal, boolean[]>; // 4 minggu
   ketepatanFodks: boolean;
+
+  /** ⬅️ field baru agar semua deadline tersimpan rapi */
+  deadlines: TargetDeadlines;
 };
 
 export type SpartaState = {
