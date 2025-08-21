@@ -700,6 +700,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   /* -------- Layout PDF -------- */
   const buildPrintLayout = () => {
     const root = document.createElement("div");
+    root.id = "pdf-print-root"; // ← penting: untuk onclone selector
     // putus pewarisan CSS global (hindari warna oklch dll)
     (root.style as any).all = "initial";
     root.style.display = "block";
@@ -1261,31 +1262,41 @@ export default function Lampiran({ data }: { data: AppState }) {
     }
     setWorking(true);
     try {
+      // 1) load libs lebih dulu
       const { html2canvas, jsPDF } = await loadPdfLibs();
 
+      // 2) build & mount node yang akan dirender
       const root = buildPrintLayout();
       if (!printRef.current) return;
       printRef.current.innerHTML = "";
       printRef.current.appendChild(root);
 
-      // di dalam submitAndGenerate()
-      // const canvas = await html2canvas(root, {
-      //   backgroundColor: "#ffffff",
-      //   scale: 2,
-      //   foreignObjectRendering: true, // <— tambahkan baris ini
-      // });
+      // 3) beri satu frame supaya layout stabil
+      await new Promise((r) => requestAnimationFrame(r));
 
-      // const root = document.createElement("div");
-
-      // isolasi dari CSS global yang mungkin memakai oklch()
-      (root.style as any).all = "initial";
-      root.style.display = "block";
-
+      // 4) render ke canvas, isolasi CSS global via onclone
       const canvas = await html2canvas(root, {
         backgroundColor: "#ffffff",
         scale: 2,
-        foreignObjectRendering: true, // <— tambahkan baris ini
+        foreignObjectRendering: true,
+        onclone: (doc: Document) => {
+          const clonedRoot = doc.getElementById("pdf-print-root");
+          doc
+            .querySelectorAll('link[rel="stylesheet"], style')
+            .forEach((el) => {
+              if (!clonedRoot || !clonedRoot.contains(el)) {
+                el.parentNode?.removeChild(el);
+              }
+            });
+          doc.documentElement.removeAttribute("data-theme");
+          (doc.documentElement as HTMLElement).style.setProperty(
+            "color-scheme",
+            "light"
+          );
+        },
       });
+
+      // 5) slicing canvas -> PDF A4
       const imgW = canvas.width;
       const imgH = canvas.height;
 
@@ -1323,13 +1334,12 @@ export default function Lampiran({ data }: { data: AppState }) {
       const date = todayISO();
       const filename = `${date}.pdf`;
 
-      // Upload ke Supabase via API
+      // 6) upload (tetap sama)
       try {
         const arrayBuffer = pdf.output("arraybuffer") as ArrayBuffer;
         const u = (user ?? {}) as AnyUser;
         const userId = u.id || u.email || u.name || "unknown";
         const role = u.role || "admin";
-
         const res = await fetch(
           `/api/lampiran/upload?userId=${encodeURIComponent(
             userId
@@ -1345,7 +1355,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         console.warn("Upload error:", e);
       }
 
-      // Simpan local sebagai backup + unduh
+      // 7) simpan lokal + download
       const pdfDataUrl = pdf.output("datauristring") as string;
       const entry: PdfEntry = {
         id: uuid(),
@@ -1364,11 +1374,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       pdf.save(filename);
     } catch (e) {
       console.error("PDF error:", e);
-      const msg =
-        (e as Error)?.message ||
-        String(e) ||
-        "Gagal membuat PDF. Pastikan 'jspdf' dan 'html2canvas' sudah terpasang.";
-      alert(msg);
+      alert((e as Error)?.message || String(e));
     } finally {
       setWorking(false);
     }
