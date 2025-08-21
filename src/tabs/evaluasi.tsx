@@ -3,10 +3,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Users2, Plus, Trash2 } from "lucide-react";
 import type { AppState, EvaluasiAttitude } from "@/lib/types";
-import { ScoreSelect } from "./common";
+import { ScoreSelectNullable } from "./common"; // ⬅️ pakai yang nullable
 import { useAuth } from "@/components/AuthProvider";
-
-import { ScoreSelectNullable } from "./common";
 
 /* =========================
    Tema / Person
@@ -168,21 +166,17 @@ export default function EvaluasiTim({
   const { role } = useAuth();
   const isSuper = role === "superadmin";
 
-  // hari/tema default
   const now = new Date();
   const dow = now.getDay();
   const hariLabel = DAY_LABEL_ID[dow];
   const themeAuto: Theme = THEME_BY_DOW[dow];
 
-  // superadmin bisa override tema
   const [forceTheme, setForceTheme] = useState<Theme | null>(null);
   const theme: Theme = isSuper ? forceTheme ?? themeAuto : themeAuto;
 
-  // simpan hari default (untuk attitude)
   const defaultHari: 1 | 2 | 3 | 4 | 5 | 6 =
     dow >= 1 && dow <= 6 ? (dow as 1 | 2 | 3 | 4 | 5 | 6) : 1;
 
-  // overrides
   const [ov, setOv] = useState<EvalOverrides>(readOv);
   useEffect(() => writeOv(ov), [ov]);
   const resetOv = () => {
@@ -193,17 +187,14 @@ export default function EvaluasiTim({
     }
   };
 
-  // mode edit
   const [editMode, setEditMode] = useState(false);
 
-  // label person
   const PERSON_LABEL: Record<Person, string> = {
     laras: ov.personLabels?.laras || PERSON_LABEL_BASE.laras,
     emi: ov.personLabels?.emi || PERSON_LABEL_BASE.emi,
     novi: ov.personLabels?.novi || PERSON_LABEL_BASE.novi,
   };
 
-  // items efektif
   const ATTITUDE_ITEMS: AttItem[] =
     ov.attitudeItems ?? ATTITUDE_ITEMS_BASE.map((x) => ({ ...x }));
   const KOMPETENSI_ITEMS: SimpleItem[] =
@@ -213,7 +204,6 @@ export default function EvaluasiTim({
   const SOP_ITEMS: SimpleItem[] =
     ov.sopItems ?? SOP_ITEMS_BASE.map((x) => ({ ...x }));
 
-  // judul
   const TITLE_DEFAULT: Record<Exclude<Theme, "kosong">, string> = {
     attitude: "Penilaian Attitude (HEBAT)",
     kompetensi: "Penilaian Kompetensi",
@@ -227,21 +217,17 @@ export default function EvaluasiTim({
     kepatuhan: ov.titles?.kepatuhan ?? TITLE_DEFAULT.kepatuhan,
   };
 
-  // person terpilih
   const [who, setWho] = useState<Person>("laras");
 
-  // evaluasi text per orang
   const evalKey = `evaluasi_${who}`;
   const evaluasiText = getDyn<string>(data as unknown, evalKey, "");
 
-  // attitude global (sesuai tipe kamu)
+  // attitude global sesuai tipe
   const attitude: EvaluasiAttitude = data.attitude || {
     scores: {},
     notes: {},
     hari: defaultHari,
   };
-
-  // setter util untuk attitude global
   const setAttitude = (next: EvaluasiAttitude) =>
     onChange({ ...data, attitude: next });
 
@@ -409,10 +395,9 @@ export default function EvaluasiTim({
           />
         )}
 
-        {/* ==== Opsional: Form lain. Saat ini tidak diubah (biar fokus perbaikan Attitude). ==== */}
-
         {theme === "kompetensi" && (
           <SimpleForm
+            key={`kompetensi-${who}`} // ⬅️ remount saat ganti orang
             who={who}
             title={TITLES.kompetensi}
             setTitle={(t) =>
@@ -456,6 +441,7 @@ export default function EvaluasiTim({
 
         {theme === "prestasi" && (
           <SimpleForm
+            key={`prestasi-${who}`} // ⬅️ remount saat ganti orang
             who={who}
             title={TITLES.prestasi}
             setTitle={(t) =>
@@ -493,6 +479,7 @@ export default function EvaluasiTim({
 
         {theme === "kepatuhan" && (
           <SimpleForm
+            key={`kepatuhan-${who}`} // ⬅️ remount saat ganti orang
             who={who}
             title={TITLES.kepatuhan}
             setTitle={(t) =>
@@ -567,9 +554,9 @@ export default function EvaluasiTim({
 }
 
 /* ============================================================
-   Attitude Form — TANPA state lokal (langsung ke AppState)
-   Skor Catatan disimpan per orang: key = "{person}::{code}"
-   Nilai awal: undefined/0 => tampil "–"
+   Attitude Form — langsung commit ke AppState (tanpa state lokal)
+   Skor/Note disimpan per orang: key = "{person}::{code}"
+   Nilai awal kosong ⇒ tampil “–”
    ============================================================ */
 function AttitudeForm({
   who,
@@ -597,7 +584,6 @@ function AttitudeForm({
 
   const getScore = (code: string): number | undefined =>
     data.scores?.[sKey(code)];
-
   const getNote = (code: string): string => data.notes?.[sKey(code)] || "";
 
   const setScore = (code: string, v: number | undefined) => {
@@ -724,7 +710,7 @@ function AttitudeForm({
               <div className="sm:hidden text-xs text-slate-500 mb-1">Skor</div>
               <ScoreSelectNullable
                 key={`${who}-${item.code}`}
-                value={getScore(item.code)} // bisa undefined -> tampil "–"
+                value={getScore(item.code)} // undefined/0 => tampil “–”
                 onChange={(v) => setScore(item.code, v)}
               />
             </div>
@@ -791,8 +777,9 @@ function AttitudeForm({
 
 /* ============================================================
    Simple Form (Kompetensi / Prestasi / Kepatuhan)
-   — tetap per orang dengan key dinamis `tema_${who}`
-   — default skor 0 (render “–” jika ScoreSelect support)
+   — per orang dengan key dinamis `tema_${who}`
+   — default skor 0 (render “–” lewat ScoreSelectNullable)
+   — TANPA efek reset dari parent; parent diupdate tapi form tidak “rollback”
    ============================================================ */
 function SimpleForm({
   who,
@@ -813,7 +800,7 @@ function SimpleForm({
   data: ScoresNotes; // PER ORANG
   onDataChange: (payload: Partial<ScoresNotes>) => void;
 }) {
-  // state lokal (boleh), tapi default 0 agar tampil “–”
+  // init sekali (komponen di-remount saat 'who' ganti via key di parent)
   const [scores, setScores] = useState<Record<string, number>>(() => {
     const next: Record<string, number> = {};
     for (const it of items)
@@ -823,15 +810,7 @@ function SimpleForm({
   });
   const [notes, setNotes] = useState<Record<string, string>>(data?.notes || {});
 
-  useEffect(() => {
-    const next: Record<string, number> = {};
-    for (const it of items)
-      next[it.key] =
-        typeof data.scores?.[it.key] === "number" ? data.scores[it.key] : 0;
-    setScores(next);
-    setNotes(data?.notes || {});
-  }, [data, items]);
-
+  // commit ke parent setiap berubah
   useEffect(
     () => onDataChange({ scores, notes }),
     [scores, notes, onDataChange]
@@ -904,7 +883,7 @@ function SimpleForm({
               <div className="sm:hidden text-xs text-slate-500 mb-1">Skor</div>
               <ScoreSelectNullable
                 key={`${who}-${item.key}`}
-                value={scores[item.key] ?? 0} // 0/undefined -> "–"
+                value={scores[item.key] ?? 0} // 0/undefined => “–”
                 onChange={(v) =>
                   setScores((p) => ({ ...p, [item.key]: v ?? 0 }))
                 }
