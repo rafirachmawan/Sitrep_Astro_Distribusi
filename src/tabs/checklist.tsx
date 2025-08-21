@@ -124,7 +124,8 @@ export default function ChecklistArea({
             {
               kind: "options",
               key: "approval",
-              label: "Approval",
+              // ✅ permintaan: ganti label
+              label: "Approval untuk Voucher Kas Kecil",
               options: ["Sesuai", "Tidak Sesuai"],
             },
             {
@@ -144,13 +145,20 @@ export default function ChecklistArea({
               key: "dropping-kas-kecil",
               label: "Dropping Kas Kecil",
               options: ["Ada", "Tidak"],
-              extra: [{ type: "number", placeholder: "Jumlah Form" }],
+              // ✅ permintaan: catat nomor form (contoh TUKC-T-25-001)
+              extra: [
+                {
+                  type: "text",
+                  placeholder: "Nomor Form (cth: TUKC-T-25-001)",
+                },
+              ],
             },
             {
               kind: "options",
               key: "serah-terima-fat",
               label: "Serah Terima dengan FAT",
-              options: ["Sesuai", "Tidak Sesuai"],
+              // ✅ permintaan: Sudah / Belum
+              options: ["Sudah", "Belum"],
             },
           ],
         },
@@ -171,7 +179,8 @@ export default function ChecklistArea({
             },
             {
               kind: "options",
-              key: "kasbon-operasional",
+              // ✅ perbaiki bug key bentrok dengan 'kasbon-operasional' di section Kas
+              key: "buku-kasbon-operasional",
               label: "Buku Kasbon Operasional",
               options: ["Sesuai", "Tidak Sesuai"],
             },
@@ -179,6 +188,7 @@ export default function ChecklistArea({
         },
         ar: {
           title: "AR",
+          // ✅ “disesuaikan desain SITREP” – tetap inti yang sama, rapikan label
           rows: [
             {
               kind: "options",
@@ -189,13 +199,13 @@ export default function ChecklistArea({
             {
               kind: "options",
               key: "faktur-disuaikan",
-              label: "Faktur disesuaikan Rute/Permintaan/Kebutuhan",
+              label: "Penyesuaian Faktur ke Rute/Permintaan/Kebutuhan",
               options: ["Sesuai", "Tidak Sesuai"],
             },
             {
               kind: "options",
               key: "overdue-bawakan",
-              label: "Faktur perlu ditagih/overdue dibawakan",
+              label: "Overdue/Perlu Ditagih Dibawakan",
               options: ["Sesuai", "Tidak Sesuai"],
             },
             {
@@ -244,36 +254,23 @@ export default function ChecklistArea({
               label: "Faktur DO yang belum draft loading",
               suffix: "faktur",
             },
+            // ✅ Gabungkan Kondisi Dokumen, Tanda Terima, Input aPos ke dalam Faktur Kembali
+            {
+              kind: "compound",
+              key: "faktur-kembali",
+              label: "Faktur Kembali dari Pengiriman",
+              options: ["100%", "Ada yang tidak kembali"],
+              extra: [
+                { type: "text", placeholder: "Kondisi dokumen…" },
+                { type: "text", placeholder: "Tanda terima…" },
+                { type: "text", placeholder: "Status input di aPos…" },
+              ],
+            },
             {
               kind: "options",
               key: "draft-loading-besok",
               label: "Pengiriman besok sudah draft loading semua",
               options: ["Sudah", "Ada yang belum"],
-            },
-            {
-              kind: "compound",
-              key: "faktur-kembali",
-              label: "Faktur kembali dari pengiriman",
-              options: ["100%", "Ada yang tidak kembali"],
-              extra: [{ type: "text", placeholder: "Alasan…" }],
-            },
-            {
-              kind: "options",
-              key: "kondisi-dokumen",
-              label: "Kondisi dokumen",
-              options: ["Baik", "Perlu perbaikan"],
-            },
-            {
-              kind: "options",
-              key: "tanda-terima",
-              label: "Tanda terima",
-              options: ["Lengkap", "Tidak Lengkap"],
-            },
-            {
-              kind: "options",
-              key: "input-apos",
-              label: "Input di aPos",
-              options: ["Sudah", "Belum Selesai"],
             },
             {
               kind: "number",
@@ -286,7 +283,7 @@ export default function ChecklistArea({
               key: "konfirmasi-sales",
               label: "Konfirmasi ke Tim Salesman",
               options: ["Sudah", "Belum"],
-              extra: [{ type: "text", placeholder: "Alasan…" }],
+              extra: [{ type: "text", placeholder: "Catatan/Alasan…" }],
             },
           ],
         },
@@ -307,8 +304,9 @@ export default function ChecklistArea({
             },
             {
               kind: "options",
-              key: "penjumlahan-kas-besar",
-              label: "Penjumlahan Kas Besar ke Bank",
+              key: "penjurnalan-kas-besar",
+              // ✅ permintaan: bukan Penjumlahan tetapi Penjurnalan
+              label: "Penjurnalan Kas Besar ke Bank",
               options: ["Sesuai", "Tidak Sesuai", "Tidak Dikerjakan"],
             },
           ],
@@ -534,7 +532,7 @@ export default function ChecklistArea({
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-600">Role:</label>
             <select
-              className="rounded-lg border-slate-300 text-sm"
+              className="rounded-lg border-slate-300 text-sm bg-white"
               value={targetRole}
               onChange={(e) => setTargetRole(e.target.value as Role)}
             >
@@ -604,7 +602,7 @@ export default function ChecklistArea({
             <input
               value={section.title}
               onChange={(e) => updateSectionTitle(secActive, e.target.value)}
-              className="min-w-[220px] w-full sm:w-96 rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
+              className="min-w-[220px] w-full sm:w-96 rounded-lg border border-slate-300 bg-white text-sm focus:ring-2 focus:ring-blue-500"
               placeholder="Judul section…"
             />
           ) : (
@@ -727,7 +725,7 @@ function ChecklistRow({
       ? row.extra?.find((e) => e.type === "number")?.placeholder
       : undefined;
 
-  // current values per-kind (tanpa any)
+  // current values per-kind
   const optVal: RVOptions["value"] | null =
     value?.kind === "options" ? value.value : null;
   const numStr: string =
@@ -757,7 +755,7 @@ function ChecklistRow({
           <input
             value={row.label}
             onChange={(e) => onEditLabel(e.target.value)}
-            className="w-full rounded-lg border-slate-300 text-sm focus:ring-2 focus:ring-blue-500"
+            className="w-full rounded-lg border border-slate-300 bg-white text-sm focus:ring-2 focus:ring-blue-500"
             placeholder="Nama area/pertanyaan…"
           />
         ) : (
@@ -775,7 +773,7 @@ function ChecklistRow({
           <input
             defaultValue={(row.options || []).join(", ")}
             onBlur={(e) => onEditOptions(e.target.value)}
-            className="mb-2 w-full rounded-lg border-slate-300 text-xs focus:ring-2 focus:ring-amber-500"
+            className="mb-2 w-full rounded-lg border border-amber-300 bg-white text-xs focus:ring-2 focus:ring-amber-500"
             placeholder="Opsi dipisah koma (mis: Cocok, Tidak Cocok)"
             title="Edit opsi (pisah dengan koma). Klik di luar untuk menyimpan."
           />
@@ -784,7 +782,7 @@ function ChecklistRow({
           <input
             defaultValue={row.suffix || ""}
             onBlur={(e) => onEditSuffix(e.target.value)}
-            className="mb-2 w-full rounded-lg border-slate-300 text-xs focus:ring-2 focus:ring-amber-500"
+            className="mb-2 w-full rounded-lg border border-amber-300 bg-white text-xs focus:ring-2 focus:ring-amber-500"
             placeholder="Suffix (mis: pcs, faktur, kali)"
             title="Edit suffix. Klik di luar untuk menyimpan."
           />
@@ -849,7 +847,7 @@ function ChecklistRow({
                         },
                       })
                     }
-                    className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-lg border border-slate-300 bg-white text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
                   />
                 )}
 
@@ -869,13 +867,13 @@ function ChecklistRow({
                           note,
                           extras: {
                             text: compExtras?.text,
-                            currency: rawDigits,
+                            currency: rawDigits, // simpan RAW digit
                             number: compExtras?.number,
                           },
                         });
                       }}
                       inputMode="numeric"
-                      className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 pl-12"
+                      className="w-full rounded-lg border border-slate-300 bg-white text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 pl-12"
                     />
                   </div>
                 )}
@@ -898,7 +896,7 @@ function ChecklistRow({
                         },
                       })
                     }
-                    className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                    className="w-full rounded-lg border border-slate-300 bg-white text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
                   />
                 )}
               </div>
@@ -916,7 +914,7 @@ function ChecklistRow({
           onChange={(e) => setNote(e.target.value)}
           onInput={adjustHeight}
           placeholder="Keterangan..."
-          className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 resize-none overflow-y-auto min-h-[40px] max-h-40"
+          className="w-full rounded-lg border border-slate-300 bg-white text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 resize-none overflow-y-auto min-h-[40px] max-h-40"
         />
       </div>
     </div>
