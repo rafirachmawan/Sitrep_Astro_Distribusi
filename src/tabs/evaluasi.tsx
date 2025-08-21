@@ -137,6 +137,8 @@ const THEME_BY_DOW: Record<number, Theme> = {
 /* =========================
    Helper
    ========================= */
+const stop: React.MouseEventHandler<any> = (e) => e.stopPropagation();
+
 function clampScores<T extends { key?: string; code?: string }>(
   items: T[],
   old: Record<string, number> | undefined,
@@ -154,6 +156,7 @@ type ScoresNotes = {
   scores: Record<string, number>;
   notes: Record<string, string>;
 };
+
 const getDyn = <T,>(obj: unknown, key: string, fallback: T): T => {
   const rec = (obj as Record<string, unknown>) || {};
   const v = rec[key] as T | undefined;
@@ -184,19 +187,13 @@ export default function EvaluasiTim({
   const hariLabel = DAY_LABEL_ID[dow];
   const themeAuto: Theme = THEME_BY_DOW[dow];
 
-  // superadmin bisa override tema (akses semua)
+  // superadmin bisa override tema
   const [forceTheme, setForceTheme] = useState<Theme | null>(null);
   const theme: Theme = isSuper ? forceTheme ?? themeAuto : themeAuto;
 
-  // hari num disimpan (legacy): hanya set saat 1–6 (Senin–Sabtu)
-  useEffect(() => {
-    if (dow >= 1 && dow <= 6) {
-      const hariNum = dow as 1 | 2 | 3 | 4 | 5 | 6;
-      onChange({ ...data, attitude: { ...data.attitude, hari: hariNum } });
-    }
-    // untuk Minggu (0) tidak mengubah nilai 'hari'
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dow]);
+  // simpan hari default (untuk attitude per orang)
+  const defaultHari: 1 | 2 | 3 | 4 | 5 | 6 =
+    dow >= 1 && dow <= 6 ? (dow as 1 | 2 | 3 | 4 | 5 | 6) : 1;
 
   // overrides
   const [ov, setOv] = useState<EvalOverrides>(readOv);
@@ -212,14 +209,14 @@ export default function EvaluasiTim({
   // mode edit
   const [editMode, setEditMode] = useState(false);
 
-  // label person (rename-able)
+  // label person
   const PERSON_LABEL: Record<Person, string> = {
     laras: ov.personLabels?.laras || PERSON_LABEL_BASE.laras,
     emi: ov.personLabels?.emi || PERSON_LABEL_BASE.emi,
     novi: ov.personLabels?.novi || PERSON_LABEL_BASE.novi,
   };
 
-  // items efektif (pakai override jika ada)
+  // items efektif
   const ATTITUDE_ITEMS: AttItem[] =
     ov.attitudeItems ?? ATTITUDE_ITEMS_BASE.map((x) => ({ ...x }));
   const KOMPETENSI_ITEMS: SimpleItem[] =
@@ -229,7 +226,7 @@ export default function EvaluasiTim({
   const SOP_ITEMS: SimpleItem[] =
     ov.sopItems ?? SOP_ITEMS_BASE.map((x) => ({ ...x }));
 
-  // judul tiap tema
+  // judul
   const TITLE_DEFAULT: Record<Exclude<Theme, "kosong">, string> = {
     attitude: "Penilaian Attitude (HEBAT)",
     kompetensi: "Penilaian Kompetensi",
@@ -244,17 +241,13 @@ export default function EvaluasiTim({
   };
 
   // person terpilih
-  // …
   const [who, setWho] = useState<Person>("laras");
+
+  // evaluasi text per orang (catatan admin)
   const evalKey = `evaluasi_${who}`;
   const evaluasiText = getDyn<string>(data as unknown, evalKey, "");
 
-  // tambahkan default hari untuk EvaluasiAttitude
-  const defaultHari: 1 | 2 | 3 | 4 | 5 | 6 =
-    dow >= 1 && dow <= 6
-      ? (dow as 1 | 2 | 3 | 4 | 5 | 6)
-      : data.attitude?.hari ?? 1;
-
+  // default attitude state per orang
   const DEFAULT_ATTITUDE: EvaluasiAttitude = {
     scores: {},
     notes: {},
@@ -280,7 +273,6 @@ export default function EvaluasiTim({
             <span className="font-medium">Hari:</span> {hariLabel}
           </div>
 
-          {/* Tema: auto, tapi superadmin bisa pilih manual */}
           <div className="text-sm text-slate-700">
             <span className="font-medium">Tema:</span>{" "}
             {theme === "attitude"
@@ -355,7 +347,7 @@ export default function EvaluasiTim({
         </div>
       </div>
 
-      {/* Selector Person + rename (superadmin) */}
+      {/* Selector Person + rename */}
       {theme !== "kosong" && (
         <div className="px-3 sm:px-6 py-3 border-b bg-white">
           <div className="text-sm text-slate-600 mb-2">
@@ -421,7 +413,6 @@ export default function EvaluasiTim({
             onItemsChange={(arr) =>
               setOv((p) => ({ ...p, attitudeItems: arr }))
             }
-            // ⬇️ ganti default-nya ke DEFAULT_ATTITUDE (bukan {scores:{}, notes:{}})
             data={getDyn<EvaluasiAttitude>(
               data as unknown,
               `attitude_${who}`,
@@ -458,31 +449,24 @@ export default function EvaluasiTim({
               setOv((p) => ({ ...p, kompetensiItems: arr }))
             }
             data={
-              (getDyn<ScoresNotes | undefined>(
+              getDyn<ScoresNotes | undefined>(
                 data as unknown,
                 `kompetensi_${who}`,
                 undefined
-              ) ??
-                getDyn<ScoresNotes | undefined>(
-                  data as unknown,
-                  "kompetensi",
-                  undefined
-                ) ?? { scores: {}, notes: {} }) as ScoresNotes
+              ) ?? {
+                scores: {},
+                notes: {},
+              }
             }
             onDataChange={(payload) => {
               const prev = getDyn<ScoresNotes | undefined>(
                 data as unknown,
                 `kompetensi_${who}`,
                 undefined
-              ) ??
-                getDyn<ScoresNotes | undefined>(
-                  data as unknown,
-                  "kompetensi",
-                  undefined
-                ) ?? {
-                  scores: {},
-                  notes: {},
-                };
+              ) ?? {
+                scores: {},
+                notes: {},
+              };
               const nextObj = setDyn(data as unknown, `kompetensi_${who}`, {
                 ...prev,
                 ...payload,
@@ -603,7 +587,7 @@ export default function EvaluasiTim({
 }
 
 /* ============================================================
-   Attitude Form (HEBAT) — full editable schema (superadmin)
+   Attitude Form — PER ORANG, reset state saat data berubah
    ============================================================ */
 function AttitudeForm({
   title,
@@ -619,21 +603,23 @@ function AttitudeForm({
   items: AttItem[];
   editable: boolean;
   onItemsChange: (items: AttItem[]) => void;
-  data: EvaluasiAttitude;
+  data: EvaluasiAttitude; // <- data PER ORANG
   onDataChange: (
     scores: Record<string, number>,
     notes: Record<string, string>
   ) => void;
 }) {
-  // sinkron skor/notes ke schema terbaru
   const [scores, setScores] = useState<Record<string, number>>(
     clampScores(items, data?.scores, (it) => it.code)
   );
   const [notes, setNotes] = useState<Record<string, string>>(data?.notes || {});
+
+  // penting: reset saat DATA (orang terpilih) atau ITEMS berubah
   useEffect(() => {
-    setScores((prev) => clampScores(items, prev, (it) => it.code));
-    // notes dibiarkan apa adanya per code; jika code baru, note default ""
-  }, [items]);
+    setScores(clampScores(items, data?.scores, (it) => it.code));
+    setNotes(data?.notes || {});
+  }, [data, items]);
+
   useEffect(() => onDataChange(scores, notes), [scores, notes, onDataChange]);
 
   const avg =
@@ -645,7 +631,6 @@ function AttitudeForm({
 
   return (
     <div className="space-y-4">
-      {/* Title (editable) */}
       <div className="flex items-center gap-2">
         {editable ? (
           <input
@@ -720,7 +705,7 @@ function AttitudeForm({
                           next[i] = { ...next[i], n1: e.target.value };
                           onItemsChange(next);
                         }}
-                        placeholder={`Catatan (mis. "Nilai 1 jika: ...")`}
+                        placeholder='Catatan (mis. "Nilai 1 jika: ...")'
                         className="w-full rounded-lg border-slate-300 text-xs italic focus:ring-2 focus:ring-amber-500"
                       />
                     </>
@@ -780,6 +765,13 @@ function AttitudeForm({
         ))}
       </div>
 
+      <div className="text-sm text-slate-500">
+        Rata-rata skor (HEBAT):{" "}
+        <span className="font-semibold text-slate-800">
+          {isFinite(avg) ? avg : 0}
+        </span>
+      </div>
+
       {editable && (
         <button
           onClick={() =>
@@ -798,19 +790,12 @@ function AttitudeForm({
           <Plus className="h-4 w-4" /> Tambah Item
         </button>
       )}
-
-      <div className="text-sm text-slate-500">
-        Rata-rata skor (HEBAT):{" "}
-        <span className="font-semibold text-slate-800">
-          {isFinite(avg) ? avg : 0}
-        </span>
-      </div>
     </div>
   );
 }
 
 /* ============================================================
-   Simple Form (Kompetensi / Prestasi / Kepatuhan) — full editable
+   Simple Form — PER ORANG, reset state saat data berubah
    ============================================================ */
 function SimpleForm({
   title,
@@ -826,16 +811,20 @@ function SimpleForm({
   items: SimpleItem[];
   editable: boolean;
   onItemsChange: (items: SimpleItem[]) => void;
-  data: ScoresNotes;
+  data: ScoresNotes; // <- PER ORANG
   onDataChange: (payload: Partial<ScoresNotes>) => void;
 }) {
   const [scores, setScores] = useState<Record<string, number>>(
     clampScores(items, data?.scores, (it) => it.key)
   );
   const [notes, setNotes] = useState<Record<string, string>>(data?.notes || {});
+
+  // penting: reset saat DATA (orang terpilih) atau ITEMS berubah
   useEffect(() => {
-    setScores((prev) => clampScores(items, prev, (it) => it.key));
-  }, [items]);
+    setScores(clampScores(items, data?.scores, (it) => it.key));
+    setNotes(data?.notes || {});
+  }, [data, items]);
+
   useEffect(
     () => onDataChange({ scores, notes }),
     [scores, notes, onDataChange]
@@ -945,6 +934,13 @@ function SimpleForm({
         ))}
       </div>
 
+      <div className="text-sm text-slate-500">
+        Rata-rata skor:{" "}
+        <span className="font-semibold text-slate-800">
+          {isFinite(avg) ? avg : 0}
+        </span>
+      </div>
+
       {editable && (
         <button
           onClick={() =>
@@ -958,13 +954,6 @@ function SimpleForm({
           <Plus className="h-4 w-4" /> Tambah Item
         </button>
       )}
-
-      <div className="text-sm text-slate-500">
-        Rata-rata skor:{" "}
-        <span className="font-semibold text-slate-800">
-          {isFinite(avg) ? avg : 0}
-        </span>
-      </div>
     </div>
   );
 }
