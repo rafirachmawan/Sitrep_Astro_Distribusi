@@ -1251,9 +1251,9 @@ export default function Lampiran({ data }: { data: AppState }) {
     }
     setWorking(true);
     try {
-      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
         import("html2canvas"),
-        import("jspdf") as unknown as Promise<{ jsPDF: any }>,
+        import("jspdf"),
       ]);
 
       const root = buildPrintLayout();
