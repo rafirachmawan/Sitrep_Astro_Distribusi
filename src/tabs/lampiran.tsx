@@ -107,9 +107,26 @@ function saveHistory(items: PdfEntry[]) {
 }
 
 /* =========================
+   Loader aman untuk html2canvas & jsPDF (ESM)
+   ========================= */
+async function loadPdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
+  // html2canvas hampir selalu default
+  const h2cMod = await import("html2canvas");
+  const html2canvas = (h2cMod as any).default ?? (h2cMod as any);
+
+  // jsPDF v3: bisa named export (jsPDF) atau default
+  const m = await import("jspdf");
+  const jsPDF = (m as any).jsPDF ?? (m as any).default ?? (m as any);
+
+  if (!html2canvas) throw new Error("html2canvas tidak ter-load");
+  if (!jsPDF) throw new Error("jsPDF tidak ter-load");
+
+  return { html2canvas, jsPDF };
+}
+
+/* =========================
    Signature Pad (fixed)
    ========================= */
-
 function SignaturePad({
   onChange,
 }: {
@@ -240,7 +257,6 @@ function SignaturePad({
 /* =========================
    Checklist → array text
    ========================= */
-
 function renderChecklist(checklist: ChecklistState) {
   const out: {
     section: string;
@@ -288,7 +304,6 @@ function renderChecklist(checklist: ChecklistState) {
 /* =========================
    Helpers (type-safe)
    ========================= */
-
 const isPrimitive = (v: unknown): v is string | number | boolean =>
   ["string", "number", "boolean"].includes(typeof v);
 const isBoolArray = (a: unknown): a is boolean[] =>
@@ -329,7 +344,6 @@ const labelStatusChip = (filled: boolean) =>
 /* =========================
    Evaluasi types + helpers
    ========================= */
-
 type ScoreValue = string | number;
 type PersonEval = {
   scores?: Record<string, ScoreValue>;
@@ -375,7 +389,6 @@ function getByPerson(
 /* =========================
    SPARTA: Catalog v3 + progress per-user
    ========================= */
-
 const SPARTA_CATALOG_KEY = "sitrep-sparta-catalog-v3";
 type SpartaCatalogItem = {
   id: string;
@@ -523,7 +536,6 @@ function extractProjectsFromSparta(
 /* =========================
    Target & Achievement – extractor
    ========================= */
-
 type TargetView =
   | { type: "empty" }
   | { type: "kpi"; rows: Array<Record<string, unknown>> }
@@ -558,9 +570,7 @@ function extractTarget(target: unknown): TargetView {
         return hasName || hasTgt || hasAct || hasPct;
       }) || false;
 
-    if (looksLikeKPI) {
-      return { type: "kpi", rows };
-    }
+    if (looksLikeKPI) return { type: "kpi", rows };
 
     const cols = Array.from(
       rows.reduce<Set<string>>((s, r) => {
@@ -582,7 +592,6 @@ function extractTarget(target: unknown): TargetView {
 /* =========================
    Komponen Utama
    ========================= */
-
 type AppLike = AppState &
   Partial<{
     evaluasi: Evaluasi;
@@ -1135,7 +1144,6 @@ export default function Lampiran({ data }: { data: AppState }) {
     page.appendChild(spSec);
 
     // AGENDA & JADWAL
-    // AGENDA & JADWAL
     const agSec = document.createElement("div");
     agSec.className = "section";
     agSec.innerHTML = `<div class="title">Agenda & Jadwal</div>`;
@@ -1144,7 +1152,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       []) as AppLike["agenda"]["entries"];
 
     if (!agenda.length) {
-      // ... (biarkan sama)
+      // kosong: biarkan kosong
     } else {
       const sorted = [...agenda].sort((a, b) =>
         a.date === b.date
@@ -1158,10 +1166,8 @@ export default function Lampiran({ data }: { data: AppState }) {
           : -1
       );
 
-      // ✅ perbaikan tipe: tegasin itemnya
       type AgendaEntry = NonNullable<AppLike["agenda"]>["entries"][number];
       const groups: Record<string, AgendaEntry[]> = {};
-
       for (const e of sorted as AgendaEntry[]) {
         (groups[e.date] ||= []).push(e);
       }
@@ -1251,10 +1257,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     }
     setWorking(true);
     try {
-      const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-        import("html2canvas"),
-        import("jspdf"),
-      ]);
+      const { html2canvas, jsPDF } = await loadPdfLibs();
 
       const root = buildPrintLayout();
       if (!printRef.current) return;
@@ -1305,7 +1308,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       // Upload ke Supabase via API
       try {
         const arrayBuffer = pdf.output("arraybuffer") as ArrayBuffer;
-
         const u = (user ?? {}) as AnyUser;
         const userId = u.id || u.email || u.name || "unknown";
         const role = u.role || "admin";
@@ -1343,10 +1345,12 @@ export default function Lampiran({ data }: { data: AppState }) {
 
       pdf.save(filename);
     } catch (e) {
-      console.error(e);
-      alert(
-        "Gagal membuat PDF. Pastikan 'jspdf' dan 'html2canvas' sudah terpasang."
-      );
+      console.error("PDF error:", e);
+      const msg =
+        (e as Error)?.message ||
+        String(e) ||
+        "Gagal membuat PDF. Pastikan 'jspdf' dan 'html2canvas' sudah terpasang.";
+      alert(msg);
     } finally {
       setWorking(false);
     }
@@ -1367,7 +1371,9 @@ export default function Lampiran({ data }: { data: AppState }) {
       if (entry.storage === "remote" && entry.key) {
         const res = await fetch(
           `/api/lampiran/delete?key=${encodeURIComponent(entry.key)}`,
-          { method: "POST" }
+          {
+            method: "POST",
+          }
         );
         if (!res.ok) {
           const msg = await res.json().catch(() => ({} as { error?: string }));
