@@ -137,8 +137,7 @@ const THEME_BY_DOW: Record<number, Theme> = {
 /* =========================
    Helper
    ========================= */
-// const stop = (e: { stopPropagation(): void }) => e.stopPropagation();
-
+// default sekarang 0 (kosong)
 function clampScores<T extends { key?: string; code?: string }>(
   items: T[],
   old: Record<string, number> | undefined,
@@ -147,7 +146,7 @@ function clampScores<T extends { key?: string; code?: string }>(
   const next: Record<string, number> = {};
   for (const it of items) {
     const k = getKey(it);
-    next[k] = old && typeof old[k] === "number" ? old[k] : 3; // default 3
+    next[k] = typeof old?.[k] === "number" ? old![k] : 0;
   }
   return next;
 }
@@ -243,7 +242,7 @@ export default function EvaluasiTim({
   // person terpilih
   const [who, setWho] = useState<Person>("laras");
 
-  // evaluasi text per orang (catatan admin)
+  // evaluasi text per orang
   const evalKey = `evaluasi_${who}`;
   const evaluasiText = getDyn<string>(data as unknown, evalKey, "");
 
@@ -354,10 +353,7 @@ export default function EvaluasiTim({
                 <button
                   key={p}
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setWho(p);
-                  }}
+                  onClick={() => setWho(p)}
                   className={
                     "px-3 py-1.5 rounded-lg border text-sm " +
                     (who === p
@@ -396,6 +392,7 @@ export default function EvaluasiTim({
       <div className="px-3 sm:px-6 pb-6">
         {theme === "attitude" && (
           <AttitudeForm
+            who={who}
             title={TITLES.attitude}
             setTitle={(t) =>
               setOv((p) => ({
@@ -408,16 +405,16 @@ export default function EvaluasiTim({
             onItemsChange={(arr) =>
               setOv((p) => ({ ...p, attitudeItems: arr }))
             }
-            data={getDyn<EvaluasiAttitude>(
-              data as unknown,
-              `attitude_${who}`,
-              DEFAULT_ATTITUDE
-            )}
+            data={getDyn<EvaluasiAttitude>(data as unknown, `attitude_${who}`, {
+              scores: {},
+              notes: {},
+              hari: defaultHari,
+            })}
             onDataChange={(scores, notes) => {
               const base = getDyn<EvaluasiAttitude>(
                 data as unknown,
                 `attitude_${who}`,
-                DEFAULT_ATTITUDE
+                { scores: {}, notes: {}, hari: defaultHari }
               );
               const next = setDyn(data as unknown, `attitude_${who}`, {
                 ...base,
@@ -431,6 +428,7 @@ export default function EvaluasiTim({
 
         {theme === "kompetensi" && (
           <SimpleForm
+            who={who}
             title={TITLES.kompetensi}
             setTitle={(t) =>
               setOv((p) => ({
@@ -458,10 +456,7 @@ export default function EvaluasiTim({
                 data as unknown,
                 `kompetensi_${who}`,
                 undefined
-              ) ?? {
-                scores: {},
-                notes: {},
-              };
+              ) ?? { scores: {}, notes: {} };
               const nextObj = setDyn(data as unknown, `kompetensi_${who}`, {
                 ...prev,
                 ...payload,
@@ -473,6 +468,7 @@ export default function EvaluasiTim({
 
         {theme === "prestasi" && (
           <SimpleForm
+            who={who}
             title={TITLES.prestasi}
             setTitle={(t) =>
               setOv((p) => ({
@@ -509,6 +505,7 @@ export default function EvaluasiTim({
 
         {theme === "kepatuhan" && (
           <SimpleForm
+            who={who}
             title={TITLES.kepatuhan}
             setTitle={(t) =>
               setOv((p) => ({
@@ -562,7 +559,7 @@ export default function EvaluasiTim({
                   const next = setDyn(data as unknown, evalKey, e.target.value);
                   onChange(next as AppState["evaluasi"]);
                 }}
-                placeholder={`Catatan evaluasi untuk ${PERSON_LABEL[who]}…`}
+                placeholder="Catatan evaluasi…"
                 className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
               />
             ) : (
@@ -582,9 +579,10 @@ export default function EvaluasiTim({
 }
 
 /* ============================================================
-   Attitude Form — PER ORANG, reset state saat data berubah
+   Attitude Form — PER ORANG, reset state saat data/items berubah
    ============================================================ */
 function AttitudeForm({
+  who,
   title,
   setTitle,
   items,
@@ -593,12 +591,13 @@ function AttitudeForm({
   data,
   onDataChange,
 }: {
+  who: string;
   title: string;
   setTitle: (t: string) => void;
   items: AttItem[];
   editable: boolean;
   onItemsChange: (items: AttItem[]) => void;
-  data: EvaluasiAttitude; // <- data PER ORANG
+  data: EvaluasiAttitude; // PER ORANG
   onDataChange: (
     scores: Record<string, number>,
     notes: Record<string, string>
@@ -609,7 +608,6 @@ function AttitudeForm({
   );
   const [notes, setNotes] = useState<Record<string, string>>(data?.notes || {});
 
-  // penting: reset saat DATA (orang terpilih) atau ITEMS berubah
   useEffect(() => {
     setScores(clampScores(items, data?.scores, (it) => it.code));
     setNotes(data?.notes || {});
@@ -646,7 +644,7 @@ function AttitudeForm({
       <div className="divide-y border rounded-xl bg-white">
         {items.map((item, i) => (
           <div
-            key={`${item.code}-${i}`}
+            key={`${who}-${item.code}-${i}`}
             className="p-4 grid grid-cols-1 sm:grid-cols-12 gap-3"
           >
             <div className="sm:col-span-7">
@@ -722,7 +720,8 @@ function AttitudeForm({
             <div className="sm:col-span-2">
               <div className="sm:hidden text-xs text-slate-500 mb-1">Skor</div>
               <ScoreSelect
-                value={scores[item.code]}
+                key={`${who}-${item.code}`}
+                value={scores[item.code] ?? 0}
                 onChange={(v) => setScores((p) => ({ ...p, [item.code]: v }))}
               />
             </div>
@@ -790,9 +789,10 @@ function AttitudeForm({
 }
 
 /* ============================================================
-   Simple Form — PER ORANG, reset state saat data berubah
+   Simple Form — PER ORANG, reset state saat data/items berubah
    ============================================================ */
 function SimpleForm({
+  who,
   title,
   setTitle,
   items,
@@ -801,12 +801,13 @@ function SimpleForm({
   data,
   onDataChange,
 }: {
+  who: string;
   title: string;
   setTitle: (t: string) => void;
   items: SimpleItem[];
   editable: boolean;
   onItemsChange: (items: SimpleItem[]) => void;
-  data: ScoresNotes; // <- PER ORANG
+  data: ScoresNotes; // PER ORANG
   onDataChange: (payload: Partial<ScoresNotes>) => void;
 }) {
   const [scores, setScores] = useState<Record<string, number>>(
@@ -814,7 +815,6 @@ function SimpleForm({
   );
   const [notes, setNotes] = useState<Record<string, string>>(data?.notes || {});
 
-  // penting: reset saat DATA (orang terpilih) atau ITEMS berubah
   useEffect(() => {
     setScores(clampScores(items, data?.scores, (it) => it.key));
     setNotes(data?.notes || {});
@@ -854,7 +854,7 @@ function SimpleForm({
       <div className="divide-y border rounded-xl bg-white">
         {items.map((item, i) => (
           <div
-            key={`${item.key}-${i}`}
+            key={`${who}-${item.key}-${i}`}
             className="p-4 grid grid-cols-1 sm:grid-cols-12 gap-3"
           >
             <div className="sm:col-span-7">
@@ -891,7 +891,8 @@ function SimpleForm({
             <div className="sm:col-span-2">
               <div className="sm:hidden text-xs text-slate-500 mb-1">Skor</div>
               <ScoreSelect
-                value={scores[item.key]}
+                key={`${who}-${item.key}`}
+                value={scores[item.key] ?? 0}
                 onChange={(v) => setScores((p) => ({ ...p, [item.key]: v }))}
               />
             </div>
