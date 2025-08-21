@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Target as TargetIcon } from "lucide-react";
 import type { TargetState, Principal, TargetDeadlines } from "@/lib/types";
 import { PRINCIPALS } from "@/lib/types";
@@ -22,6 +22,9 @@ type TargetOverrides = {
 
 const OV_KEY = "sitrep-target-copy-v1";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
+
+// kunci penyimpanan "shared" hanya untuk DEADLINES
+const SHARED_DEADLINES_KEY = "sitrep:target:shared-deadlines";
 
 function readOverrides(role: Role): TargetOverrides {
   if (typeof window === "undefined") return {};
@@ -167,6 +170,54 @@ export default function TargetAchievement({
         return "";
     }
   };
+
+  /* ================= Sinkronisasi DEADLINES via localStorage =================
+     - Superadmin: tulis deadlines ke localStorage setiap berubah.
+     - Admin: baca saat mount & saat ada event "storage", lalu merge ke state.
+  =========================================================================== */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!isSuper) return;
+    try {
+      localStorage.setItem(
+        SHARED_DEADLINES_KEY,
+        JSON.stringify(data.deadlines)
+      );
+    } catch {}
+  }, [isSuper, data.deadlines]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const pull = () => {
+      try {
+        const raw = localStorage.getItem(SHARED_DEADLINES_KEY);
+        if (!raw) return;
+        const dl = JSON.parse(raw) as TargetDeadlines;
+        // merge ke state saat ini
+        onChange({
+          ...data,
+          deadlines: {
+            ...data.deadlines,
+            targetSelesai: dl.targetSelesai ?? data.deadlines.targetSelesai,
+            fodks: dl.fodks ?? data.deadlines.fodks,
+            klaim: { ...data.deadlines.klaim, ...(dl.klaim || {}) },
+            weekly: { ...data.deadlines.weekly, ...(dl.weekly || {}) },
+          },
+        });
+      } catch {}
+    };
+
+    if (!isSuper) pull(); // admin tarik saat mount
+
+    const handler = (e: StorageEvent) => {
+      if (e.key === SHARED_DEADLINES_KEY && !isSuper) pull();
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSuper]); // cukup bergantung pada role
+  /* =================== akhir sinkronisasi =================== */
 
   return (
     <div className="space-y-6">
