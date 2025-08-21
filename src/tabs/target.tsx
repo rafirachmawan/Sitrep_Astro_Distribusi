@@ -12,14 +12,14 @@ import type { Role } from "@/components/AuthProvider";
    ============================================================ */
 type TargetOverrides = {
   copy?: {
-    klaimTitle?: string; // Penyelesaian Klaim Bulan Ini
-    targetSelesaiLabel?: string; // Target Selesai (bulan ini)
-    weeklyTitle?: string; // Laporan Penjualan ke Prinsipal Mingguan
-    fodksTitle?: string; // Ketepatan Waktu Input FODKS
-    fodksCheckboxLabel?: string; // Tandai jika tepat waktu
-    deadlineLabel?: string; // Label kolom/field Deadline
+    klaimTitle?: string;
+    targetSelesaiLabel?: string;
+    weeklyTitle?: string;
+    fodksTitle?: string;
+    fodksCheckboxLabel?: string;
+    deadlineLabel?: string;
   };
-  principals?: Record<string, { label?: string }>; // key = Principal
+  principals?: Record<string, { label?: string }>;
 };
 
 const OV_KEY = "sitrep-target-copy-v1";
@@ -73,7 +73,7 @@ export default function TargetAchievement({
   const [targetRole, setTargetRole] = useState<Role>("admin");
   const viewRole = (isSuper ? targetRole : (role as Role)) || "admin";
   const [editMode, setEditMode] = useState(false);
-  const [rev, setRev] = useState(0); // untuk memicu re-render setelah menulis overrides
+  const [rev, setRev] = useState(0);
 
   const overrides = useMemo(() => readOverrides(viewRole), [viewRole, rev]);
 
@@ -127,13 +127,12 @@ export default function TargetAchievement({
       },
     });
 
-  // helper styling input
+  // styling input konsisten
   const INPUT_BASE =
     "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
 
-  type DeadlineScope = keyof TargetDeadlines; // 'klaim' | 'weekly' | 'targetSelesai' | 'fodks'
+  type DeadlineScope = keyof TargetDeadlines;
 
-  // helpers update deadline (sesuai tipe TargetDeadlines)
   const setDeadline = (scope: DeadlineScope, value: string, p?: Principal) => {
     const next: TargetDeadlines = { ...data.deadlines };
     switch (scope) {
@@ -237,7 +236,7 @@ export default function TargetAchievement({
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="hidden sm:table-header-group bg-slate-50 text-slate-600">
+              <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="text-left py-2 px-2">Jenis</th>
                   <th className="text-left py-2 px-2">Selesai</th>
@@ -246,7 +245,7 @@ export default function TargetAchievement({
               </thead>
               <tbody className="divide-y border rounded-xl bg-white">
                 {PRINCIPALS.map((p) => (
-                  <tr key={p} className="grid grid-cols-3 sm:table-row">
+                  <tr key={p}>
                     <td className="py-3 px-2 font-medium text-slate-800">
                       {editMode ? (
                         <input
@@ -254,7 +253,6 @@ export default function TargetAchievement({
                           onBlur={(e) => savePrincipalLabel(p, e.target.value)}
                           className={INPUT_BASE}
                           placeholder={`Nama principal untuk ${p}`}
-                          title="Ubah nama tampilan principal lalu klik di luar untuk menyimpan"
                         />
                       ) : (
                         principalLabel(p)
@@ -300,7 +298,6 @@ export default function TargetAchievement({
                     }
                     className={INPUT_BASE}
                     placeholder="Label Target Selesai…"
-                    title="Ubah label lalu klik di luar untuk menyimpan"
                   />
                 ) : (
                   copy.targetSelesaiLabel
@@ -340,7 +337,6 @@ export default function TargetAchievement({
               onBlur={(e) => saveCopy("weeklyTitle", e.target.value)}
               className={`${INPUT_BASE} sm:w-[520px]`}
               placeholder="Judul bagian mingguan…"
-              title="Ubah judul lalu klik di luar untuk menyimpan"
             />
           ) : (
             copy.weeklyTitle
@@ -407,7 +403,6 @@ export default function TargetAchievement({
               onBlur={(e) => saveCopy("fodksTitle", e.target.value)}
               className={`${INPUT_BASE} sm:w-[420px]`}
               placeholder="Judul bagian FODKS…"
-              title="Ubah judul lalu klik di luar untuk menyimpan"
             />
           ) : (
             copy.fodksTitle
@@ -429,7 +424,6 @@ export default function TargetAchievement({
                 onBlur={(e) => saveCopy("fodksCheckboxLabel", e.target.value)}
                 className={INPUT_BASE}
                 placeholder="Label checkbox…"
-                title="Ubah label lalu klik di luar untuk menyimpan"
               />
             ) : (
               <span className="text-sm text-slate-700">
