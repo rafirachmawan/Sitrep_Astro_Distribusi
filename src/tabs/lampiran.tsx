@@ -700,6 +700,10 @@ export default function Lampiran({ data }: { data: AppState }) {
   /* -------- Layout PDF -------- */
   const buildPrintLayout = () => {
     const root = document.createElement("div");
+    // putus pewarisan CSS global (hindari warna oklch dll)
+    (root.style as any).all = "initial";
+    root.style.display = "block";
+
     root.style.width = "794px";
     root.style.background = "#fff";
     root.style.color = "#0f172a";
@@ -1264,9 +1268,23 @@ export default function Lampiran({ data }: { data: AppState }) {
       printRef.current.innerHTML = "";
       printRef.current.appendChild(root);
 
+      // di dalam submitAndGenerate()
+      // const canvas = await html2canvas(root, {
+      //   backgroundColor: "#ffffff",
+      //   scale: 2,
+      //   foreignObjectRendering: true, // <— tambahkan baris ini
+      // });
+
+      // const root = document.createElement("div");
+
+      // isolasi dari CSS global yang mungkin memakai oklch()
+      (root.style as any).all = "initial";
+      root.style.display = "block";
+
       const canvas = await html2canvas(root, {
         backgroundColor: "#ffffff",
         scale: 2,
+        foreignObjectRendering: true, // <— tambahkan baris ini
       });
       const imgW = canvas.width;
       const imgH = canvas.height;
