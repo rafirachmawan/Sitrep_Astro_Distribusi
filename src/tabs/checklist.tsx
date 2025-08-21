@@ -124,7 +124,6 @@ export default function ChecklistArea({
             {
               kind: "options",
               key: "approval",
-              // ✅ permintaan: ganti label
               label: "Approval untuk Voucher Kas Kecil",
               options: ["Sesuai", "Tidak Sesuai"],
             },
@@ -145,7 +144,7 @@ export default function ChecklistArea({
               key: "dropping-kas-kecil",
               label: "Dropping Kas Kecil",
               options: ["Ada", "Tidak"],
-              // ✅ permintaan: catat nomor form (contoh TUKC-T-25-001)
+              // catat Nomor Form (contoh)
               extra: [
                 {
                   type: "text",
@@ -157,7 +156,6 @@ export default function ChecklistArea({
               kind: "options",
               key: "serah-terima-fat",
               label: "Serah Terima dengan FAT",
-              // ✅ permintaan: Sudah / Belum
               options: ["Sudah", "Belum"],
             },
           ],
@@ -179,7 +177,7 @@ export default function ChecklistArea({
             },
             {
               kind: "options",
-              // ✅ perbaiki bug key bentrok dengan 'kasbon-operasional' di section Kas
+              // fix duplikasi key
               key: "buku-kasbon-operasional",
               label: "Buku Kasbon Operasional",
               options: ["Sesuai", "Tidak Sesuai"],
@@ -188,7 +186,6 @@ export default function ChecklistArea({
         },
         ar: {
           title: "AR",
-          // ✅ “disesuaikan desain SITREP” – tetap inti yang sama, rapikan label
           rows: [
             {
               kind: "options",
@@ -254,7 +251,7 @@ export default function ChecklistArea({
               label: "Faktur DO yang belum draft loading",
               suffix: "faktur",
             },
-            // ✅ Gabungkan Kondisi Dokumen, Tanda Terima, Input aPos ke dalam Faktur Kembali
+            // gabungkan kondisi dokumen / tanda terima / aPos ke faktur-kembali
             {
               kind: "compound",
               key: "faktur-kembali",
@@ -305,7 +302,6 @@ export default function ChecklistArea({
             {
               kind: "options",
               key: "penjurnalan-kas-besar",
-              // ✅ permintaan: bukan Penjumlahan tetapi Penjurnalan
               label: "Penjurnalan Kas Besar ke Bank",
               options: ["Sesuai", "Tidak Sesuai", "Tidak Dikerjakan"],
             },
@@ -532,7 +528,7 @@ export default function ChecklistArea({
           <div className="flex items-center gap-2">
             <label className="text-sm text-slate-600">Role:</label>
             <select
-              className="rounded-lg border-slate-300 text-sm bg-white"
+              className="rounded-xl border-2 border-slate-300 text-sm bg-white px-2 py-1 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
               value={targetRole}
               onChange={(e) => setTargetRole(e.target.value as Role)}
             >
@@ -602,7 +598,7 @@ export default function ChecklistArea({
             <input
               value={section.title}
               onChange={(e) => updateSectionTitle(secActive, e.target.value)}
-              className="min-w-[220px] w-full sm:w-96 rounded-lg border border-slate-300 bg-white text-sm focus:ring-2 focus:ring-blue-500"
+              className="min-w-[220px] w-full sm:w-96 rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
               placeholder="Judul section…"
             />
           ) : (
@@ -747,6 +743,10 @@ function ChecklistRow({
   };
   const toDigits = (s: string) => (s || "").replace(/[^\d]/g, "");
 
+  // helper class untuk semua input agar konsisten
+  const INPUT_BASE =
+    "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-12 items-start bg-white">
       {/* Label */}
@@ -755,7 +755,7 @@ function ChecklistRow({
           <input
             value={row.label}
             onChange={(e) => onEditLabel(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white text-sm focus:ring-2 focus:ring-blue-500"
+            className={INPUT_BASE}
             placeholder="Nama area/pertanyaan…"
           />
         ) : (
@@ -773,7 +773,7 @@ function ChecklistRow({
           <input
             defaultValue={(row.options || []).join(", ")}
             onBlur={(e) => onEditOptions(e.target.value)}
-            className="mb-2 w-full rounded-lg border border-amber-300 bg-white text-xs focus:ring-2 focus:ring-amber-500"
+            className={`${INPUT_BASE} mb-2`}
             placeholder="Opsi dipisah koma (mis: Cocok, Tidak Cocok)"
             title="Edit opsi (pisah dengan koma). Klik di luar untuk menyimpan."
           />
@@ -782,7 +782,7 @@ function ChecklistRow({
           <input
             defaultValue={row.suffix || ""}
             onBlur={(e) => onEditSuffix(e.target.value)}
-            className="mb-2 w-full rounded-lg border border-amber-300 bg-white text-xs focus:ring-2 focus:ring-amber-500"
+            className={`${INPUT_BASE} mb-2`}
             placeholder="Suffix (mis: pcs, faktur, kali)"
             title="Edit suffix. Klik di luar untuk menyimpan."
           />
@@ -847,7 +847,7 @@ function ChecklistRow({
                         },
                       })
                     }
-                    className="w-full rounded-lg border border-slate-300 bg-white text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                    className={INPUT_BASE}
                   />
                 )}
 
@@ -873,7 +873,7 @@ function ChecklistRow({
                         });
                       }}
                       inputMode="numeric"
-                      className="w-full rounded-lg border border-slate-300 bg-white text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 pl-12"
+                      className={`${INPUT_BASE} pl-12`}
                     />
                   </div>
                 )}
@@ -896,7 +896,7 @@ function ChecklistRow({
                         },
                       })
                     }
-                    className="w-full rounded-lg border border-slate-300 bg-white text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                    className={INPUT_BASE}
                   />
                 )}
               </div>
@@ -914,7 +914,7 @@ function ChecklistRow({
           onChange={(e) => setNote(e.target.value)}
           onInput={adjustHeight}
           placeholder="Keterangan..."
-          className="w-full rounded-lg border border-slate-300 bg-white text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500 resize-none overflow-y-auto min-h-[40px] max-h-40"
+          className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 resize-none overflow-y-auto min-h-[40px] max-h-40"
         />
       </div>
     </div>
