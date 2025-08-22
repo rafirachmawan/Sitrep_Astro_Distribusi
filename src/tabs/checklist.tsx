@@ -103,60 +103,65 @@ export default function ChecklistArea({
           title: "Kas Kecil",
           rows: [
             {
+              // Saldo + status Cocok/Tidak Cocok + input nominal Rp
               kind: "compound",
               key: "saldo-kas-kecil",
               label: "Saldo Kas Kecil",
               options: ["Cocok", "Tidak Cocok"],
-              // Rp untuk nominal saldo
-              extra: [{ type: "currency", placeholder: "contoh: 4.235.523" }],
+              extra: [{ type: "currency", placeholder: "Saldo (Rp)" }],
             },
             {
-              kind: "number",
+              // Voucher Individual: angka (pcs) + status Clear/Tidak Beres
+              kind: "compound",
               key: "voucher-individual",
               label: "Voucher Individual",
-              suffix: "pcs",
+              options: ["Clear", "Tidak Beres"],
+              extra: [{ type: "number", placeholder: "pcs" }],
             },
             {
+              // Voucher Harian: Clear / Tidak Beres
               kind: "options",
               key: "voucher-harian",
               label: "Voucher Harian",
               options: ["Clear", "Tidak Beres"],
             },
             {
+              // Approval: Sesuai / Tidak Sesuai
               kind: "options",
               key: "approval",
               label: "Approval",
               options: ["Sesuai", "Tidak Sesuai"],
             },
             {
-              kind: "options",
+              // Kasbon Operasional: Clear / Belum Kembali + kolom teks keterangan
+              kind: "compound",
               key: "kasbon-operasional",
               label: "Kasbon Operasional",
               options: ["Clear", "Belum Kembali"],
+              extra: [{ type: "text", placeholder: "Keterangan" }],
             },
             {
-              kind: "options",
+              // Dokumentasi Bukti Biaya: Valid / Tidak Valid + Penjelasan
+              kind: "compound",
               key: "dok-bukti-biaya",
               label: "Dokumentasi Bukti Biaya",
-              // samakan dengan sheet: Valid / Tidak Valid
               options: ["Valid", "Tidak Valid"],
+              extra: [{ type: "text", placeholder: "Penjelasan" }],
             },
             {
-              // ada checkbox + penjelasan + nilai (Rp)
+              // Dropping Kas Kecil: Ada: Form + Nilai (Rp)
               kind: "compound",
               key: "dropping-kas-kecil",
               label: "Dropping Kas Kecil",
-              options: ["Ada Form", "Tidak"],
-              extra: [
-                { type: "text", placeholder: "Penjelasan" },
-                { type: "currency", placeholder: "Nilai" },
-              ],
+              options: ["Ada: Form"],
+              extra: [{ type: "currency", placeholder: "Nilai (Rp)" }],
             },
             {
+              // Serah Terima dengan FAT: Sudah (sesuai gambar)
               kind: "options",
               key: "serah-terima-fat",
               label: "Serah Terima dengan FAT",
-              options: ["Sudah", "Belum"],
+              options: ["Sudah"],
             },
           ],
         },
