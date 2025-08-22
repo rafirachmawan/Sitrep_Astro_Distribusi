@@ -335,40 +335,47 @@ export default function ChecklistArea({
           title: "Pengiriman",
           rows: [
             {
+              // Faktur DO yang belum draft loading → angka (jumlah faktur)
               kind: "number",
               key: "do-belum-draft-loading",
               label: "Faktur DO yang belum draft loading",
-              suffix: "faktur",
+              suffix: "Faktur",
             },
             {
+              // Pengiriman besok: Iya / Ada yang belum
+              kind: "options",
+              key: "draft-loading-besok",
+              label: "Pengiriman Besok Sudah Draft Loading Semua",
+              options: ["Iya", "Ada yang belum"],
+            },
+            {
+              // Faktur kembali + checklist kondisi + alasan
               kind: "compound",
               key: "faktur-kembali",
               label: "Faktur Kembali dari Pengiriman",
-              options: ["100%", "Ada yang tidak kembali"],
-              extra: [
-                { type: "text", placeholder: "Kondisi dokumen…" },
-                { type: "text", placeholder: "Tanda terima…" },
-                { type: "text", placeholder: "Status input di aPos…" },
+              options: [
+                "100%",
+                "Ada yang tidak kembali",
+                "Kondisi Dokumen Baik",
+                "Tanda terima lengkap",
+                "Input di aPos",
               ],
+              extra: [{ type: "text", placeholder: "Alasan" }],
             },
             {
-              kind: "options",
-              key: "draft-loading-besok",
-              label: "Pengiriman besok sudah draft loading semua",
-              options: ["Sudah", "Ada yang belum"],
-            },
-            {
+              // Faktur yang dibatalkan → angka (jumlah faktur)
               kind: "number",
               key: "faktur-dibatalkan",
               label: "Faktur yang dibatalkan",
-              suffix: "faktur",
+              suffix: "Faktur",
             },
             {
+              // Konfirmasi ke tim salesman + alasan
               kind: "compound",
               key: "konfirmasi-sales",
               label: "Konfirmasi ke Tim Salesman",
               options: ["Sudah", "Belum"],
-              extra: [{ type: "text", placeholder: "Catatan/Alasan…" }],
+              extra: [{ type: "text", placeholder: "Alasan" }],
             },
           ],
         },
