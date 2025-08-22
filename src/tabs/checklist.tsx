@@ -428,65 +428,86 @@ export default function ChecklistArea({
           title: "Penjualan",
           rows: [
             {
+              // jumlah faktur terinput
               kind: "number",
               key: "jumlah-penjualan-terinput",
               label: "Jumlah penjualan terinput",
+              suffix: "Jumlah Faktur",
             },
             {
+              // harga & promo + alasan
               kind: "compound",
               key: "harga-promo",
               label: "Harga & Promo",
               options: ["Sesuai", "Tidak Sesuai"],
-              extra: [{ type: "text", placeholder: "Alasan…" }],
+              extra: [{ type: "text", placeholder: "Alasan" }],
             },
             {
-              kind: "number",
+              // OJ belum terinput: jumlah faktur + alasan
+              kind: "compound",
               key: "oj-belum-terinput",
               label: "Jumlah Order Jual belum terinput",
-              suffix: "faktur",
+              options: [],
+              extra: [
+                { type: "number", placeholder: "Jumlah Faktur" },
+                { type: "text", placeholder: "Alasan" },
+              ],
             },
             {
+              // retur terinput: jumlah faktur
               kind: "number",
               key: "retur-terinput",
               label: "Retur Penjualan terinput",
-              suffix: "faktur",
+              suffix: "Jumlah Faktur",
             },
             {
+              // harga & diskon retur + alasan
               kind: "compound",
               key: "harga-diskon-retur",
               label: "Harga & Diskon di Faktur Retur Jual",
               options: ["Sesuai", "Tidak Sesuai"],
-              extra: [{ type: "text", placeholder: "Alasan…" }],
+              extra: [{ type: "text", placeholder: "Alasan" }],
             },
             {
-              kind: "number",
+              // jumlah retur jual belum terinput: jumlah faktur + alasan
+              kind: "compound",
               key: "retur-belum-terinput",
               label: "Jumlah Retur Jual belum terinput",
-              suffix: "faktur",
+              options: [],
+              extra: [
+                { type: "number", placeholder: "Jumlah Faktur" },
+                { type: "text", placeholder: "Alasan" },
+              ],
             },
             {
+              // perlu pajak + penjelasan
               kind: "compound",
               key: "faktur-perlu-pajak",
               label: "Faktur Penjualan yang Perlu Pajak",
               options: ["Beres", "Belum Diurus"],
-              extra: [{ type: "text", placeholder: "Penjelasan…" }],
+              extra: [{ type: "text", placeholder: "Penjelasan" }],
             },
             {
+              // new product setting + berapa hari belum disetting
               kind: "compound",
               key: "new-product-setting",
               label:
                 "New Product/Perubahan Harga sudah setting harga dan skema diskon",
-              options: ["Sudah", "Belum"],
+              options: ["Sudah", "Belum", "Tidak Ada"],
               extra: [
-                { type: "text", placeholder: "Alasan / hari belum disetting…" },
+                {
+                  type: "number",
+                  placeholder: "Sudah berapa hari belum disetting",
+                },
               ],
             },
             {
+              // budget retur + penjelasan
               kind: "compound",
               key: "budget-retur-dijalankan",
               label: "Budget Retur dijalankan",
               options: ["Sesuai", "Tidak Sesuai"],
-              extra: [{ type: "text", placeholder: "Penjelasan…" }],
+              extra: [{ type: "text", placeholder: "Penjelasan" }],
             },
           ],
         },
