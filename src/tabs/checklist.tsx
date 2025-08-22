@@ -107,7 +107,8 @@ export default function ChecklistArea({
               key: "saldo-kas-kecil",
               label: "Saldo Kas Kecil",
               options: ["Cocok", "Tidak Cocok"],
-              extra: [{ type: "currency", placeholder: "123" }],
+              // Rp untuk nominal saldo
+              extra: [{ type: "currency", placeholder: "contoh: 4.235.523" }],
             },
             {
               kind: "number",
@@ -124,7 +125,7 @@ export default function ChecklistArea({
             {
               kind: "options",
               key: "approval",
-              label: "Approval untuk Voucher Kas Kecil",
+              label: "Approval",
               options: ["Sesuai", "Tidak Sesuai"],
             },
             {
@@ -137,14 +138,19 @@ export default function ChecklistArea({
               kind: "options",
               key: "dok-bukti-biaya",
               label: "Dokumentasi Bukti Biaya",
-              options: ["Valid", "Perlu Validasi"],
+              // samakan dengan sheet: Valid / Tidak Valid
+              options: ["Valid", "Tidak Valid"],
             },
             {
+              // ada checkbox + penjelasan + nilai (Rp)
               kind: "compound",
               key: "dropping-kas-kecil",
               label: "Dropping Kas Kecil",
-              options: ["Ada", "Tidak"],
-              extra: [{ type: "text", placeholder: "TUKC-T-25-001" }],
+              options: ["Ada Form", "Tidak"],
+              extra: [
+                { type: "text", placeholder: "Penjelasan" },
+                { type: "currency", placeholder: "Nilai" },
+              ],
             },
             {
               kind: "options",
@@ -154,6 +160,7 @@ export default function ChecklistArea({
             },
           ],
         },
+
         buku: {
           title: "Buku Penunjang",
           rows: [
