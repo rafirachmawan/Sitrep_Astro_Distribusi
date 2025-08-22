@@ -704,8 +704,8 @@ export default function ChecklistArea({
       </div>
 
       {/* Sub tabs */}
-      <div className="px-3 sm:px-6 pb-3 overflow-x-auto">
-        <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 flex flex-nowrap gap-2">
+      <div className="px-3 sm:px-6 pb-3">
+        <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 flex flex-wrap gap-2 gap-y-2">
           {SECTION_TABS.map((t) => (
             <button
               key={t.key}
