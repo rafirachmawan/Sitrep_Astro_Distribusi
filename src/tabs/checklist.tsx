@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { ClipboardList, CheckCircle2 } from "lucide-react";
 import type { ChecklistState, RowValue, SectionKey } from "@/lib/types";
-import { OptionsGroup, NumberWithSuffix, ScoreSelect } from "./common";
+import { NumberWithSuffix, ScoreSelect } from "./common"; // OptionsGroup dihapus
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 
@@ -144,13 +144,7 @@ export default function ChecklistArea({
               key: "dropping-kas-kecil",
               label: "Dropping Kas Kecil",
               options: ["Ada", "Tidak"],
-              // catat Nomor Form (contoh)
-              extra: [
-                {
-                  type: "text",
-                  placeholder: "TUKC-T-25-001",
-                },
-              ],
+              extra: [{ type: "text", placeholder: "TUKC-T-25-001" }],
             },
             {
               kind: "options",
@@ -177,7 +171,6 @@ export default function ChecklistArea({
             },
             {
               kind: "options",
-              // fix duplikasi key
               key: "buku-kasbon-operasional",
               label: "Buku Kasbon Operasional",
               options: ["Sesuai", "Tidak Sesuai"],
@@ -251,7 +244,6 @@ export default function ChecklistArea({
               label: "Faktur DO yang belum draft loading",
               suffix: "faktur",
             },
-            // gabungkan kondisi dokumen / tanda terima / aPos ke faktur-kembali
             {
               kind: "compound",
               key: "faktur-kembali",
@@ -421,7 +413,6 @@ export default function ChecklistArea({
   const overrides = useMemo(() => readRoleOverrides(viewRole), [viewRole, rev]);
 
   const FINAL_MAP = useMemo(() => {
-    // deep clone bertipe
     const clone = (Object.keys(BASE_MAP) as SectionKey[]).reduce((acc, k) => {
       const sec = BASE_MAP[k];
       acc[k] = {
@@ -431,7 +422,6 @@ export default function ChecklistArea({
       return acc;
     }, {} as Record<SectionKey, { title: string; rows: RowDef[] }>);
 
-    // apply overrides
     if (overrides.sections) {
       (Object.keys(overrides.sections) as SectionKey[]).forEach((sec) => {
         const t = overrides.sections?.[sec]?.title;
@@ -658,12 +648,67 @@ export default function ChecklistArea({
   );
 }
 
-/* ================= ROW ================= */
+/* ================= RowValue Helpers ================= */
 type RVOptions = Extract<RowValue, { kind: "options" }>;
 type RVNumber = Extract<RowValue, { kind: "number" }>;
 type RVScore = Extract<RowValue, { kind: "score" }>;
 type RVCompound = Extract<RowValue, { kind: "compound" }>;
-type CompoundExtras = NonNullable<RVCompound["extras"]>;
+
+/* ========= Multi-select (checkbox) helpers ========= */
+const SEP = " | ";
+function parseMulti(v: string | null, options: string[]): string[] {
+  if (!v) return [];
+  const parts = v
+    .split("|")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return parts.filter((p) => options.includes(p));
+}
+function joinMulti(arr: string[]): string | null {
+  return arr.length ? arr.join(SEP) : null;
+}
+
+/* ========= Checkbox UI ========= */
+function MultiCheckGroup({
+  options,
+  valueJoined,
+  onChangeJoined,
+}: {
+  options: string[];
+  valueJoined: string | null | undefined;
+  onChangeJoined: (nextJoined: string | null) => void;
+}) {
+  const selected = parseMulti(valueJoined ?? null, options);
+
+  const toggle = (opt: string) => {
+    const set = new Set(selected);
+    if (set.has(opt)) set.delete(opt);
+    else set.add(opt);
+    onChangeJoined(joinMulti(Array.from(set)));
+  };
+
+  return (
+    <div className="space-y-1">
+      {options.map((opt) => {
+        const checked = selected.includes(opt);
+        return (
+          <label
+            key={opt}
+            className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-slate-100"
+          >
+            <input
+              type="checkbox"
+              className="h-4 w-4 accent-blue-600"
+              checked={checked}
+              onChange={() => toggle(opt)}
+            />
+            <span className="text-sm text-slate-700">{opt}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
 
 /* ================= ROW ================= */
 function ChecklistRow({
@@ -694,8 +739,8 @@ function ChecklistRow({
   };
 
   useEffect(() => {
-    if (value && value.note !== note) onChange({ ...value, note });
-  }, [note]);
+    if (value && value.note !== note) onChange({ ...value, note } as RowValue);
+  }, [note]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     adjustHeight();
@@ -761,7 +806,7 @@ function ChecklistRow({
           Status / Isian
         </div>
 
-        {/* 🔹 Tambahkan border wrapper di sini */}
+        {/* 🔹 Border wrapper */}
         <div className="border border-slate-300 rounded-lg p-2 bg-slate-50">
           {editable && (row.kind === "options" || row.kind === "compound") && (
             <input
@@ -780,40 +825,60 @@ function ChecklistRow({
             />
           )}
 
+          {/* === Multi-select checkbox untuk 'options' === */}
           {row.kind === "options" && (
-            <OptionsGroup
+            <MultiCheckGroup
               options={row.options}
-              value={optVal}
-              onChange={(v) => onChange({ kind: "options", value: v, note })}
+              valueJoined={optVal}
+              onChangeJoined={(joined) =>
+                onChange({
+                  kind: "options",
+                  value: joined, // string | null
+                  note,
+                } as RVOptions)
+              }
             />
           )}
+
+          {/* === Number === */}
           {row.kind === "number" && (
             <NumberWithSuffix
               suffix={row.suffix}
               value={numStr}
               onChange={(v) =>
-                onChange({ kind: "number", value: v, suffix: row.suffix, note })
+                onChange({
+                  kind: "number",
+                  value: v,
+                  suffix: row.suffix,
+                  note,
+                } as RVNumber)
               }
             />
           )}
+
+          {/* === Score === */}
           {row.kind === "score" && (
             <ScoreSelect
               value={scoreVal}
-              onChange={(v) => onChange({ kind: "score", value: v, note })}
+              onChange={(v) =>
+                onChange({ kind: "score", value: v, note } as RVScore)
+              }
             />
           )}
+
+          {/* === Compound: multi-select + extras === */}
           {row.kind === "compound" && (
             <div className="space-y-2">
-              <OptionsGroup
+              <MultiCheckGroup
                 options={row.options}
-                value={compVal?.value ?? null}
-                onChange={(v) =>
+                valueJoined={compVal?.value ?? null}
+                onChangeJoined={(joined) =>
                   onChange({
                     kind: "compound",
-                    value: v,
+                    value: joined, // string | null
                     note,
                     extras: compExtras,
-                  })
+                  } as RVCompound)
                 }
               />
 
@@ -833,7 +898,7 @@ function ChecklistRow({
                             currency: compExtras?.currency,
                             number: compExtras?.number,
                           },
-                        })
+                        } as RVCompound)
                       }
                       className={INPUT_BASE}
                     />
@@ -858,7 +923,7 @@ function ChecklistRow({
                               currency: rawDigits,
                               number: compExtras?.number,
                             },
-                          });
+                          } as RVCompound);
                         }}
                         inputMode="numeric"
                         className={`${INPUT_BASE} pl-12`}
@@ -882,7 +947,7 @@ function ChecklistRow({
                             currency: compExtras?.currency,
                             number: e.target.value,
                           },
-                        })
+                        } as RVCompound)
                       }
                       className={INPUT_BASE}
                     />
