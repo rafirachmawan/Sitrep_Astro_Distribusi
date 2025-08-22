@@ -77,6 +77,7 @@ const SECTION_TABS: { key: SectionKey; label: string }[] = [
   { key: "setoran", label: "Setoran Bank" },
   { key: "pembelian", label: "Proses Pembelian" },
   { key: "faktur", label: "Penjualan" },
+  { key: "retur", label: "Mutasi antar Depo" }, // gunakan key 'retur' untuk Mutasi antar Depo
   { key: "marketing", label: "Marketing" },
 ];
 
@@ -99,11 +100,11 @@ export default function ChecklistArea({
   const BASE_MAP: Record<SectionKey, { title: string; rows: RowDef[] }> =
     useMemo(
       () => ({
+        /* ===== 1. KAS KECIL ===== */
         kas: {
           title: "Kas Kecil",
           rows: [
             {
-              // Saldo + status Cocok/Tidak Cocok + input nominal Rp
               kind: "compound",
               key: "saldo-kas-kecil",
               label: "Saldo Kas Kecil",
@@ -111,7 +112,6 @@ export default function ChecklistArea({
               extra: [{ type: "currency", placeholder: "Saldo (Rp)" }],
             },
             {
-              // Voucher Individual: angka (pcs) + status Clear/Tidak Beres
               kind: "compound",
               key: "voucher-individual",
               label: "Voucher Individual",
@@ -119,21 +119,18 @@ export default function ChecklistArea({
               extra: [{ type: "number", placeholder: "pcs" }],
             },
             {
-              // Voucher Harian: Clear / Tidak Beres
               kind: "options",
               key: "voucher-harian",
               label: "Voucher Harian",
               options: ["Clear", "Tidak Beres"],
             },
             {
-              // Approval: Sesuai / Tidak Sesuai
               kind: "options",
               key: "approval",
               label: "Approval",
               options: ["Sesuai", "Tidak Sesuai"],
             },
             {
-              // Kasbon Operasional: Clear / Belum Kembali + kolom teks keterangan
               kind: "compound",
               key: "kasbon-operasional",
               label: "Kasbon Operasional",
@@ -141,7 +138,6 @@ export default function ChecklistArea({
               extra: [{ type: "text", placeholder: "Keterangan" }],
             },
             {
-              // Dokumentasi Bukti Biaya: Valid / Tidak Valid + Penjelasan
               kind: "compound",
               key: "dok-bukti-biaya",
               label: "Dokumentasi Bukti Biaya",
@@ -149,7 +145,6 @@ export default function ChecklistArea({
               extra: [{ type: "text", placeholder: "Penjelasan" }],
             },
             {
-              // Dropping Kas Kecil: Ada: Form + Nilai (Rp)
               kind: "compound",
               key: "dropping-kas-kecil",
               label: "Dropping Kas Kecil",
@@ -157,7 +152,6 @@ export default function ChecklistArea({
               extra: [{ type: "currency", placeholder: "Nilai (Rp)" }],
             },
             {
-              // Serah Terima dengan FAT: Sudah (sesuai gambar)
               kind: "options",
               key: "serah-terima-fat",
               label: "Serah Terima dengan FAT",
@@ -166,6 +160,7 @@ export default function ChecklistArea({
           ],
         },
 
+        /* ===== 2. BUKU PENUNJANG ===== */
         buku: {
           title: "Buku Penunjang",
           rows: [
@@ -189,6 +184,8 @@ export default function ChecklistArea({
             },
           ],
         },
+
+        /* ===== 3. AR ===== */
         ar: {
           title: "AR",
           rows: [
@@ -243,8 +240,6 @@ export default function ChecklistArea({
               label: "Laporan AR Mingguan",
               options: ["Sudah", "Lewat Deadline"],
             },
-
-            // Ringkasan nominal & jumlah
             {
               kind: "compound",
               key: "total-od",
@@ -262,8 +257,6 @@ export default function ChecklistArea({
                 { type: "number", placeholder: "Jumlah Faktur" },
               ],
             },
-
-            // Setoran Giro (3 baris seperti di sheet)
             {
               kind: "compound",
               key: "setoran-giro-1",
@@ -302,26 +295,31 @@ export default function ChecklistArea({
             },
           ],
         },
+
+        /* ===== 4. KLAIM ===== */
         klaim: {
           title: "Klaim",
           rows: [
             {
-              kind: "options",
+              kind: "compound",
               key: "klaim-bs-proses",
               label: "Semua Klaim BS sudah terproses/sedang diproses",
               options: ["Beres", "Belum Diurus"],
+              extra: [{ type: "text", placeholder: "Penjelasan" }],
             },
             {
-              kind: "options",
+              kind: "compound",
               key: "klaim-bank-garansi-proses",
               label: "Semua Klaim Bank Garansi terproses/sedang diproses",
               options: ["Beres", "Belum Diurus"],
+              extra: [{ type: "text", placeholder: "Penjelasan" }],
             },
             {
-              kind: "options",
+              kind: "compound",
               key: "klaim-on-track",
               label: "Pengerjaan Klaim on Track / Behind Schedule",
-              options: ["On Track", "Behind Schedule"],
+              options: ["Iya", "Behind Schedule"],
+              extra: [{ type: "text", placeholder: "Penjelasan" }],
             },
             {
               kind: "options",
@@ -331,25 +329,24 @@ export default function ChecklistArea({
             },
           ],
         },
+
+        /* ===== 5. PENGIRIMAN ===== */
         pengiriman: {
           title: "Pengiriman",
           rows: [
             {
-              // Faktur DO yang belum draft loading → angka (jumlah faktur)
               kind: "number",
               key: "do-belum-draft-loading",
               label: "Faktur DO yang belum draft loading",
               suffix: "Faktur",
             },
             {
-              // Pengiriman besok: Iya / Ada yang belum
               kind: "options",
               key: "draft-loading-besok",
               label: "Pengiriman Besok Sudah Draft Loading Semua",
               options: ["Iya", "Ada yang belum"],
             },
             {
-              // Faktur kembali + checklist kondisi + alasan
               kind: "compound",
               key: "faktur-kembali",
               label: "Faktur Kembali dari Pengiriman",
@@ -363,14 +360,12 @@ export default function ChecklistArea({
               extra: [{ type: "text", placeholder: "Alasan" }],
             },
             {
-              // Faktur yang dibatalkan → angka (jumlah faktur)
               kind: "number",
               key: "faktur-dibatalkan",
               label: "Faktur yang dibatalkan",
               suffix: "Faktur",
             },
             {
-              // Konfirmasi ke tim salesman + alasan
               kind: "compound",
               key: "konfirmasi-sales",
               label: "Konfirmasi ke Tim Salesman",
@@ -379,6 +374,8 @@ export default function ChecklistArea({
             },
           ],
         },
+
+        /* ===== 6. SETORAN BANK ===== */
         setoran: {
           title: "Setoran Bank",
           rows: [
@@ -402,6 +399,8 @@ export default function ChecklistArea({
             },
           ],
         },
+
+        /* ===== 7. PROSES PEMBELIAN ===== */
         pembelian: {
           title: "Proses Pembelian",
           rows: [
@@ -431,18 +430,18 @@ export default function ChecklistArea({
             },
           ],
         },
+
+        /* ===== 8. PENJUALAN ===== */
         faktur: {
           title: "Penjualan",
           rows: [
             {
-              // jumlah faktur terinput
               kind: "number",
               key: "jumlah-penjualan-terinput",
               label: "Jumlah penjualan terinput",
               suffix: "Jumlah Faktur",
             },
             {
-              // harga & promo + alasan
               kind: "compound",
               key: "harga-promo",
               label: "Harga & Promo",
@@ -450,7 +449,6 @@ export default function ChecklistArea({
               extra: [{ type: "text", placeholder: "Alasan" }],
             },
             {
-              // OJ belum terinput: jumlah faktur + alasan
               kind: "compound",
               key: "oj-belum-terinput",
               label: "Jumlah Order Jual belum terinput",
@@ -461,14 +459,12 @@ export default function ChecklistArea({
               ],
             },
             {
-              // retur terinput: jumlah faktur
               kind: "number",
               key: "retur-terinput",
               label: "Retur Penjualan terinput",
               suffix: "Jumlah Faktur",
             },
             {
-              // harga & diskon retur + alasan
               kind: "compound",
               key: "harga-diskon-retur",
               label: "Harga & Diskon di Faktur Retur Jual",
@@ -476,7 +472,6 @@ export default function ChecklistArea({
               extra: [{ type: "text", placeholder: "Alasan" }],
             },
             {
-              // jumlah retur jual belum terinput: jumlah faktur + alasan
               kind: "compound",
               key: "retur-belum-terinput",
               label: "Jumlah Retur Jual belum terinput",
@@ -487,7 +482,6 @@ export default function ChecklistArea({
               ],
             },
             {
-              // perlu pajak + penjelasan
               kind: "compound",
               key: "faktur-perlu-pajak",
               label: "Faktur Penjualan yang Perlu Pajak",
@@ -495,7 +489,6 @@ export default function ChecklistArea({
               extra: [{ type: "text", placeholder: "Penjelasan" }],
             },
             {
-              // new product setting + berapa hari belum disetting
               kind: "compound",
               key: "new-product-setting",
               label:
@@ -509,7 +502,6 @@ export default function ChecklistArea({
               ],
             },
             {
-              // budget retur + penjelasan
               kind: "compound",
               key: "budget-retur-dijalankan",
               label: "Budget Retur dijalankan",
@@ -518,7 +510,33 @@ export default function ChecklistArea({
             },
           ],
         },
-        retur: { title: "Retur (legacy)", rows: [] },
+
+        /* ===== 9. MUTASI ANTAR DEPO (pakai key 'retur') ===== */
+        retur: {
+          title: "Mutasi antar Depo",
+          rows: [
+            {
+              kind: "options",
+              key: "mutasi-antar-depo",
+              label: "Mutasi antar Depo",
+              options: ["Sudah", "Belum"],
+            },
+            {
+              kind: "options",
+              key: "mutasi-ttd",
+              label: "Tanda Terima",
+              options: ["Sudah", "Belum"],
+            },
+            {
+              kind: "options",
+              key: "mutasi-faktur-fb-rb",
+              label: "Pembuatan Faktur FB RB",
+              options: ["Sudah", "Belum"],
+            },
+          ],
+        },
+
+        /* ===== 10. MARKETING ===== */
         marketing: {
           title: "Marketing",
           rows: [
