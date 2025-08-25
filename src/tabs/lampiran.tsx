@@ -1270,11 +1270,17 @@ export default function Lampiran({ data }: { data: AppState }) {
       printRef.current.innerHTML = "";
       printRef.current.appendChild(root);
 
-      // 3) tunggu font/layout settle
-      try {
-        // @ts-ignore
-        await (document as any).fonts?.ready;
-      } catch {}
+      // 3) tunggu font/layout settle (tanpa ts-ignore)
+      const docFonts = (
+        document as unknown as { fonts?: { ready?: Promise<unknown> } }
+      ).fonts;
+      if (docFonts?.ready) {
+        try {
+          await docFonts.ready;
+        } catch {
+          /* ignore */
+        }
+      }
       await new Promise((r) => requestAnimationFrame(r));
       await new Promise((r) => setTimeout(r, 30));
 
