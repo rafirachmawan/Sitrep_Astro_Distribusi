@@ -110,11 +110,9 @@ function saveHistory(items: PdfEntry[]) {
    Loader aman untuk html2canvas & jsPDF (ESM)
    ========================= */
 async function loadPdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
-  // html2canvas hampir selalu default
   const h2cMod = await import("html2canvas");
   const html2canvas = (h2cMod as any).default ?? (h2cMod as any);
 
-  // jsPDF v3: bisa named export (jsPDF) atau default
   const m = await import("jspdf");
   const jsPDF = (m as any).jsPDF ?? (m as any).default ?? (m as any);
 
@@ -616,6 +614,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   const [searchDate, setSearchDate] = useState<string>("");
   const [working, setWorking] = useState(false);
 
+  // tidak lagi dipakai untuk render (kita pakai iframe), tapi biarkan ada
   const printRef = useRef<HTMLDivElement | null>(null);
 
   // Ambil dari Supabase; kalau gagal, fallback local
@@ -697,15 +696,48 @@ export default function Lampiran({ data }: { data: AppState }) {
     }
   }
 
-  /* -------- Layout PDF -------- */
-  const buildPrintLayout = () => {
-    const root = document.createElement("div");
+  /* --------- ISOLATED IFRAME + Layout PDF --------- */
+
+  function createIsolatedIframe() {
+    const iframe = document.createElement("iframe");
+    iframe.style.position = "fixed";
+    iframe.style.left = "-10000px";
+    iframe.style.top = "0";
+    iframe.style.width = "820px";
+    iframe.style.height = "1200px";
+    iframe.setAttribute("aria-hidden", "true");
+    document.body.appendChild(iframe);
+
+    const doc = iframe.contentDocument!;
+    doc.open();
+    doc.write(
+      `<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>`
+    );
+    doc.close();
+
+    // Hard reset & base style (tanpa oklch)
+    const base = doc.createElement("style");
+    base.textContent = `
+      *,*::before,*::after{box-sizing:border-box}
+      html,body{margin:0;padding:0;background:#fff;color:#0f172a}
+      body{font-family:Inter, Arial, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;font-size:12px;line-height:1.5}
+    `;
+    doc.head.appendChild(base);
+
+    // return util
+    return {
+      doc,
+      iframe,
+      cleanup: () => iframe.remove(),
+    };
+  }
+
+  // now build layout but in a specific Document
+  const buildPrintLayout = (doc: Document) => {
+    const root = doc.createElement("div");
     root.id = "pdf-print-root";
-
-    // ⬇️ penting: reset semua pewarisan CSS (termasuk custom props oklch)
-    // lalu kita set style yang kita butuhkan di bawahnya.
+    // keep things explicit — no inheritance from app
     (root.style as any).all = "initial";
-
     root.style.display = "block";
     root.style.width = "794px";
     root.style.background = "#fff";
@@ -714,10 +746,8 @@ export default function Lampiran({ data }: { data: AppState }) {
       'Inter, Arial, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
     root.style.fontSize = "12px";
     root.style.lineHeight = "1.5";
-    root.style.padding = "0";
-    root.style.margin = "0";
 
-    const st = document.createElement("style");
+    const st = doc.createElement("style");
     st.textContent = `
       .page{width:794px;min-height:1123px;box-sizing:border-box;padding:24px;}
       .section{margin-top:18px;}
@@ -765,11 +795,11 @@ export default function Lampiran({ data }: { data: AppState }) {
     `;
     root.appendChild(st);
 
-    const page = document.createElement("div");
+    const page = doc.createElement("div");
     page.className = "page";
     root.appendChild(page);
 
-    const header = document.createElement("div");
+    const header = doc.createElement("div");
     header.className = "banner";
     header.innerHTML = `
       <div style="font-weight:800;font-size:14px;letter-spacing:.3px;">LEADER MONITORING DAILY</div>
@@ -777,7 +807,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       <div class="muted">Tanggal: ${todayISO()}</div>`;
     page.appendChild(header);
 
-    const info = document.createElement("div");
+    const info = doc.createElement("div");
     info.className = "info-grid";
     info.innerHTML = `
       <div class="card"><div class="label">Nama</div><div style="font-weight:700">${
@@ -789,18 +819,18 @@ export default function Lampiran({ data }: { data: AppState }) {
       <div class="card"><div class="label">Depo</div><div style="font-weight:700">TULUNGAGUNG</div></div>`;
     page.appendChild(info);
 
-    const ck = document.createElement("div");
+    const ck = doc.createElement("div");
     ck.className = "section";
     ck.innerHTML = `<div class="title">Rangkuman Checklist</div>`;
     checklistBlocks.forEach((sec) => {
-      const secEl = document.createElement("div");
+      const secEl = doc.createElement("div");
       secEl.className = "mb8";
       secEl.innerHTML = `<div class="subhead">${sec.section.toUpperCase()}</div>`;
-      const tbl = document.createElement("table");
+      const tbl = doc.createElement("table");
       tbl.className = "table striped";
       tbl.innerHTML = `<colgroup><col style="width:40%"><col style="width:30%"><col style="width:30%"></colgroup>
         <thead><tr><th>Area</th><th>Status / Nilai</th><th>Catatan</th></tr></thead>`;
-      const tb = document.createElement("tbody");
+      const tb = doc.createElement("tbody");
       sec.rows.forEach((r) => {
         tb.insertAdjacentHTML(
           "beforeend",
@@ -815,7 +845,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     });
     page.appendChild(ck);
 
-    const evalSec = document.createElement("div");
+    const evalSec = doc.createElement("div");
     evalSec.className = "section";
     const titleMap: Record<Theme, string> = {
       attitude: "Evaluasi Tim · Attitude (HEBAT)",
@@ -829,11 +859,11 @@ export default function Lampiran({ data }: { data: AppState }) {
     if (theme === "attitude") {
       const scores = evalData?.attitude?.scores || {};
       const notes = evalData?.attitude?.notes || {};
-      const tbl = document.createElement("table");
+      const tbl = doc.createElement("table");
       tbl.className = "table striped";
       tbl.innerHTML = `<colgroup><col style="width:55%"><col style="width:15%"><col style="width:30%"></colgroup>
         <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
-      const tb = document.createElement("tbody");
+      const tb = doc.createElement("tbody");
       HEBAT_ITEMS.forEach((i) => {
         tb.insertAdjacentHTML(
           "beforeend",
@@ -851,14 +881,14 @@ export default function Lampiran({ data }: { data: AppState }) {
         const d = getByPerson(evalData, "kompetensi", p) || {};
         const scores = d?.scores || {};
         const notes = d?.notes || {};
-        const block = document.createElement("div");
+        const block = doc.createElement("div");
         block.className = "mb8";
         block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
-        const tbl = document.createElement("table");
+        const tbl = doc.createElement("table");
         tbl.className = "table striped";
         tbl.innerHTML = `<colgroup><col style="width:55%"><col style="width:15%"><col style="width:30%"></colgroup>
           <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
-        const tb = document.createElement("tbody");
+        const tb = doc.createElement("tbody");
         KOMPETENSI_ITEMS.forEach((i) => {
           tb.insertAdjacentHTML(
             "beforeend",
@@ -879,14 +909,14 @@ export default function Lampiran({ data }: { data: AppState }) {
         const d = getByPerson(evalData, theme, p) || {};
         const scores = d?.scores || {};
         const notes = d?.notes || {};
-        const block = document.createElement("div");
+        const block = doc.createElement("div");
         block.className = "mb8";
         block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
-        const tbl = document.createElement("table");
+        const tbl = doc.createElement("table");
         tbl.className = "table striped";
         tbl.innerHTML = `<colgroup><col style="width:55%"><col style="width:15%"><col style="width:30%"></colgroup>
           <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
-        const tb = document.createElement("tbody");
+        const tb = doc.createElement("tbody");
         ITEMS.forEach((i) => {
           tb.insertAdjacentHTML(
             "beforeend",
@@ -905,7 +935,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     page.appendChild(evalSec);
 
     // TARGET & ACHIEVEMENT
-    const tgtSec = document.createElement("div");
+    const tgtSec = doc.createElement("div");
     tgtSec.className = "section";
     tgtSec.innerHTML = `<div class="title">Target & Achievement</div>`;
 
@@ -952,7 +982,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     };
 
     if (targetView.type === "empty") {
-      const tbl = document.createElement("table");
+      const tbl = doc.createElement("table");
       tbl.className = "table striped kpi";
       tbl.innerHTML = `<thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead>`;
       tbl.insertAdjacentHTML(
@@ -963,10 +993,10 @@ export default function Lampiran({ data }: { data: AppState }) {
       );
       tgtSec.appendChild(tbl);
     } else if (targetView.type === "kpi") {
-      const tbl = document.createElement("table");
+      const tbl = doc.createElement("table");
       tbl.className = "table striped kpi";
       tbl.innerHTML = `<thead><tr><th>KPI</th><th>Target</th><th>Realisasi</th><th>%</th><th>Catatan</th><th>Status</th></tr></thead>`;
-      const tb = document.createElement("tbody");
+      const tb = doc.createElement("tbody");
       targetView.rows.forEach((r) => {
         const filled =
           hasAnyTruthy(r["target"]) ||
@@ -998,14 +1028,14 @@ export default function Lampiran({ data }: { data: AppState }) {
       tgtSec.appendChild(tbl);
     } else if (targetView.type === "table") {
       const cols = targetView.cols;
-      const tbl = document.createElement("table");
+      const tbl = doc.createElement("table");
       tbl.className = "table striped";
-      const thead = document.createElement("thead");
+      const thead = doc.createElement("thead");
       thead.innerHTML = `<tr>${cols
         .map((c) => `<th>${c}</th>`)
         .join("")}<th>Status</th></tr>`;
       tbl.appendChild(thead);
-      const tb = document.createElement("tbody");
+      const tb = doc.createElement("tbody");
       targetView.rows.forEach((row) => {
         const filled = hasAnyTruthy(row);
         tb.insertAdjacentHTML(
@@ -1019,11 +1049,11 @@ export default function Lampiran({ data }: { data: AppState }) {
       tgtSec.appendChild(tbl);
     } else if (targetView.type === "kv") {
       const kv = targetView.kv;
-      const tbl = document.createElement("table");
+      const tbl = doc.createElement("table");
       tbl.className = "table striped";
       tbl.innerHTML = `<colgroup><col style="width:35%"><col style="width:45%"><col style="width:20%"></colgroup>
         <thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead>`;
-      const tb = document.createElement("tbody");
+      const tb = doc.createElement("tbody");
       const entries = Object.entries(kv);
       if (entries.length === 0) {
         tb.insertAdjacentHTML(
@@ -1047,7 +1077,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     page.appendChild(tgtSec);
 
     // PROJECT TRACKING (SPARTA)
-    const spSec = document.createElement("div");
+    const spSec = doc.createElement("div");
     spSec.className = "section";
     spSec.innerHTML = `<div class="title">Project Tracking (SPARTA)</div>`;
     const renderCard = (
@@ -1063,7 +1093,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       },
       idx: number
     ) => {
-      const card = document.createElement("div");
+      const card = doc.createElement("div");
       card.className = "pro-card";
       let chip = "";
       if (p.daysLeft !== null && p.deadline) {
@@ -1083,9 +1113,9 @@ export default function Lampiran({ data }: { data: AppState }) {
            <div>${chip}</div>
          </div>`
       );
-      const grid = document.createElement("div");
+      const grid = doc.createElement("div");
       grid.className = "grid";
-      const left = document.createElement("div");
+      const left = doc.createElement("div");
       left.innerHTML = `
         <table class="table" style="border-radius:12px;overflow:hidden">
           <tbody>
@@ -1107,13 +1137,13 @@ export default function Lampiran({ data }: { data: AppState }) {
           </tbody>
         </table>
       `;
-      const right = document.createElement("div");
-      const box = document.createElement("div");
+      const right = doc.createElement("div");
+      const box = doc.createElement("div");
       box.className = "steps-panel";
       box.innerHTML = `<div class="subhead" style="margin:0 0 6px">Langkah</div>`;
       const steps =
         p.steps && p.steps.length ? p.steps : [{ label: "" }, { label: "" }];
-      const ul = document.createElement("ul");
+      const ul = doc.createElement("ul");
       ul.className = "chk";
       steps.forEach((s) => {
         ul.insertAdjacentHTML(
@@ -1151,16 +1181,14 @@ export default function Lampiran({ data }: { data: AppState }) {
     page.appendChild(spSec);
 
     // AGENDA & JADWAL
-    const agSec = document.createElement("div");
+    const agSec = doc.createElement("div");
     agSec.className = "section";
     agSec.innerHTML = `<div class="title">Agenda & Jadwal</div>`;
 
     const agenda = ((data as unknown as AppLike).agenda?.entries ??
       []) as AppLike["agenda"]["entries"];
 
-    if (!agenda.length) {
-      // kosong
-    } else {
+    if (agenda.length) {
       const sorted = [...agenda].sort((a, b) =>
         a.date === b.date
           ? a.updatedAt && b.updatedAt
@@ -1180,12 +1208,12 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
 
       Object.entries(groups).forEach(([tgl, items]) => {
-        const block = document.createElement("div");
+        const block = doc.createElement("div");
         block.className = "mb8";
         block.innerHTML = `<div class="subhead">${tgl}</div>`;
 
         items.forEach((e, i) => {
-          const tbl = document.createElement("table");
+          const tbl = doc.createElement("table");
           tbl.className = "table striped";
           const planHtml = (e.plan ?? [])
             .map((x) => `<li>${escapeHtml(x)}</li>`)
@@ -1221,29 +1249,29 @@ export default function Lampiran({ data }: { data: AppState }) {
     page.appendChild(agSec);
 
     // TTD
-    const sigWrap = document.createElement("div");
+    const sigWrap = doc.createElement("div");
     sigWrap.className = "section sigwrap";
-    const sigTitle = document.createElement("div");
+    const sigTitle = doc.createElement("div");
     sigTitle.className = "title sigtitle";
     sigTitle.textContent = "Tanda Tangan";
     sigWrap.appendChild(sigTitle);
-    const sigRow = document.createElement("div");
+    const sigRow = doc.createElement("div");
     sigRow.className = "sigrow";
-    const sigBox = document.createElement("div");
+    const sigBox = doc.createElement("div");
     sigBox.className = "sigbox";
     if (sigDataUrl) {
-      const img = document.createElement("img");
+      const img = doc.createElement("img");
       img.src = sigDataUrl;
       sigBox.appendChild(img);
     } else {
-      sigBox.appendChild(document.createTextNode(" "));
+      sigBox.appendChild(doc.createTextNode(" "));
     }
-    const line = document.createElement("div");
+    const line = doc.createElement("div");
     line.className = "sigline";
     sigBox.appendChild(line);
     sigRow.appendChild(sigBox);
     sigWrap.appendChild(sigRow);
-    const foot = document.createElement("div");
+    const foot = doc.createElement("div");
     foot.className = "foot";
     foot.textContent = `Ditandatangani oleh ${
       (user as AnyUser | undefined)?.name || ""
@@ -1253,103 +1281,55 @@ export default function Lampiran({ data }: { data: AppState }) {
     sigWrap.appendChild(foot);
     page.appendChild(sigWrap);
 
+    doc.body.appendChild(root);
     return root;
   };
 
-  /* -------- Export PDF + Upload ke Supabase (PATCHED) -------- */
+  /* -------- Export PDF + Upload ke Supabase (ISOLATED IFRAME) -------- */
   const submitAndGenerate = async () => {
-    // helper kecil
-    function neutralizeOklchVars<T>(run: () => Promise<T>): Promise<T> {
-      const docEl = document.documentElement;
-      const keys = [
-        // tailwind/shadcn yang umum dipakai:
-        "--tw-ring-color",
-        "--tw-ring-offset-color",
-        "--tw-shadow-color",
-        "--tw-shadow",
-        "--ring",
-        "--border",
-        "--input",
-        "--background",
-        "--foreground",
-        "--primary",
-        "--secondary",
-        "--accent",
-        "--muted",
-        "--destructive",
-      ];
-
-      // simpan nilai inline sebelumnya (kalau ada)
-      const prev = new Map<string, string>();
-      for (const k of keys) prev.set(k, docEl.style.getPropertyValue(k));
-
-      // timpa dengan warna aman (tanpa oklch)
-      for (const k of keys) docEl.style.setProperty(k, "rgb(0 0 0 / 0)");
-
-      return run().finally(() => {
-        // pulihkan
-        for (const k of keys) {
-          const v = prev.get(k) || "";
-          if (v) docEl.style.setProperty(k, v);
-          else docEl.style.removeProperty(k);
-        }
-      });
-    }
-
     if (!sigDataUrl) {
       alert("Mohon tanda tangan terlebih dahulu.");
       return;
     }
     setWorking(true);
     try {
-      // 1) load libs
       const { html2canvas, jsPDF } = await loadPdfLibs();
 
-      // 2) build & mount node yang akan dirender
-      const root = buildPrintLayout();
-      if (!printRef.current) return;
-      printRef.current.innerHTML = "";
-      printRef.current.appendChild(root);
+      // 1) buat iframe isolasi
+      const { doc: isoDoc, cleanup } = createIsolatedIframe();
 
-      // 3) tunggu font/layout settle (tanpa ts-ignore)
-      const docFonts = (
-        document as unknown as { fonts?: { ready?: Promise<unknown> } }
-      ).fonts;
-      if (docFonts?.ready) {
-        try {
-          await docFonts.ready;
-        } catch {
-          /* ignore */
-        }
-      }
-      await new Promise((r) => requestAnimationFrame(r));
+      // 2) build layout di dokumen isolasi
+      const root = buildPrintLayout(isoDoc);
+
+      // 3) tunggu satu frame supaya layout settle
       await new Promise((r) => setTimeout(r, 30));
 
-      // 4) ukur dimensi (hindari 0×0)
-      const width = Math.ceil(root.scrollWidth || root.clientWidth || 794);
+      // 4) ukur dimensi
+      const width = Math.ceil(root.scrollWidth || 794);
       const height = Math.ceil(root.scrollHeight || 1123);
 
-      // 5) render ke canvas — tanpa foreignObject (lebih stabil)
-      // 5) render ke canvas — tanpa foreignObject & dengan netralisasi oklch
-      const canvas = (await neutralizeOklchVars(() =>
-        html2canvas(root, {
-          backgroundColor: "#ffffff",
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          foreignObjectRendering: false,
-          width,
-          height,
-          windowWidth: width,
-          windowHeight: height,
-        })
-      )) as HTMLCanvasElement;
+      // 5) render ke canvas (di konteks iframe)
+      const canvas: HTMLCanvasElement = await html2canvas(root, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        foreignObjectRendering: false,
+        width,
+        height,
+        windowWidth: width,
+        windowHeight: height,
+      });
+
+      // 6) bersihkan iframe (sudah tidak diperlukan)
+      cleanup();
 
       if (!canvas.width || !canvas.height) {
         throw new Error("Render canvas 0px — elemen tidak terukur");
+        // fallback tidak diperlukan; bila ingin, bisa pakai root.getBoundingClientRect()
       }
 
-      // 6) slicing canvas -> PDF A4
+      // 7) slicing canvas -> PDF A4
       const imgW = canvas.width;
       const imgH = canvas.height;
 
@@ -1370,7 +1350,6 @@ export default function Lampiran({ data }: { data: AppState }) {
         const ctx = pageCanvas.getContext("2d")!;
         ctx.drawImage(canvas, 0, sY, imgW, sHeight, 0, 0, imgW, sHeight);
 
-        // JPEG cenderung lebih kecil & stabil
         const imgData = pageCanvas.toDataURL("image/jpeg", 0.92);
         const drawH = (sHeight / imgW) * usableW;
         pdf.addImage(
@@ -1391,7 +1370,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       const date = todayISO();
       const filename = `${date}.pdf`;
 
-      // 7) upload ke API (opsional)
+      // 8) upload ke API
       try {
         const arrayBuffer = pdf.output("arraybuffer") as ArrayBuffer;
         const u = (user ?? {}) as AnyUser;
@@ -1412,7 +1391,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         console.warn("Upload error:", e);
       }
 
-      // 8) simpan lokal + download
+      // 9) simpan lokal + download
       const pdfDataUrl = pdf.output("datauristring") as string;
       const entry: PdfEntry = {
         id: uuid(),
@@ -1474,7 +1453,7 @@ export default function Lampiran({ data }: { data: AppState }) {
 
   return (
     <div className="space-y-6">
-      {/* container untuk layout PDF (hidden, off-screen aman) */}
+      {/* container lama (tidak dipakai), biarkan exist */}
       <div
         ref={printRef}
         style={{
