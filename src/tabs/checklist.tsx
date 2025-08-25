@@ -81,6 +81,86 @@ const SECTION_TABS: { key: SectionKey; label: string }[] = [
   { key: "marketing", label: "Marketing" },
 ];
 
+/* =============== UTIL FORMAT CURRENCY =============== */
+const toDigits = (s: string) => (s || "").replace(/[^\d]/g, "");
+const formatIDR = (digitStr?: string) => {
+  if (!digitStr) return "";
+  const n = Number(digitStr);
+  if (isNaN(n)) return "";
+  return new Intl.NumberFormat("id-ID").format(n);
+};
+
+/* =============== FIELD CURRENCY AUTO-WIDTH =============== */
+function CurrencyField({
+  valueDigits,
+  onChangeDigits,
+  placeholder,
+  className = "",
+}: {
+  valueDigits?: string;
+  onChangeDigits: (digits: string) => void;
+  placeholder?: string;
+  className?: string;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const mirrorRef = useRef<HTMLSpanElement | null>(null);
+  const [widthPx, setWidthPx] = useState<number>(0);
+
+  // teks yang ditampilkan (sudah di-format)
+  const display = formatIDR(valueDigits);
+
+  // ukur lebar teks lalu set lebar input
+  useEffect(() => {
+    const mirror = mirrorRef.current;
+    if (!mirror) return;
+    // Isi teks mirror sama dengan input yang ditampilkan
+    mirror.textContent = display || placeholder || "";
+    // Ambil lebar konten + padding dasar input
+    const contentWidth = Math.ceil(mirror.getBoundingClientRect().width);
+    // Tambah padding kiri/kanan + ruang prefix "Rp."
+    const PADDING_X = 24; // px, kira-kira padding horizontal total
+    const PREFIX_SPACE = 28; // ruang tambahan untuk "Rp." + jarak
+    const MIN_W = 140; // minimal biar enak dilihat
+    const next = Math.max(contentWidth + PADDING_X + PREFIX_SPACE, MIN_W);
+    setWidthPx(next);
+  }, [display, placeholder]);
+
+  return (
+    <div className={`relative w-full ${className}`}>
+      {/* Prefix Rp. */}
+      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm select-none">
+        Rp.
+      </span>
+
+      {/* Input (auto width) */}
+      <input
+        ref={inputRef}
+        value={display}
+        onChange={(e) => onChangeDigits(toDigits(e.target.value))}
+        inputMode="numeric"
+        placeholder={placeholder || "contoh: 4.235.523"}
+        className={
+          "rounded-xl border-2 border-slate-300 bg-white text-sm " +
+          "px-3 py-2 pl-12 text-right " +
+          "focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 " +
+          "placeholder:text-left"
+        }
+        style={{
+          width: widthPx ? `${widthPx}px` : undefined,
+          maxWidth: "100%", // jangan melewati container
+        }}
+      />
+
+      {/* Mirror span untuk mengukur lebar teks (tak terlihat) */}
+      <span
+        ref={mirrorRef}
+        className="invisible absolute left-0 top-0 whitespace-pre px-3 py-2 font-normal text-sm"
+        aria-hidden="true"
+      />
+    </div>
+  );
+}
+
 /* ================= COMPONENT ================= */
 export default function ChecklistArea({
   data,
@@ -882,7 +962,8 @@ function ChecklistRow({
 
   useEffect(() => {
     if (value && value.note !== note) onChange({ ...value, note } as RowValue);
-  }, [note]); // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note]);
 
   useEffect(() => {
     adjustHeight();
@@ -913,14 +994,6 @@ function ChecklistRow({
   const scoreVal = value?.kind === "score" ? value.value : 3;
   const compVal = value?.kind === "compound" ? value : undefined;
   const compExtras = compVal?.extras;
-
-  const formatIDR = (digitStr?: string) => {
-    if (!digitStr) return "";
-    const n = Number(digitStr);
-    if (isNaN(n)) return "";
-    return new Intl.NumberFormat("id-ID").format(n);
-  };
-  const toDigits = (s: string) => (s || "").replace(/[^\d]/g, "");
 
   const INPUT_BASE =
     "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center " +
@@ -1025,6 +1098,7 @@ function ChecklistRow({
               />
 
               {(hasTextExtra || hasCurrencyExtra || hasNumberExtra) && (
+                // 👉 buat layout fleksibel. Currency ambil 1 baris penuh di desktop
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {hasTextExtra && (
                     <input
@@ -1047,28 +1121,22 @@ function ChecklistRow({
                   )}
 
                   {hasCurrencyExtra && (
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">
-                        Rp.
-                      </span>
-                      <input
-                        placeholder={currencyPlaceholder || "contoh: 4.235.523"}
-                        value={formatIDR(compExtras?.currency)}
-                        onChange={(e) => {
-                          const rawDigits = toDigits(e.target.value);
+                    <div className="md:col-span-2">
+                      <CurrencyField
+                        valueDigits={compExtras?.currency}
+                        onChangeDigits={(digits) =>
                           onChange({
                             kind: "compound",
                             value: compVal?.value ?? null,
                             note,
                             extras: {
                               text: compExtras?.text,
-                              currency: rawDigits,
+                              currency: digits,
                               number: compExtras?.number,
                             },
-                          } as RVCompound);
-                        }}
-                        inputMode="numeric"
-                        className={`${INPUT_BASE} pl-12`}
+                          } as RVCompound)
+                        }
+                        placeholder={currencyPlaceholder || "contoh: 4.235.523"}
                       />
                     </div>
                   )}
