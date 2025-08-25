@@ -340,15 +340,12 @@ const labelStatusChip = (filled: boolean) =>
   }</span>`;
 
 /* =========================
-   Evaluasi types + helpers
+   Evaluasi types
    ========================= */
 type ScoreValue = string | number;
 type PersonEval = {
   scores?: Record<string, ScoreValue>;
   notes?: Record<string, string>;
-};
-type PersonSection = Partial<Record<Person, PersonEval>> & {
-  byPerson?: Partial<Record<Person, PersonEval>>;
 };
 
 type Evaluasi = {
@@ -358,9 +355,8 @@ type Evaluasi = {
     scores?: Record<string, ScoreValue>;
     notes?: Record<string, string>;
   };
-  kompetensi?: PersonSection;
-  prestasi?: PersonSection;
-  kepatuhan?: PersonSection;
+  // sisanya fleksibel (kompetensi_laras, prestasi_emi, dst)
+  [key: string]: unknown;
 };
 
 function getTheme(evaluasi: Evaluasi): Theme {
@@ -369,19 +365,6 @@ function getTheme(evaluasi: Evaluasi): Theme {
     (evaluasi as { hari?: 1 | 2 | 3 | 4 | 5 | 6 }).hari ??
     1;
   return DAY_THEME[hari as 1 | 2 | 3 | 4 | 5 | 6] ?? "attitude";
-}
-
-function getByPerson(
-  evaluasi: Evaluasi,
-  kind: "kompetensi" | "prestasi" | "kepatuhan",
-  person: Person
-): PersonEval {
-  const sec = evaluasi[kind];
-  if (!sec) return {};
-  const by =
-    (sec.byPerson as Partial<Record<Person, PersonEval>> | undefined) ??
-    (sec as Partial<Record<Person, PersonEval>>);
-  return (by?.[person] ?? {}) as PersonEval;
 }
 
 /* =========================
@@ -845,6 +828,9 @@ export default function Lampiran({ data }: { data: AppState }) {
     });
     page.appendChild(ck);
 
+    /* =========================
+       EVALUASI TIM (baru)
+       ========================= */
     const evalSec = doc.createElement("div");
     evalSec.className = "section";
     const titleMap: Record<Theme, string> = {
@@ -856,77 +842,117 @@ export default function Lampiran({ data }: { data: AppState }) {
     };
     evalSec.innerHTML = `<div class="title">${titleMap[theme]}</div>`;
 
+    // --- Attitude (per-orang: key `${person}::${code}`) + fallback lama ---
     if (theme === "attitude") {
-      const scores = evalData?.attitude?.scores || {};
-      const notes = evalData?.attitude?.notes || {};
-      const tbl = doc.createElement("table");
-      tbl.className = "table striped";
-      tbl.innerHTML = `<colgroup><col style="width:55%"><col style="width:15%"><col style="width:30%"></colgroup>
-        <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
-      const tb = doc.createElement("tbody");
-      HEBAT_ITEMS.forEach((i) => {
-        tb.insertAdjacentHTML(
-          "beforeend",
-          `<tr><td>[${i.code}] ${i.title}</td><td><b>${
-            (scores as Record<string, unknown>)[i.code] ?? ""
-          }</b></td><td>${
-            (notes as Record<string, string | undefined>)[i.code] || ""
-          }</td></tr>`
-        );
-      });
-      tbl.appendChild(tb);
-      evalSec.appendChild(tbl);
-    } else if (theme === "kompetensi") {
-      PERSONS.forEach((p) => {
-        const d = getByPerson(evalData, "kompetensi", p) || {};
-        const scores = d?.scores || {};
-        const notes = d?.notes || {};
-        const block = doc.createElement("div");
-        block.className = "mb8";
-        block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
+      const rawScores = (evalData?.attitude?.scores ?? {}) as Record<
+        string,
+        unknown
+      >;
+      const rawNotes = (evalData?.attitude?.notes ?? {}) as Record<
+        string,
+        string
+      >;
+
+      const makeTable = (
+        scoreOf: (code: string) => unknown,
+        noteOf: (code: string) => string | undefined
+      ) => {
         const tbl = doc.createElement("table");
         tbl.className = "table striped";
         tbl.innerHTML = `<colgroup><col style="width:55%"><col style="width:15%"><col style="width:30%"></colgroup>
           <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
         const tb = doc.createElement("tbody");
-        KOMPETENSI_ITEMS.forEach((i) => {
+        HEBAT_ITEMS.forEach((i) => {
+          const val = scoreOf(i.code);
+          const note = noteOf(i.code) || "";
           tb.insertAdjacentHTML(
             "beforeend",
-            `<tr><td>${i.title}</td><td><b>${
-              (scores as Record<string, unknown>)[i.key] ?? ""
-            }</b></td><td>${
-              (notes as Record<string, string | undefined>)[i.key] || ""
-            }</td></tr>`
+            `<tr>
+               <td>[${i.code}] ${i.title}</td>
+               <td><b>${val ?? ""}</b></td>
+               <td>${note}</td>
+             </tr>`
           );
         });
         tbl.appendChild(tb);
-        block.appendChild(tbl);
-        evalSec.appendChild(block);
-      });
-    } else if (theme === "prestasi" || theme === "kepatuhan") {
-      const ITEMS = theme === "prestasi" ? PRESTASI_ITEMS : SOP_ITEMS;
+        return tbl;
+      };
+
+      const hasPerPerson = PERSONS.some((p) =>
+        HEBAT_ITEMS.some(
+          (i) =>
+            rawScores[`${p}::${i.code}`] !== undefined ||
+            (rawNotes[`${p}::${i.code}`] || "").trim() !== ""
+        )
+      );
+
+      if (hasPerPerson) {
+        PERSONS.forEach((p) => {
+          const block = doc.createElement("div");
+          block.className = "mb8";
+          block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
+          const tbl = makeTable(
+            (code) => rawScores[`${p}::${code}`],
+            (code) => rawNotes[`${p}::${code}`]
+          );
+          block.appendChild(tbl);
+          evalSec.appendChild(block);
+        });
+      } else {
+        // fallback model lama (key polos "H/E/B/A/T")
+        const tbl = makeTable(
+          (code) => rawScores[code],
+          (code) => rawNotes[code]
+        );
+        evalSec.appendChild(tbl);
+      }
+    }
+
+    // --- Kompetensi / Prestasi / Kepatuhan (per-orang di `tema_${person}`) ---
+    else if (
+      theme === "kompetensi" ||
+      theme === "prestasi" ||
+      theme === "kepatuhan"
+    ) {
+      const ITEMS =
+        theme === "kompetensi"
+          ? KOMPETENSI_ITEMS
+          : theme === "prestasi"
+          ? PRESTASI_ITEMS
+          : SOP_ITEMS;
+
       PERSONS.forEach((p) => {
-        const d = getByPerson(evalData, theme, p) || {};
-        const scores = d?.scores || {};
-        const notes = d?.notes || {};
+        const perKey = `${theme}_${p}` as const;
+        const payload = ((evalData as any)[perKey] ?? {}) as {
+          scores?: Record<string, unknown>;
+          notes?: Record<string, string>;
+        };
+        const scores = payload.scores ?? {};
+        const notes = payload.notes ?? {};
+
         const block = doc.createElement("div");
         block.className = "mb8";
         block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
+
         const tbl = doc.createElement("table");
         tbl.className = "table striped";
         tbl.innerHTML = `<colgroup><col style="width:55%"><col style="width:15%"><col style="width:30%"></colgroup>
           <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
         const tb = doc.createElement("tbody");
+
         ITEMS.forEach((i) => {
+          const val = (scores as Record<string, unknown>)[i.key];
+          const note = (notes as Record<string, string>)[i.key] || "";
           tb.insertAdjacentHTML(
             "beforeend",
-            `<tr><td>${i.title}</td><td><b>${
-              (scores as Record<string, unknown>)[i.key] ?? ""
-            }</b></td><td>${
-              (notes as Record<string, string | undefined>)[i.key] || ""
-            }</td></tr>`
+            `<tr>
+               <td>${i.title}</td>
+               <td><b>${val ?? ""}</b></td>
+               <td>${note}</td>
+             </tr>`
           );
         });
+
         tbl.appendChild(tb);
         block.appendChild(tbl);
         evalSec.appendChild(block);
@@ -1326,7 +1352,6 @@ export default function Lampiran({ data }: { data: AppState }) {
 
       if (!canvas.width || !canvas.height) {
         throw new Error("Render canvas 0px — elemen tidak terukur");
-        // fallback tidak diperlukan; bila ingin, bisa pakai root.getBoundingClientRect()
       }
 
       // 7) slicing canvas -> PDF A4
