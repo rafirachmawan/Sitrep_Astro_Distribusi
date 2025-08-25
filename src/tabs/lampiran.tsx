@@ -732,6 +732,11 @@ export default function Lampiran({ data }: { data: AppState }) {
 
     const st = doc.createElement("style");
     st.textContent = `
+     /* checkbox mini agar mirip UI input */
++      .cbx{display:inline-flex;width:14px;height:14px;border:1px solid #cbd5e1;border-radius:4px;align-items:center;justify-content:center;font-size:11px;line-height:1}
++      .cbx.on{background:#10b981;border-color:#10b981;color:#fff}
++      .small{font-size:11px}
++      .hint{color:#94a3b8;font-size:11px;margin-left:6px}
       .page{width:794px;min-height:1123px;box-sizing:border-box;padding:24px;}
       .section{margin-top:18px;}
       .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;}
@@ -961,145 +966,307 @@ export default function Lampiran({ data }: { data: AppState }) {
     page.appendChild(evalSec);
 
     // TARGET & ACHIEVEMENT
+    // TARGET & ACHIEVEMENT (UI-style)
     const tgtSec = doc.createElement("div");
     tgtSec.className = "section";
     tgtSec.innerHTML = `<div class="title">Target & Achievement</div>`;
 
-    const valueToHTML = (v: unknown): string => {
-      if (v == null || v === "") return "";
-      if (typeof v === "boolean") return v ? "Ya" : "–";
-      if (typeof v === "number") return String(v);
-      if (typeof v === "string") return escapeHtml(v);
-      if (Array.isArray(v)) {
-        if (isBoolArray(v)) {
-          const t = v.filter(Boolean).length;
-          return `${t}/${v.length} ✓`;
-        }
-        return escapeHtml(
-          v
-            .map((x) =>
-              isPrimitive(x)
-                ? String(x)
-                : isRecord(x)
-                ? JSON.stringify(x)
-                : String(x)
-            )
-            .join(", ")
+    // ------ helper buat parser UI ------
+    const rawTarget = (data as unknown as AppLike).target as any;
+    const PRINCIPALS = ["FRI", "SPJ", "APA", "WPL"] as const;
+
+    const pick = (obj: any, keys: string[]) => {
+      if (!obj) return undefined;
+      for (const k of keys) {
+        if (obj[k] !== undefined) return obj[k];
+        const alt = Object.keys(obj).find(
+          (x) => x.toLowerCase() === k.toLowerCase()
         );
+        if (alt) return obj[alt];
       }
+      return undefined;
+    };
+    const toBool = (v: any) => {
+      if (typeof v === "boolean") return v;
+      if (typeof v === "number") return v !== 0;
+      if (typeof v === "string")
+        return ["true", "1", "ya", "yes", "y", "selesai"].includes(
+          v.trim().toLowerCase()
+        );
+      return !!v;
+    };
+    const toWeeks = (v: any): boolean[] => {
+      if (Array.isArray(v)) return clampBools(v.map(toBool), 4);
       if (isRecord(v)) {
-        const entries = Object.entries(v);
-        const rows = entries
-          .map(([k, val]) => {
-            if (isBoolArray(val)) {
-              const t = val.filter(Boolean).length;
-              return `<li>${escapeHtml(k)}: ${t}/${val.length} ✓</li>`;
-            }
-            if (typeof val === "boolean")
-              return `<li>${escapeHtml(k)}: ${val ? "✓" : "–"}</li>`;
-            return `<li>${escapeHtml(k)}: ${escapeHtml(
-              isPrimitive(val) ? String(val) : JSON.stringify(val)
-            )}</li>`;
-          })
-          .join("");
-        return `<ul class="ul-kv">${rows}</ul>`;
+        const a = [
+          pick(v, ["w1", "1"]),
+          pick(v, ["w2", "2"]),
+          pick(v, ["w3", "3"]),
+          pick(v, ["w4", "4"]),
+        ].map(toBool);
+        return clampBools(a, 4);
       }
-      return escapeHtml(String(v));
+      return [false, false, false, false];
+    };
+    const fmtDate = (d: any) => {
+      if (!d) return "";
+      if (typeof d === "string") return d;
+      try {
+        const x = new Date(d);
+        return Number.isNaN(+x) ? String(d) : x.toISOString().slice(0, 10);
+      } catch {
+        return String(d);
+      }
     };
 
-    if (targetView.type === "empty") {
-      const tbl = doc.createElement("table");
-      tbl.className = "table striped kpi";
-      tbl.innerHTML = `<thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead>`;
-      tbl.insertAdjacentHTML(
-        "beforeend",
-        `<tbody><tr><td></td><td></td><td>${labelStatusChip(
-          false
-        )}</td></tr></tbody>`
+    const klaimSrc = pick(rawTarget, [
+      "klaimBulanan",
+      "klaim",
+      "penyelesaianKlaim",
+      "claims",
+    ]);
+    const laporanSrc = pick(rawTarget, [
+      "laporanMingguan",
+      "laporanPrinsipal",
+      "weeklyReports",
+    ]);
+    const tgtBulananSrc = pick(rawTarget, [
+      "klaimBulananTarget",
+      "targetBulanan",
+      "targetSelesaiBulanIni",
+    ]);
+
+    const looksLikeUI =
+      isRecord(klaimSrc) ||
+      isRecord(laporanSrc) ||
+      isRecord(tgtBulananSrc) ||
+      ["target", "deadline"].some(
+        (k) => rawTarget && rawTarget[k] !== undefined
       );
-      tgtSec.appendChild(tbl);
-    } else if (targetView.type === "kpi") {
-      const tbl = doc.createElement("table");
-      tbl.className = "table striped kpi";
-      tbl.innerHTML = `<thead><tr><th>KPI</th><th>Target</th><th>Realisasi</th><th>%</th><th>Catatan</th><th>Status</th></tr></thead>`;
-      const tb = doc.createElement("tbody");
-      targetView.rows.forEach((r) => {
-        const filled =
-          hasAnyTruthy(r["target"]) ||
-          hasAnyTruthy(r["plan"]) ||
-          hasAnyTruthy(
-            r["actual"] ?? r["real"] ?? r["realisasi"] ?? r["achieved"]
-          ) ||
-          hasAnyTruthy(r["percent"] ?? r["persen"] ?? r["achievement"]) ||
-          hasAnyTruthy(r["notes"] ?? r["catatan"]);
-        tb.insertAdjacentHTML(
+
+    if (looksLikeUI) {
+      // 1) Penyelesaian Klaim Bulan Ini
+      const klaimBlock = doc.createElement("div");
+      klaimBlock.className = "mb8";
+      klaimBlock.innerHTML = `<div class="subhead">Penyelesaian Klaim Bulan Ini <span class="hint">(reset setiap awal bulan)</span></div>`;
+      const klaimTable = doc.createElement("table");
+      klaimTable.className = "table striped";
+      klaimTable.innerHTML = `<thead><tr><th>Jenis</th><th style="width:18%">Selesai</th><th style="width:30%">Deadline</th></tr></thead>`;
+      const kbody = doc.createElement("tbody");
+      PRINCIPALS.forEach((p) => {
+        const row = pick(klaimSrc, [p, p.toLowerCase()]) ?? {};
+        const selesai = toBool(
+          pick(row, ["selesai", "done", "value", "checked"])
+        );
+        const deadline = fmtDate(pick(row, ["deadline", "due", "tanggal"]));
+        kbody.insertAdjacentHTML(
           "beforeend",
           `<tr>
-            <td>${escapeHtml(
-              String(r["title"] ?? r["name"] ?? r["kpi"] ?? "")
-            )}</td>
-            <td>${valueToHTML(r["target"] ?? r["plan"])}</td>
-            <td>${valueToHTML(
+             <td>${p}</td>
+             <td><span class="cbx ${selesai ? "on" : ""}">${
+            selesai ? "✓" : ""
+          }</span> <span class="small">Selesai</span></td>
+             <td>${escapeHtml(deadline)}</td>
+           </tr>`
+        );
+      });
+      klaimTable.appendChild(kbody);
+      klaimBlock.appendChild(klaimTable);
+      tgtSec.appendChild(klaimBlock);
+
+      // 2) Target Selesai (bulan ini)
+      const targetCount =
+        pick(tgtBulananSrc, [
+          "targetCount",
+          "jumlah",
+          "count",
+          "value",
+          "target",
+        ]) ??
+        rawTarget?.target ??
+        "";
+      const targetDeadline = fmtDate(
+        pick(tgtBulananSrc, ["deadline", "due"]) ?? rawTarget?.deadline
+      );
+      const targetTbl = doc.createElement("table");
+      targetTbl.className = "table";
+      targetTbl.innerHTML = `<colgroup><col style="width:40%"><col style="width:60%"></colgroup>
+        <tbody>
+          <tr><th>Target Selesai (bulan ini)</th><td>${escapeHtml(
+            String(targetCount ?? "")
+          )} <span class="hint">mis. 10</span></td></tr>
+          <tr><th>Deadline</th><td>${escapeHtml(targetDeadline)}</td></tr>
+        </tbody>`;
+      tgtSec.appendChild(targetTbl);
+
+      // 3) Laporan Penjualan ke Prinsipal Mingguan
+      const reportBlock = doc.createElement("div");
+      reportBlock.className = "mb8";
+      reportBlock.innerHTML = `<div class="subhead">Laporan Penjualan ke Prinsipal Mingguan</div>`;
+      const repTbl = doc.createElement("table");
+      repTbl.className = "table striped";
+      repTbl.innerHTML = `<thead><tr><th>Prinsipal</th><th>Minggu 1</th><th>Minggu 2</th><th>Minggu 3</th><th>Minggu 4</th></tr></thead>`;
+      const rbody = doc.createElement("tbody");
+      PRINCIPALS.forEach((p) => {
+        const row = pick(laporanSrc, [p, p.toLowerCase()]) ?? {};
+        const weeks = toWeeks(row);
+        rbody.insertAdjacentHTML(
+          "beforeend",
+          `<tr>
+             <td>${p}</td>
+             ${weeks
+               .map(
+                 (w) =>
+                   `<td><span class="cbx ${w ? "on" : ""}">${
+                     w ? "✓" : ""
+                   }</span></td>`
+               )
+               .join("")}
+           </tr>`
+        );
+      });
+      repTbl.appendChild(rbody);
+      reportBlock.appendChild(repTbl);
+      tgtSec.appendChild(reportBlock);
+    } else {
+      // ---- fallback ke renderer generik lama (pakai targetView) ----
+      const valueToHTML = (v: unknown): string => {
+        if (v == null || v === "") return "";
+        if (typeof v === "boolean") return v ? "Ya" : "–";
+        if (typeof v === "number") return String(v);
+        if (typeof v === "string") return escapeHtml(v);
+        if (Array.isArray(v)) {
+          if (isBoolArray(v)) {
+            const t = v.filter(Boolean).length;
+            return `${t}/${v.length} ✓`;
+          }
+          return escapeHtml(
+            v
+              .map((x) =>
+                isPrimitive(x)
+                  ? String(x)
+                  : isRecord(x)
+                  ? JSON.stringify(x)
+                  : String(x)
+              )
+              .join(", ")
+          );
+        }
+        if (isRecord(v)) {
+          const entries = Object.entries(v);
+          const rows = entries
+            .map(([k, val]) => {
+              if (isBoolArray(val)) {
+                const t = val.filter(Boolean).length;
+                return `<li>${escapeHtml(k)}: ${t}/${val.length} ✓</li>`;
+              }
+              if (typeof val === "boolean")
+                return `<li>${escapeHtml(k)}: ${val ? "✓" : "–"}</li>`;
+              return `<li>${escapeHtml(k)}: ${escapeHtml(
+                isPrimitive(val) ? String(val) : JSON.stringify(val)
+              )}</li>`;
+            })
+            .join("");
+          return `<ul class="ul-kv">${rows}</ul>`;
+        }
+        return escapeHtml(String(v));
+      };
+
+      if (targetView.type === "empty") {
+        const tbl = doc.createElement("table");
+        tbl.className = "table striped kpi";
+        tbl.innerHTML = `<thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead>`;
+        tbl.insertAdjacentHTML(
+          "beforeend",
+          `<tbody><tr><td></td><td></td><td>${labelStatusChip(
+            false
+          )}</td></tr></tbody>`
+        );
+        tgtSec.appendChild(tbl);
+      } else if (targetView.type === "kpi") {
+        const tbl = doc.createElement("table");
+        tbl.className = "table striped kpi";
+        tbl.innerHTML = `<thead><tr><th>KPI</th><th>Target</th><th>Realisasi</th><th>%</th><th>Catatan</th><th>Status</th></tr></thead>`;
+        const tb = doc.createElement("tbody");
+        targetView.rows.forEach((r) => {
+          const filled =
+            hasAnyTruthy(r["target"]) ||
+            hasAnyTruthy(r["plan"]) ||
+            hasAnyTruthy(
               r["actual"] ?? r["real"] ?? r["realisasi"] ?? r["achieved"]
-            )}</td>
-            <td>${valueToHTML(
-              r["percent"] ?? r["persen"] ?? r["achievement"]
-            )}</td>
-            <td>${escapeHtml(String(r["notes"] ?? r["catatan"] ?? ""))}</td>
-            <td>${labelStatusChip(filled)}</td>
-          </tr>`
-        );
-      });
-      tbl.appendChild(tb);
-      tgtSec.appendChild(tbl);
-    } else if (targetView.type === "table") {
-      const cols = targetView.cols;
-      const tbl = doc.createElement("table");
-      tbl.className = "table striped";
-      const thead = doc.createElement("thead");
-      thead.innerHTML = `<tr>${cols
-        .map((c) => `<th>${c}</th>`)
-        .join("")}<th>Status</th></tr>`;
-      tbl.appendChild(thead);
-      const tb = doc.createElement("tbody");
-      targetView.rows.forEach((row) => {
-        const filled = hasAnyTruthy(row);
-        tb.insertAdjacentHTML(
-          "beforeend",
-          `<tr>${cols
-            .map((c) => `<td>${valueToHTML(row[c])}</td>`)
-            .join("")}<td>${labelStatusChip(filled)}</td></tr>`
-        );
-      });
-      tbl.appendChild(tb);
-      tgtSec.appendChild(tbl);
-    } else if (targetView.type === "kv") {
-      const kv = targetView.kv;
-      const tbl = doc.createElement("table");
-      tbl.className = "table striped";
-      tbl.innerHTML = `<colgroup><col style="width:35%"><col style="width:45%"><col style="width:20%"></colgroup>
-        <thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead>`;
-      const tb = doc.createElement("tbody");
-      const entries = Object.entries(kv);
-      if (entries.length === 0) {
-        tb.insertAdjacentHTML(
-          "beforeend",
-          `<tr><td></td><td></td><td>${labelStatusChip(false)}</td></tr>`
-        );
-      } else {
-        entries.forEach(([k, v]) => {
-          const filled = hasAnyTruthy(v);
+            ) ||
+            hasAnyTruthy(r["percent"] ?? r["persen"] ?? r["achievement"]) ||
+            hasAnyTruthy(r["notes"] ?? r["catatan"]);
           tb.insertAdjacentHTML(
             "beforeend",
-            `<tr><td>${escapeHtml(k)}</td><td>${valueToHTML(
-              v
-            )}</td><td>${labelStatusChip(filled)}</td></tr>`
+            `<tr>
+              <td>${escapeHtml(
+                String(r["title"] ?? r["name"] ?? r["kpi"] ?? "")
+              )}</td>
+              <td>${valueToHTML(r["target"] ?? r["plan"])}</td>
+              <td>${valueToHTML(
+                r["actual"] ?? r["real"] ?? r["realisasi"] ?? r["achieved"]
+              )}</td>
+              <td>${valueToHTML(
+                r["percent"] ?? r["persen"] ?? r["achievement"]
+              )}</td>
+              <td>${escapeHtml(String(r["notes"] ?? r["catatan"] ?? ""))}</td>
+              <td>${labelStatusChip(filled)}</td>
+            </tr>`
           );
         });
+        tbl.appendChild(tb);
+        tgtSec.appendChild(tbl);
+      } else if (targetView.type === "table") {
+        const cols = targetView.cols;
+        const tbl = doc.createElement("table");
+        tbl.className = "table striped";
+        const thead = doc.createElement("thead");
+        thead.innerHTML = `<tr>${cols
+          .map((c) => `<th>${c}</th>`)
+          .join("")}<th>Status</th></tr>`;
+        tbl.appendChild(thead);
+        const tb = doc.createElement("tbody");
+        targetView.rows.forEach((row) => {
+          const filled = hasAnyTruthy(row);
+          tb.insertAdjacentHTML(
+            "beforeend",
+            `<tr>${cols
+              .map((c) => `<td>${valueToHTML(row[c])}</td>`)
+              .join("")}<td>${labelStatusChip(filled)}</td></tr>`
+          );
+        });
+        tbl.appendChild(tb);
+        tgtSec.appendChild(tbl);
+      } else if (targetView.type === "kv") {
+        const kv = targetView.kv;
+        const tbl = doc.createElement("table");
+        tbl.className = "table striped";
+        tbl.innerHTML = `<colgroup><col style="width:35%"><col style="width:45%"><col style="width:20%"></colgroup>
+          <thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead>`;
+        const tb = doc.createElement("tbody");
+        const entries = Object.entries(kv);
+        if (entries.length === 0) {
+          tb.insertAdjacentHTML(
+            "beforeend",
+            `<tr><td></td><td></td><td>${labelStatusChip(false)}</td></tr>`
+          );
+        } else {
+          entries.forEach(([k, v]) => {
+            const filled = hasAnyTruthy(v);
+            tb.insertAdjacentHTML(
+              "beforeend",
+              `<tr><td>${escapeHtml(k)}</td><td>${valueToHTML(
+                v
+              )}</td><td>${labelStatusChip(filled)}</td></tr>`
+            );
+          });
+        }
+        tbl.appendChild(tb);
+        tgtSec.appendChild(tbl);
       }
-      tbl.appendChild(tb);
-      tgtSec.appendChild(tbl);
     }
+
     page.appendChild(tgtSec);
 
     // PROJECT TRACKING (SPARTA)
