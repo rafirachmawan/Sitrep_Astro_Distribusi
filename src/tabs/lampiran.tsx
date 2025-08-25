@@ -700,9 +700,12 @@ export default function Lampiran({ data }: { data: AppState }) {
   /* -------- Layout PDF -------- */
   const buildPrintLayout = () => {
     const root = document.createElement("div");
-    root.id = "pdf-print-root"; // ← penting: anchor utama (tanpa all:initial)
+    root.id = "pdf-print-root";
 
-    // Ukuran & font dasar
+    // ⬇️ penting: reset semua pewarisan CSS (termasuk custom props oklch)
+    // lalu kita set style yang kita butuhkan di bawahnya.
+    (root.style as any).all = "initial";
+
     root.style.display = "block";
     root.style.width = "794px";
     root.style.background = "#fff";
@@ -1255,6 +1258,44 @@ export default function Lampiran({ data }: { data: AppState }) {
 
   /* -------- Export PDF + Upload ke Supabase (PATCHED) -------- */
   const submitAndGenerate = async () => {
+    // helper kecil
+    function neutralizeOklchVars<T>(run: () => Promise<T>): Promise<T> {
+      const docEl = document.documentElement;
+      const keys = [
+        // tailwind/shadcn yang umum dipakai:
+        "--tw-ring-color",
+        "--tw-ring-offset-color",
+        "--tw-shadow-color",
+        "--tw-shadow",
+        "--ring",
+        "--border",
+        "--input",
+        "--background",
+        "--foreground",
+        "--primary",
+        "--secondary",
+        "--accent",
+        "--muted",
+        "--destructive",
+      ];
+
+      // simpan nilai inline sebelumnya (kalau ada)
+      const prev = new Map<string, string>();
+      for (const k of keys) prev.set(k, docEl.style.getPropertyValue(k));
+
+      // timpa dengan warna aman (tanpa oklch)
+      for (const k of keys) docEl.style.setProperty(k, "rgb(0 0 0 / 0)");
+
+      return run().finally(() => {
+        // pulihkan
+        for (const k of keys) {
+          const v = prev.get(k) || "";
+          if (v) docEl.style.setProperty(k, v);
+          else docEl.style.removeProperty(k);
+        }
+      });
+    }
+
     if (!sigDataUrl) {
       alert("Mohon tanda tangan terlebih dahulu.");
       return;
@@ -1289,18 +1330,20 @@ export default function Lampiran({ data }: { data: AppState }) {
       const height = Math.ceil(root.scrollHeight || 1123);
 
       // 5) render ke canvas — tanpa foreignObject (lebih stabil)
-      const canvas = await html2canvas(root, {
-        backgroundColor: "#ffffff",
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        foreignObjectRendering: false,
-        width,
-        height,
-        windowWidth: width,
-        windowHeight: height,
-        // onclone: DIHAPUS
-      });
+      // 5) render ke canvas — tanpa foreignObject & dengan netralisasi oklch
+      const canvas = (await neutralizeOklchVars(() =>
+        html2canvas(root, {
+          backgroundColor: "#ffffff",
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          foreignObjectRendering: false,
+          width,
+          height,
+          windowWidth: width,
+          windowHeight: height,
+        })
+      )) as HTMLCanvasElement;
 
       if (!canvas.width || !canvas.height) {
         throw new Error("Render canvas 0px — elemen tidak terukur");
