@@ -700,11 +700,10 @@ export default function Lampiran({ data }: { data: AppState }) {
   /* -------- Layout PDF -------- */
   const buildPrintLayout = () => {
     const root = document.createElement("div");
-    root.id = "pdf-print-root"; // ← penting: untuk onclone selector
-    // putus pewarisan CSS global (hindari warna oklch dll)
-    (root.style as any).all = "initial";
-    root.style.display = "block";
+    root.id = "pdf-print-root"; // ← penting: anchor utama (tanpa all:initial)
 
+    // Ukuran & font dasar
+    root.style.display = "block";
     root.style.width = "794px";
     root.style.background = "#fff";
     root.style.color = "#0f172a";
@@ -1157,7 +1156,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       []) as AppLike["agenda"]["entries"];
 
     if (!agenda.length) {
-      // kosong: biarkan kosong
+      // kosong
     } else {
       const sorted = [...agenda].sort((a, b) =>
         a.date === b.date
@@ -1254,7 +1253,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     return root;
   };
 
-  /* -------- Export PDF + Upload ke Supabase -------- */
+  /* -------- Export PDF + Upload ke Supabase (PATCHED) -------- */
   const submitAndGenerate = async () => {
     if (!sigDataUrl) {
       alert("Mohon tanda tangan terlebih dahulu.");
@@ -1262,7 +1261,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     }
     setWorking(true);
     try {
-      // 1) load libs lebih dulu
+      // 1) load libs
       const { html2canvas, jsPDF } = await loadPdfLibs();
 
       // 2) build & mount node yang akan dirender
@@ -1271,53 +1270,37 @@ export default function Lampiran({ data }: { data: AppState }) {
       printRef.current.innerHTML = "";
       printRef.current.appendChild(root);
 
-      // 3) beri satu frame supaya layout stabil
+      // 3) tunggu font/layout settle
+      try {
+        // @ts-ignore
+        await (document as any).fonts?.ready;
+      } catch {}
       await new Promise((r) => requestAnimationFrame(r));
+      await new Promise((r) => setTimeout(r, 30));
 
-      // 4) render ke canvas, isolasi CSS global via onclone
+      // 4) ukur dimensi (hindari 0×0)
+      const width = Math.ceil(root.scrollWidth || root.clientWidth || 794);
+      const height = Math.ceil(root.scrollHeight || 1123);
+
+      // 5) render ke canvas — tanpa foreignObject (lebih stabil)
       const canvas = await html2canvas(root, {
         backgroundColor: "#ffffff",
         scale: 2,
-        foreignObjectRendering: true,
-        onclone: (doc: Document) => {
-          const clonedRoot = doc.getElementById(
-            "pdf-print-root"
-          ) as HTMLElement | null;
-          if (!clonedRoot) return;
-
-          // 1) Hapus SEMUA style global di <head>
-          doc.head
-            .querySelectorAll('style,link[rel="stylesheet"]')
-            .forEach((el) => el.remove());
-
-          // 2) Sisakan hanya #pdf-print-root di <body>
-          Array.from(doc.body.children).forEach((el) => {
-            if (el !== clonedRoot) el.remove();
-          });
-
-          // 3) Reset html/body agar tidak bawa kelas/tema yang mengandung oklch
-          doc.documentElement.removeAttribute("class");
-          doc.documentElement.removeAttribute("data-theme");
-          doc.body.removeAttribute("class");
-          doc.body.style.cssText =
-            "margin:0;padding:0;background:#fff;color:#111827;";
-
-          // 4) Hard reset di root (double safety)
-          (clonedRoot.style as any).all = "initial";
-          clonedRoot.style.display = "block";
-
-          // 5) Jika ada inline style yang kebetulan mengandung oklch, buang
-          clonedRoot
-            .querySelectorAll<HTMLElement>('[style*="oklch("]')
-            .forEach((el) => {
-              el.style.removeProperty("color");
-              el.style.removeProperty("background");
-              el.style.removeProperty("background-color");
-            });
-        },
+        useCORS: true,
+        allowTaint: true,
+        foreignObjectRendering: false,
+        width,
+        height,
+        windowWidth: width,
+        windowHeight: height,
+        // onclone: DIHAPUS
       });
 
-      // 5) slicing canvas -> PDF A4
+      if (!canvas.width || !canvas.height) {
+        throw new Error("Render canvas 0px — elemen tidak terukur");
+      }
+
+      // 6) slicing canvas -> PDF A4
       const imgW = canvas.width;
       const imgH = canvas.height;
 
@@ -1326,7 +1309,8 @@ export default function Lampiran({ data }: { data: AppState }) {
       const pageH = pdf.internal.pageSize.getHeight();
       const margin = 24;
       const usableW = pageW - margin * 2;
-      const pageHeightPx = Math.floor((imgW * (pageH - margin * 2)) / usableW);
+      const usableH = pageH - margin * 2;
+      const pageHeightPx = Math.floor((imgW * usableH) / usableW);
 
       let sY = 0;
       while (sY < imgH) {
@@ -1336,18 +1320,21 @@ export default function Lampiran({ data }: { data: AppState }) {
         pageCanvas.height = sHeight;
         const ctx = pageCanvas.getContext("2d")!;
         ctx.drawImage(canvas, 0, sY, imgW, sHeight, 0, 0, imgW, sHeight);
-        const imgData = pageCanvas.toDataURL("image/png");
+
+        // JPEG cenderung lebih kecil & stabil
+        const imgData = pageCanvas.toDataURL("image/jpeg", 0.92);
         const drawH = (sHeight / imgW) * usableW;
         pdf.addImage(
           imgData,
-          "PNG",
+          "JPEG",
           margin,
           margin,
           usableW,
           drawH,
-          "",
+          undefined,
           "FAST"
         );
+
         sY += sHeight;
         if (sY < imgH) pdf.addPage();
       }
@@ -1355,7 +1342,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       const date = todayISO();
       const filename = `${date}.pdf`;
 
-      // 6) upload (tetap sama)
+      // 7) upload ke API (opsional)
       try {
         const arrayBuffer = pdf.output("arraybuffer") as ArrayBuffer;
         const u = (user ?? {}) as AnyUser;
@@ -1376,7 +1363,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         console.warn("Upload error:", e);
       }
 
-      // 7) simpan lokal + download
+      // 8) simpan lokal + download
       const pdfDataUrl = pdf.output("datauristring") as string;
       const entry: PdfEntry = {
         id: uuid(),
@@ -1438,15 +1425,16 @@ export default function Lampiran({ data }: { data: AppState }) {
 
   return (
     <div className="space-y-6">
-      {/* container untuk layout PDF (hidden) */}
+      {/* container untuk layout PDF (hidden, off-screen aman) */}
       <div
         ref={printRef}
         style={{
           position: "fixed",
-          left: -10000,
-          top: 0,
+          left: -99999,
+          top: -99999,
           width: 794,
           pointerEvents: "none",
+          zIndex: -1,
         }}
       />
 
