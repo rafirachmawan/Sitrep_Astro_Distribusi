@@ -732,11 +732,6 @@ export default function Lampiran({ data }: { data: AppState }) {
 
     const st = doc.createElement("style");
     st.textContent = `
-     /* checkbox mini agar mirip UI input */
-+      .cbx{display:inline-flex;width:14px;height:14px;border:1px solid #cbd5e1;border-radius:4px;align-items:center;justify-content:center;font-size:11px;line-height:1}
-+      .cbx.on{background:#10b981;border-color:#10b981;color:#fff}
-+      .small{font-size:11px}
-+      .hint{color:#94a3b8;font-size:11px;margin-left:6px}
       .page{width:794px;min-height:1123px;box-sizing:border-box;padding:24px;}
       .section{margin-top:18px;}
       .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;}
@@ -780,6 +775,11 @@ export default function Lampiran({ data }: { data: AppState }) {
       .kpi th:nth-child(2),.kpi th:nth-child(3),.kpi th:nth-child(4){width:16%}
       .kpi th:nth-child(5){width:24%}
       .ul-kv{margin:0;padding-left:18px}
+      /* checkbox mini agar mirip UI input */
+      .cbx{display:inline-flex;width:14px;height:14px;border:1px solid #cbd5e1;border-radius:4px;align-items:center;justify-content:center;font-size:11px;line-height:1}
+      .cbx.on{background:#10b981;border-color:#10b981;color:#fff}
+      .small{font-size:11px}
+      .hint{color:#94a3b8;font-size:11px;margin-left:6px}
     `;
     root.appendChild(st);
 
@@ -847,7 +847,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     };
     evalSec.innerHTML = `<div class="title">${titleMap[theme]}</div>`;
 
-    // --- Attitude (per-orang: key `${person}::${code}`) + fallback lama ---
+    // --- Attitude ---
     if (theme === "attitude") {
       const rawScores = (evalData?.attitude?.scores ?? {}) as Record<
         string,
@@ -904,7 +904,6 @@ export default function Lampiran({ data }: { data: AppState }) {
           evalSec.appendChild(block);
         });
       } else {
-        // fallback model lama (key polos "H/E/B/A/T")
         const tbl = makeTable(
           (code) => rawScores[code],
           (code) => rawNotes[code]
@@ -912,8 +911,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         evalSec.appendChild(tbl);
       }
     }
-
-    // --- Kompetensi / Prestasi / Kepatuhan (per-orang di `tema_${person}`) ---
+    // --- Kompetensi / Prestasi / Kepatuhan ---
     else if (
       theme === "kompetensi" ||
       theme === "prestasi" ||
@@ -965,13 +963,14 @@ export default function Lampiran({ data }: { data: AppState }) {
     }
     page.appendChild(evalSec);
 
-    // TARGET & ACHIEVEMENT
-    // TARGET & ACHIEVEMENT (UI-style)
+    /* =========================
+       TARGET & ACHIEVEMENT — UI style
+       ========================= */
     const tgtSec = doc.createElement("div");
     tgtSec.className = "section";
     tgtSec.innerHTML = `<div class="title">Target & Achievement</div>`;
 
-    // ------ helper buat parser UI ------
+    // sumber target yang kita dukung
     const rawTarget = (data as unknown as AppLike).target as any;
     const PRINCIPALS = ["FRI", "SPJ", "APA", "WPL"] as const;
 
@@ -1019,30 +1018,28 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
     };
 
-    const klaimSrc = pick(rawTarget, [
-      "klaimBulanan",
-      "klaim",
-      "penyelesaianKlaim",
-      "claims",
-    ]);
-    const laporanSrc = pick(rawTarget, [
-      "laporanMingguan",
-      "laporanPrinsipal",
-      "weeklyReports",
-    ]);
-    const tgtBulananSrc = pick(rawTarget, [
-      "klaimBulananTarget",
-      "targetBulanan",
-      "targetSelesaiBulanIni",
-    ]);
+    // dukung nama-nama field yang kamu pakai
+    const klaimSrc =
+      pick(rawTarget, ["klaimSelesai"]) ||
+      pick(rawTarget, ["klaimBulanan", "klaim", "penyelesaianKlaim", "claims"]);
+    const laporanSrc =
+      pick(rawTarget, ["weekly"]) ||
+      pick(rawTarget, ["laporanMingguan", "laporanPrinsipal", "weeklyReports"]);
+    const tgtBulananSrc =
+      pick(rawTarget, ["targetSelesai"]) ||
+      pick(rawTarget, [
+        "klaimBulananTarget",
+        "targetBulanan",
+        "targetSelesaiBulanIni",
+      ]);
+    const deadlinesSrc = pick(rawTarget, ["deadlines", "deadline", "dues"]);
 
     const looksLikeUI =
       isRecord(klaimSrc) ||
       isRecord(laporanSrc) ||
-      isRecord(tgtBulananSrc) ||
-      ["target", "deadline"].some(
-        (k) => rawTarget && rawTarget[k] !== undefined
-      );
+      tgtBulananSrc !== undefined ||
+      rawTarget?.target !== undefined ||
+      rawTarget?.deadline !== undefined;
 
     if (looksLikeUI) {
       // 1) Penyelesaian Klaim Bulan Ini
@@ -1054,11 +1051,22 @@ export default function Lampiran({ data }: { data: AppState }) {
       klaimTable.innerHTML = `<thead><tr><th>Jenis</th><th style="width:18%">Selesai</th><th style="width:30%">Deadline</th></tr></thead>`;
       const kbody = doc.createElement("tbody");
       PRINCIPALS.forEach((p) => {
-        const row = pick(klaimSrc, [p, p.toLowerCase()]) ?? {};
+        const row =
+          (klaimSrc && (klaimSrc[p] ?? klaimSrc[p.toLowerCase()])) ?? {};
         const selesai = toBool(
-          pick(row, ["selesai", "done", "value", "checked"])
+          isRecord(row)
+            ? pick(row, ["selesai", "done", "value", "checked"])
+            : row
         );
-        const deadline = fmtDate(pick(row, ["deadline", "due", "tanggal"]));
+        // deadline per-prinsipal: dari row.deadline atau dari deadlines.klaim.{P}
+        const rowDeadline =
+          (isRecord(row) && pick(row, ["deadline", "due", "tanggal"])) ??
+          (isRecord(deadlinesSrc) &&
+            isRecord(deadlinesSrc.klaim) &&
+            (deadlinesSrc.klaim[p] ?? deadlinesSrc.klaim[p.toLowerCase()])) ??
+          (isRecord(deadlinesSrc) && deadlinesSrc.klaim);
+        const deadline = fmtDate(rowDeadline);
+
         kbody.insertAdjacentHTML(
           "beforeend",
           `<tr>
@@ -1076,17 +1084,15 @@ export default function Lampiran({ data }: { data: AppState }) {
 
       // 2) Target Selesai (bulan ini)
       const targetCount =
-        pick(tgtBulananSrc, [
-          "targetCount",
-          "jumlah",
-          "count",
-          "value",
-          "target",
-        ]) ??
+        (isRecord(tgtBulananSrc)
+          ? pick(tgtBulananSrc, ["targetCount", "jumlah", "count", "value"])
+          : tgtBulananSrc) ??
         rawTarget?.target ??
         "";
       const targetDeadline = fmtDate(
-        pick(tgtBulananSrc, ["deadline", "due"]) ?? rawTarget?.deadline
+        (isRecord(tgtBulananSrc) && pick(tgtBulananSrc, ["deadline", "due"])) ??
+          (isRecord(deadlinesSrc) && deadlinesSrc.targetSelesai) ??
+          rawTarget?.deadline
       );
       const targetTbl = doc.createElement("table");
       targetTbl.className = "table";
@@ -1108,7 +1114,8 @@ export default function Lampiran({ data }: { data: AppState }) {
       repTbl.innerHTML = `<thead><tr><th>Prinsipal</th><th>Minggu 1</th><th>Minggu 2</th><th>Minggu 3</th><th>Minggu 4</th></tr></thead>`;
       const rbody = doc.createElement("tbody");
       PRINCIPALS.forEach((p) => {
-        const row = pick(laporanSrc, [p, p.toLowerCase()]) ?? {};
+        const row =
+          (laporanSrc && (laporanSrc[p] ?? laporanSrc[p.toLowerCase()])) ?? {};
         const weeks = toWeeks(row);
         rbody.insertAdjacentHTML(
           "beforeend",
