@@ -106,33 +106,25 @@ function CurrencyField({
   const mirrorRef = useRef<HTMLSpanElement | null>(null);
   const [widthPx, setWidthPx] = useState<number>(0);
 
-  // teks yang ditampilkan (sudah di-format)
   const display = formatIDR(valueDigits);
 
-  // ukur lebar teks lalu set lebar input
   useEffect(() => {
     const mirror = mirrorRef.current;
     if (!mirror) return;
-    // Isi teks mirror sama dengan input yang ditampilkan
     mirror.textContent = display || placeholder || "";
-    // Ambil lebar konten + padding dasar input
     const contentWidth = Math.ceil(mirror.getBoundingClientRect().width);
-    // Tambah padding kiri/kanan + ruang prefix "Rp."
-    const PADDING_X = 24; // px, kira-kira padding horizontal total
-    const PREFIX_SPACE = 28; // ruang tambahan untuk "Rp." + jarak
-    const MIN_W = 140; // minimal biar enak dilihat
+    const PADDING_X = 24;
+    const PREFIX_SPACE = 28;
+    const MIN_W = 140;
     const next = Math.max(contentWidth + PADDING_X + PREFIX_SPACE, MIN_W);
     setWidthPx(next);
   }, [display, placeholder]);
 
   return (
     <div className={`relative w-full ${className}`}>
-      {/* Prefix Rp. */}
       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm select-none">
         Rp.
       </span>
-
-      {/* Input (auto width) */}
       <input
         ref={inputRef}
         value={display}
@@ -147,11 +139,9 @@ function CurrencyField({
         }
         style={{
           width: widthPx ? `${widthPx}px` : undefined,
-          maxWidth: "100%", // jangan melewati container
+          maxWidth: "100%",
         }}
       />
-
-      {/* Mirror span untuk mengukur lebar teks (tak terlihat) */}
       <span
         ref={mirrorRef}
         className="invisible absolute left-0 top-0 whitespace-pre px-3 py-2 font-normal text-sm"
@@ -161,15 +151,150 @@ function CurrencyField({
   );
 }
 
+/* =============== SERIALIZER & SENDER ke GAS =============== */
+
+// Tidy row untuk Checklist Area
+type TidyChecklistRow = {
+  sectionKey: SectionKey;
+  sectionTitle: string;
+  rowKey: string;
+  rowLabel: string;
+  valueJoined?: string | null;
+  numberValue?: string | number | null;
+  scoreValue?: number | null;
+  extra_text?: string | null;
+  extra_currency?: string | null; // kirim digit string; GAS akan cast ke number
+  extra_number?: string | number | null;
+  note?: string | null;
+};
+
+function rowDefLabel(def: RowDef): string {
+  return (def as any).label || "";
+}
+
+function toTidyChecklistRows(
+  data: ChecklistState,
+  FINAL_MAP: Record<SectionKey, { title: string; rows: RowDef[] }>
+): TidyChecklistRow[] {
+  const rows: TidyChecklistRow[] = [];
+  (Object.keys(FINAL_MAP) as SectionKey[]).forEach((sec) => {
+    const secTitle = FINAL_MAP[sec].title;
+    FINAL_MAP[sec].rows.forEach((def) => {
+      const v = data?.[sec]?.[def.key] as RowValue | undefined;
+      if (!v) {
+        rows.push({
+          sectionKey: sec,
+          sectionTitle: secTitle,
+          rowKey: def.key,
+          rowLabel: rowDefLabel(def),
+          valueJoined: null,
+          numberValue: null,
+          scoreValue: null,
+          extra_text: null,
+          extra_currency: null,
+          extra_number: null,
+          note: null,
+        });
+        return;
+      }
+      if (v.kind === "options") {
+        rows.push({
+          sectionKey: sec,
+          sectionTitle: secTitle,
+          rowKey: def.key,
+          rowLabel: rowDefLabel(def),
+          valueJoined: v.value ?? null,
+          numberValue: null,
+          scoreValue: null,
+          extra_text: null,
+          extra_currency: null,
+          extra_number: null,
+          note: v.note ?? null,
+        });
+      } else if (v.kind === "number") {
+        rows.push({
+          sectionKey: sec,
+          sectionTitle: secTitle,
+          rowKey: def.key,
+          rowLabel: rowDefLabel(def),
+          valueJoined: null,
+          numberValue: v.value ?? null,
+          scoreValue: null,
+          extra_text: null,
+          extra_currency: null,
+          extra_number: null,
+          note: v.note ?? null,
+        });
+      } else if (v.kind === "score") {
+        rows.push({
+          sectionKey: sec,
+          sectionTitle: secTitle,
+          rowKey: def.key,
+          rowLabel: rowDefLabel(def),
+          valueJoined: null,
+          numberValue: null,
+          scoreValue: v.value ?? null,
+          extra_text: null,
+          extra_currency: null,
+          extra_number: null,
+          note: v.note ?? null,
+        });
+      } else if (v.kind === "compound") {
+        rows.push({
+          sectionKey: sec,
+          sectionTitle: secTitle,
+          rowKey: def.key,
+          rowLabel: rowDefLabel(def),
+          valueJoined: v.value ?? null,
+          numberValue: null,
+          scoreValue: null,
+          extra_text: v.extras?.text ?? null,
+          extra_currency: v.extras?.currency ?? null,
+          extra_number: v.extras?.number ?? null,
+          note: v.note ?? null,
+        });
+      }
+    });
+  });
+  return rows;
+}
+
+// URL GAS – bisa diisi lewat props, kalau kosong ambil dari env
+const FALLBACK_GAS_URL =
+  (typeof process !== "undefined" &&
+    (process as any).env?.NEXT_PUBLIC_GAS_URL) ||
+  "";
+
+// POST helper
+async function postToGAS(gasUrl: string, payload: any) {
+  if (!gasUrl) {
+    console.warn(
+      "[ChecklistArea] GAS URL kosong. Isi props gasUrl atau NEXT_PUBLIC_GAS_URL."
+    );
+    return;
+  }
+  // Gunakan no-cors biar simpel (tak bisa baca response di browser)
+  await fetch(gasUrl, {
+    method: "POST",
+    mode: "no-cors",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 /* ================= COMPONENT ================= */
 export default function ChecklistArea({
   data,
   onChange,
+  gasUrl, // optional: override endpoint GAS
+  onSubmitGeneratePDF, // optional: hook kamu untuk generate PDF duluan
 }: {
   data: ChecklistState;
   onChange: (v: ChecklistState) => void;
+  gasUrl?: string;
+  onSubmitGeneratePDF?: () => Promise<void> | void;
 }) {
-  const { role } = useAuth();
+  const { role, name } = useAuth() as { role?: string; name?: string };
   const isSuper = role === "superadmin";
 
   const [targetRole, setTargetRole] = useState<Role>("admin");
@@ -728,6 +853,29 @@ export default function ChecklistArea({
     setSecActive(next);
   };
 
+  // ====== Handler submit: panggil PDF -> kirim ke GAS (Checklist Area) ======
+  const submitChecklistAndSend = async () => {
+    try {
+      // 1) kalau ada hook untuk generate PDF, jalankan dulu
+      if (onSubmitGeneratePDF) {
+        await onSubmitGeneratePDF();
+      }
+      // 2) serialize -> kirim ke GAS dengan module: "checklist-area"
+      const rows = toTidyChecklistRows(data, FINAL_MAP);
+      await postToGAS(gasUrl || FALLBACK_GAS_URL, {
+        module: "checklist-area",
+        submittedAt: new Date().toISOString(),
+        submittedBy: name || "Unknown",
+        role: role || "unknown",
+        rows,
+      });
+      alert("Checklist terkirim ke Spreadsheet ✅");
+    } catch (e) {
+      console.error("Gagal submit & kirim:", e);
+      alert("Gagal mengirim ke Spreadsheet. Cek konsol/log.");
+    }
+  };
+
   return (
     <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
       <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between gap-2">
@@ -778,7 +926,7 @@ export default function ChecklistArea({
           </div>
           <p className="text-sm text-slate-700">
             <span className="font-medium">Instruksi:</span> Gunakan sub-tab di
-            bawah. Semua isian akan masuk ke Lampiran.
+            bawah. Setelah TTD & Submit, data akan dikirim ke Spreadsheet.
           </p>
         </div>
       </div>
@@ -856,13 +1004,22 @@ export default function ChecklistArea({
           </div>
         )}
 
-        <div className="mt-4 flex justify-end">
+        <div className="mt-4 flex items-center justify-between gap-3">
           <button
             onClick={goNext}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+            className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm hover:bg-slate-200 border"
             title="Ke section berikutnya"
           >
             Next →
+          </button>
+
+          {/* Tombol submit & kirim */}
+          <button
+            onClick={submitChecklistAndSend}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+            title="TTD+Submit (jalankan generate PDF via prop), lalu kirim ke Spreadsheet"
+          >
+            Submit & Kirim
           </button>
         </div>
       </div>
@@ -1021,7 +1178,6 @@ function ChecklistRow({
           Status / Isian
         </div>
 
-        {/* 🔹 Border wrapper */}
         <div className="border border-slate-300 rounded-lg p-2 bg-slate-50">
           {editable && (row.kind === "options" || row.kind === "compound") && (
             <input
@@ -1040,7 +1196,7 @@ function ChecklistRow({
             />
           )}
 
-          {/* === Multi-select checkbox untuk 'options' === */}
+          {/* Options */}
           {row.kind === "options" && (
             <MultiCheckGroup
               options={row.options}
@@ -1048,14 +1204,14 @@ function ChecklistRow({
               onChangeJoined={(joined) =>
                 onChange({
                   kind: "options",
-                  value: joined, // string | null
+                  value: joined,
                   note,
                 } as RVOptions)
               }
             />
           )}
 
-          {/* === Number === */}
+          {/* Number */}
           {row.kind === "number" && (
             <NumberWithSuffix
               suffix={row.suffix}
@@ -1071,7 +1227,7 @@ function ChecklistRow({
             />
           )}
 
-          {/* === Score === */}
+          {/* Score */}
           {row.kind === "score" && (
             <ScoreSelect
               value={scoreVal}
@@ -1081,7 +1237,7 @@ function ChecklistRow({
             />
           )}
 
-          {/* === Compound: multi-select + extras === */}
+          {/* Compound */}
           {row.kind === "compound" && (
             <div className="space-y-2">
               <MultiCheckGroup
@@ -1090,7 +1246,7 @@ function ChecklistRow({
                 onChangeJoined={(joined) =>
                   onChange({
                     kind: "compound",
-                    value: joined, // string | null
+                    value: joined,
                     note,
                     extras: compExtras,
                   } as RVCompound)
@@ -1098,7 +1254,6 @@ function ChecklistRow({
               />
 
               {(hasTextExtra || hasCurrencyExtra || hasNumberExtra) && (
-                // 👉 buat layout fleksibel. Currency ambil 1 baris penuh di desktop
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {hasTextExtra && (
                     <input
