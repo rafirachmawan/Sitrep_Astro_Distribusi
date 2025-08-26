@@ -3,7 +3,7 @@
 import React, { useMemo, useState, useEffect, useRef } from "react";
 import { ClipboardList, CheckCircle2 } from "lucide-react";
 import type { ChecklistState, RowValue, SectionKey } from "@/lib/types";
-import { NumberWithSuffix, ScoreSelect } from "./common"; // OptionsGroup dihapus
+import { NumberWithSuffix, ScoreSelect } from "./common";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 
@@ -56,17 +56,17 @@ function mergeSectionTitle(
 }
 
 /* ================= DEFINISI ROW ================= */
+type RowBase = { key: string; label: string };
+
 type RowDef =
-  | { kind: "options"; key: string; label: string; options: string[] }
-  | { kind: "number"; key: string; label: string; suffix?: string }
-  | { kind: "score"; key: string; label: string }
-  | {
+  | (RowBase & { kind: "options"; options: string[] })
+  | (RowBase & { kind: "number"; suffix?: string })
+  | (RowBase & { kind: "score" })
+  | (RowBase & {
       kind: "compound";
-      key: string;
-      label: string;
       options: string[];
       extra?: { type: "text" | "currency" | "number"; placeholder?: string }[];
-    };
+    });
 
 const SECTION_TABS: { key: SectionKey; label: string }[] = [
   { key: "kas", label: "Kas Kecil" },
@@ -77,7 +77,7 @@ const SECTION_TABS: { key: SectionKey; label: string }[] = [
   { key: "setoran", label: "Setoran Bank" },
   { key: "pembelian", label: "Proses Pembelian" },
   { key: "faktur", label: "Penjualan" },
-  { key: "retur", label: "Mutasi antar Depo" }, // gunakan key 'retur' untuk Mutasi antar Depo
+  { key: "retur", label: "Mutasi antar Depo" },
   { key: "marketing", label: "Marketing" },
 ];
 
@@ -145,7 +145,7 @@ function CurrencyField({
       <span
         ref={mirrorRef}
         className="invisible absolute left-0 top-0 whitespace-pre px-3 py-2 font-normal text-sm"
-        aria-hidden="true"
+        aria-hidden
       />
     </div>
   );
@@ -153,7 +153,6 @@ function CurrencyField({
 
 /* =============== SERIALIZER & SENDER ke GAS =============== */
 
-// Tidy row untuk Checklist Area
 type TidyChecklistRow = {
   sectionKey: SectionKey;
   sectionTitle: string;
@@ -163,13 +162,13 @@ type TidyChecklistRow = {
   numberValue?: string | number | null;
   scoreValue?: number | null;
   extra_text?: string | null;
-  extra_currency?: string | null; // kirim digit string; GAS akan cast ke number
+  extra_currency?: string | null;
   extra_number?: string | number | null;
   note?: string | null;
 };
 
 function rowDefLabel(def: RowDef): string {
-  return (def as any).label || "";
+  return def.label || "";
 }
 
 function toTidyChecklistRows(
@@ -259,21 +258,19 @@ function toTidyChecklistRows(
   return rows;
 }
 
-// URL GAS – bisa diisi lewat props, kalau kosong ambil dari env
-const FALLBACK_GAS_URL =
-  (typeof process !== "undefined" &&
-    (process as any).env?.NEXT_PUBLIC_GAS_URL) ||
+// URL GAS – bisa diisi lewat props, kalau kosong ambil dari env build time
+const FALLBACK_GAS_URL: string =
+  (typeof window !== "undefined" && (process.env.NEXT_PUBLIC_GAS_URL ?? "")) ||
   "";
 
 // POST helper
-async function postToGAS(gasUrl: string, payload: any) {
+async function postToGAS(gasUrl: string, payload: Record<string, unknown>) {
   if (!gasUrl) {
     console.warn(
       "[ChecklistArea] GAS URL kosong. Isi props gasUrl atau NEXT_PUBLIC_GAS_URL."
     );
     return;
   }
-  // Gunakan no-cors biar simpel (tak bisa baca response di browser)
   await fetch(gasUrl, {
     method: "POST",
     mode: "no-cors",
@@ -286,8 +283,8 @@ async function postToGAS(gasUrl: string, payload: any) {
 export default function ChecklistArea({
   data,
   onChange,
-  gasUrl, // optional: override endpoint GAS
-  onSubmitGeneratePDF, // optional: hook kamu untuk generate PDF duluan
+  gasUrl, // optional
+  onSubmitGeneratePDF, // optional
 }: {
   data: ChecklistState;
   onChange: (v: ChecklistState) => void;
@@ -716,7 +713,7 @@ export default function ChecklistArea({
           ],
         },
 
-        /* ===== 9. MUTASI ANTAR DEPO (pakai key 'retur') ===== */
+        /* ===== 9. MUTASI ANTAR DEPO ===== */
         retur: {
           title: "Mutasi antar Depo",
           rows: [
@@ -757,6 +754,8 @@ export default function ChecklistArea({
       []
     );
 
+  // rev dipakai utk memaksa refresh override dari localStorage
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const overrides = useMemo(() => readRoleOverrides(viewRole), [viewRole, rev]);
 
   const FINAL_MAP = useMemo(() => {
@@ -853,14 +852,11 @@ export default function ChecklistArea({
     setSecActive(next);
   };
 
-  // ====== Handler submit: panggil PDF -> kirim ke GAS (Checklist Area) ======
   const submitChecklistAndSend = async () => {
     try {
-      // 1) kalau ada hook untuk generate PDF, jalankan dulu
       if (onSubmitGeneratePDF) {
         await onSubmitGeneratePDF();
       }
-      // 2) serialize -> kirim ke GAS dengan module: "checklist-area"
       const rows = toTidyChecklistRows(data, FINAL_MAP);
       await postToGAS(gasUrl || FALLBACK_GAS_URL, {
         module: "checklist-area",
@@ -1013,7 +1009,6 @@ export default function ChecklistArea({
             Next →
           </button>
 
-          {/* Tombol submit & kirim */}
           <button
             onClick={submitChecklistAndSend}
             className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
