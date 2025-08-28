@@ -28,9 +28,7 @@ type ExtraSectionMeta = { title: string; hidden?: boolean; order?: number };
 
 type ChecklistOverrides = {
   sections?: Partial<Record<SectionKey, { title?: string; hidden?: boolean }>>;
-  // rows sekarang bisa untuk base section & custom section
   rows?: Partial<Record<AnySectionKey, Record<string, RowOverride>>>;
-  // daftar section custom
   extraSections?: Record<`x_${string}`, ExtraSectionMeta>;
 };
 
@@ -203,7 +201,7 @@ function CurrencyField({
 }
 
 /* =============== SERIALIZER & SENDER ke GAS =============== */
-// >>> UBAH: sectionKey jadi string agar muat custom section x_...
+// >>> sectionKey jadi string agar muat custom section x_...
 type TidyChecklistRow = {
   sectionKey: string;
   sectionTitle: string;
@@ -222,8 +220,13 @@ function rowDefLabel(def: RowDef): string {
   return def.label || "";
 }
 
+// >>> tipe state yang aman untuk section custom
+type SectionState = Record<string, RowValue>;
+type ExtendedChecklistState = ChecklistState &
+  Record<AnySectionKey, SectionState>;
+
 function toTidyChecklistRows(
-  data: ChecklistState,
+  data: ExtendedChecklistState,
   FINAL_MAP: Record<string, { title: string; rows: RowDef[] }>
 ): TidyChecklistRow[] {
   const rows: TidyChecklistRow[] = [];
@@ -231,7 +234,7 @@ function toTidyChecklistRows(
     const secKey = sec as AnySectionKey;
     const secTitle = FINAL_MAP[secKey].title;
     FINAL_MAP[secKey].rows.forEach((def) => {
-      const v = (data as any)?.[secKey]?.[def.key] as RowValue | undefined;
+      const v = data[secKey]?.[def.key];
       if (!v) {
         rows.push({
           sectionKey: String(secKey),
@@ -1004,11 +1007,15 @@ export default function ChecklistArea({
   const [secActive, setSecActive] = useState<AnySectionKey>("kas");
   const section = FINAL_MAP[secActive];
 
-  const patchData = (sec: AnySectionKey, key: string, v: RowValue) =>
-    onChange({
-      ...(data as any),
-      [sec]: { ...(data as any)[sec], [key]: v },
-    });
+  // ====== update data tanpa any
+  const patchData = (sec: AnySectionKey, key: string, v: RowValue) => {
+    const prev = data as ExtendedChecklistState;
+    const next: ExtendedChecklistState = { ...prev };
+    const curSec: SectionState = { ...(prev[sec] || {}) };
+    curSec[key] = v;
+    next[sec] = curSec;
+    onChange(next as unknown as ChecklistState);
+  };
 
   // ===== Superadmin Section/Row Handlers =====
   const updateSectionTitleAny = (sec: AnySectionKey, title: string) => {
@@ -1064,12 +1071,6 @@ export default function ChecklistArea({
     setSecActive("kas");
   };
 
-  const updateSectionTitle = (sec: SectionKey, title: string) => {
-    if (!isSuper) return;
-    const cur = readRoleOverrides(viewRole);
-    writeRoleOverrides(viewRole, mergeSectionTitle(cur, sec, title));
-    setRev((x) => x + 1);
-  };
   const updateRowLabel = (
     sec: AnySectionKey,
     rowKey: string,
@@ -1172,7 +1173,10 @@ export default function ChecklistArea({
   const submitChecklistAndSend = async () => {
     try {
       if (onSubmitGeneratePDF) await onSubmitGeneratePDF();
-      const rows = toTidyChecklistRows(data, FINAL_MAP as any);
+      const rows = toTidyChecklistRows(
+        data as ExtendedChecklistState,
+        FINAL_MAP as Record<string, { title: string; rows: RowDef[] }>
+      );
       await postToGAS(gasUrl || FALLBACK_GAS_URL, {
         module: "checklist-area",
         submittedAt: new Date().toISOString(),
@@ -1224,6 +1228,7 @@ export default function ChecklistArea({
       <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <ClipboardList className="h-5 w-5 text-blue-600" />
+          <h2 className="text-slate-800 font-semibold">Checklist Area</h2>
         </div>
 
         {isSuper && (
@@ -1402,9 +1407,8 @@ export default function ChecklistArea({
         ) : (
           <div className="divide-y">
             {section.rows.map((row) => {
-              const current = (data as any)?.[secActive]?.[row.key] as
-                | RowValue
-                | undefined;
+              const ext = data as ExtendedChecklistState;
+              const current = ext[secActive]?.[row.key];
               return (
                 <ChecklistRow
                   key={row.key}
@@ -1548,8 +1552,9 @@ function ChecklistRow({
   };
 
   useEffect(() => {
-    if (value && value.note !== note)
-      onChange({ ...(value as any), note } as RowValue);
+    if (value && value.note !== note) {
+      onChange({ ...value, note } as RowValue);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note]);
 
