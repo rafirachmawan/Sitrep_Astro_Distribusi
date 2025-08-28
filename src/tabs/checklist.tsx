@@ -1,24 +1,39 @@
 "use client";
 
 import React, { useMemo, useState, useEffect, useRef } from "react";
-import { ClipboardList, CheckCircle2 } from "lucide-react";
+import { ClipboardList, CheckCircle2, Plus, Trash2 } from "lucide-react";
 import type { ChecklistState, RowValue, SectionKey } from "@/lib/types";
 import { NumberWithSuffix, ScoreSelect } from "./common";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 
 /* ================= OVERRIDES ================= */
-type RowOverride = {
+type AddedRowMeta = {
+  /** mark that this row is newly added by superadmin */
+  __added?: boolean;
+  /** mark deletion of a base/added row */
+  __delete?: boolean;
+  /** optional explicit order index (0-based) to position among rows */
+  order?: number;
+  /** for compound rows */
+  extras?: { text?: boolean; currency?: boolean; number?: boolean };
+  /** the row kind to create when this key doesn't exist in base */
+  kind?: "options" | "number" | "score" | "compound";
+};
+
+/** Overrides per row/section (persisted in localStorage by role) */
+type RowOverride = AddedRowMeta & {
   label?: string;
   options?: string[];
   suffix?: string;
 };
+
 type ChecklistOverrides = {
-  sections?: Partial<Record<SectionKey, { title?: string }>>;
+  sections?: Partial<Record<SectionKey, { title?: string; hidden?: boolean }>>;
   rows?: Partial<Record<SectionKey, Record<string, RowOverride>>>;
 };
 
-const OV_KEY = "sitrep-checklist-copy-v1";
+const OV_KEY = "sitrep-checklist-copy-v2"; // ⬅️ bump key to avoid clash with old structure
 const ROLES: Role[] = ["admin", "sales", "gudang"];
 
 function readRoleOverrides(role: Role): ChecklistOverrides {
@@ -40,9 +55,9 @@ function mergeRowOverride(
   rowKey: string,
   patch: RowOverride
 ): ChecklistOverrides {
-  const rows = { ...(src.rows || {}) };
-  const secMap = { ...(rows[sec] || {}) };
-  rows[sec] = { ...secMap, [rowKey]: { ...(secMap[rowKey] || {}), ...patch } };
+  const rows = { ...(src.rows || {}) } as ChecklistOverrides["rows"];
+  const secMap = { ...(rows?.[sec] || {}) } as Record<string, RowOverride>;
+  rows![sec] = { ...secMap, [rowKey]: { ...(secMap[rowKey] || {}), ...patch } };
   return { ...src, rows };
 }
 function mergeSectionTitle(
@@ -50,12 +65,25 @@ function mergeSectionTitle(
   sec: SectionKey,
   title: string
 ): ChecklistOverrides {
-  const sections = { ...(src.sections || {}) };
-  sections[sec] = { ...(sections[sec] || {}), title };
+  const sections = {
+    ...(src.sections || {}),
+  } as ChecklistOverrides["sections"];
+  sections![sec] = { ...(sections?.[sec] || {}), title } as any;
+  return { ...src, sections };
+}
+function mergeSectionHidden(
+  src: ChecklistOverrides,
+  sec: SectionKey,
+  hidden: boolean
+): ChecklistOverrides {
+  const sections = {
+    ...(src.sections || {}),
+  } as ChecklistOverrides["sections"];
+  sections![sec] = { ...(sections?.[sec] || {}), hidden } as any;
   return { ...src, sections };
 }
 
-/* ================= DEFINISI ROW xx ================= */
+/* ================= DEFINISI ROW & BASE ================= */
 type RowBase = { key: string; label: string };
 
 type RowDef =
@@ -768,32 +796,105 @@ export default function ChecklistArea({
       return acc;
     }, {} as Record<SectionKey, { title: string; rows: RowDef[] }>);
 
+    // apply section title/hidden
     if (overrides.sections) {
       (Object.keys(overrides.sections) as SectionKey[]).forEach((sec) => {
-        const t = overrides.sections?.[sec]?.title;
-        if (t) clone[sec].title = t;
+        const patch = overrides.sections?.[sec];
+        if (patch?.title) clone[sec].title = patch.title;
+        if (patch?.hidden) clone[sec].rows = [];
       });
     }
+
+    // apply row-level overrides: patch existing; add new; delete
     if (overrides.rows) {
       (Object.keys(overrides.rows) as SectionKey[]).forEach((sec) => {
         const rmap = overrides.rows?.[sec] || {};
-        Object.keys(rmap).forEach((rowKey) => {
-          const patch = rmap[rowKey]!;
-          const idx = clone[sec].rows.findIndex((r) => r.key === rowKey);
-          if (idx >= 0) {
-            const r = clone[sec].rows[idx];
-            if (patch.label) r.label = patch.label;
-            if (r.kind === "number" && patch.suffix !== undefined) {
-              r.suffix = patch.suffix;
+        const existingKeys = new Set(clone[sec].rows.map((r) => r.key));
+
+        // patch existing and mark deletions
+        clone[sec].rows = clone[sec].rows
+          .filter((r) => !(rmap[r.key]?.__delete === true))
+          .map((r) => {
+            const patch = rmap[r.key];
+            if (!patch) return r;
+            const rn = { ...r } as RowDef;
+            if (patch.label) (rn as any).label = patch.label;
+            if (rn.kind === "number" && patch.suffix !== undefined) {
+              (rn as any).suffix = patch.suffix;
             }
             if (
-              (r.kind === "options" || r.kind === "compound") &&
+              (rn.kind === "options" || rn.kind === "compound") &&
               patch.options
             ) {
-              r.options = patch.options;
+              (rn as any).options = patch.options;
             }
+            type CompoundExtra = {
+              type: "text" | "currency" | "number";
+              placeholder?: string;
+            };
+
+            if (rn.kind === "compound" && patch.extras) {
+              const extras: CompoundExtra[] = [];
+              if (patch.extras.text) extras.push({ type: "text" });
+              if (patch.extras.currency) extras.push({ type: "currency" });
+              if (patch.extras.number) extras.push({ type: "number" });
+              (rn as Extract<RowDef, { kind: "compound" }>).extra = extras;
+            }
+
+            return rn;
+          });
+
+        // add new rows that don't exist in base
+        Object.keys(rmap).forEach((rowKey) => {
+          const p = rmap[rowKey]!;
+          if (p.__delete) return; // skip deleted
+          if (!existingKeys.has(rowKey) && p.kind) {
+            const def: RowDef =
+              p.kind === "options"
+                ? {
+                    key: rowKey,
+                    label: p.label || rowKey,
+                    kind: "options",
+                    options: p.options || [],
+                  }
+                : p.kind === "number"
+                ? {
+                    key: rowKey,
+                    label: p.label || rowKey,
+                    kind: "number",
+                    suffix: p.suffix,
+                  }
+                : p.kind === "score"
+                ? { key: rowKey, label: p.label || rowKey, kind: "score" }
+                : {
+                    key: rowKey,
+                    label: p.label || rowKey,
+                    kind: "compound",
+                    options: p.options || [],
+                    extra: [
+                      ...(p.extras?.text ? [{ type: "text" as const }] : []),
+                      ...(p.extras?.currency
+                        ? [{ type: "currency" as const }]
+                        : []),
+                      ...(p.extras?.number
+                        ? [{ type: "number" as const }]
+                        : []),
+                    ],
+                  };
+            (def as any).__order =
+              typeof p.order === "number" ? p.order : undefined;
+            clone[sec].rows.push(def);
           }
         });
+
+        // reorder if explicit order exists
+        const withOrder = clone[sec].rows.map((r, idx) => ({
+          r,
+          idx,
+          ord: (r as any).__order ?? idx,
+        }));
+        withOrder.sort((a, b) => a.ord - b.ord || a.idx - b.idx);
+        clone[sec].rows = withOrder.map((x) => x.r);
       });
     }
     return clone;
@@ -805,6 +906,7 @@ export default function ChecklistArea({
   const patchData = (sec: SectionKey, key: string, v: RowValue) =>
     onChange({ ...data, [sec]: { ...data[sec], [key]: v } });
 
+  // ===== Superadmin Edit Handlers =====
   const updateSectionTitle = (sec: SectionKey, title: string) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
@@ -839,9 +941,60 @@ export default function ChecklistArea({
     );
     setRev((x) => x + 1);
   };
+  const deleteRow = (sec: SectionKey, rowKey: string) => {
+    if (!isSuper) return;
+    if (!confirm("Hapus baris ini dari section?")) return;
+    const cur = readRoleOverrides(viewRole);
+    writeRoleOverrides(
+      viewRole,
+      mergeRowOverride(cur, sec, rowKey, { __delete: true })
+    );
+    setRev((x) => x + 1);
+  };
+  const addRow = (
+    sec: SectionKey,
+    payload: {
+      key: string;
+      label: string;
+      kind: AddedRowMeta["kind"];
+      optionsCsv?: string;
+      suffix?: string;
+      extras?: AddedRowMeta["extras"];
+    }
+  ) => {
+    if (!isSuper) return;
+    const key = payload.key.trim();
+    if (!key) return alert("Key wajib diisi");
+    const cur = readRoleOverrides(viewRole);
+    const options = (payload.optionsCsv || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const patch: RowOverride = {
+      __added: true,
+      kind: payload.kind,
+      label: payload.label || payload.key,
+      options: options.length ? options : undefined,
+      suffix: payload.suffix,
+      extras: payload.extras,
+    };
+    writeRoleOverrides(viewRole, mergeRowOverride(cur, sec, key, patch));
+    setRev((x) => x + 1);
+  };
+  const toggleSectionHidden = (sec: SectionKey, hidden: boolean) => {
+    if (!isSuper) return;
+    const cur = readRoleOverrides(viewRole);
+    writeRoleOverrides(viewRole, mergeSectionHidden(cur, sec, hidden));
+    setRev((x) => x + 1);
+  };
   const resetOverrides = () => {
     if (!isSuper) return;
-    if (!confirm(`Reset semua pengaturan teks untuk role ${viewRole}?`)) return;
+    if (
+      !confirm(
+        `Reset semua pengaturan teks & tambah/hapus untuk role ${viewRole}?`
+      )
+    )
+      return;
     writeRoleOverrides(viewRole, {});
     setRev((x) => x + 1);
   };
@@ -881,7 +1034,7 @@ export default function ChecklistArea({
         </div>
 
         {isSuper && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
             <label className="text-sm text-slate-600">Role:</label>
             <select
               className="rounded-xl border-2 border-slate-300 text-sm bg-white px-2 py-1 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
@@ -922,7 +1075,10 @@ export default function ChecklistArea({
           </div>
           <p className="text-sm text-slate-700">
             <span className="font-medium">Instruksi:</span> Gunakan sub-tab di
-            bawah. Setelah TTD & Submit, data akan dikirim ke Spreadsheet.
+            bawah. Setelah TTD & Submit, data akan dikirim ke Spreadsheet. Untuk
+            Superadmin: aktifkan{" "}
+            <span className="font-semibold">Mode Edit</span> untuk
+            menambah/menghapus/ubah pertanyaan per section.
           </p>
         </div>
       </div>
@@ -947,18 +1103,34 @@ export default function ChecklistArea({
         </div>
       </div>
 
-      {/* Section */}
+      {/* Section header & super controls */}
       <div className="px-3 sm:px-6 pb-4">
-        <div className="mb-3 text-sm font-semibold text-slate-700 flex items-center gap-2">
-          {editMode ? (
-            <input
-              value={section.title}
-              onChange={(e) => updateSectionTitle(secActive, e.target.value)}
-              className="min-w-[220px] w-full sm:w-96 rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-              placeholder="Judul section…"
-            />
-          ) : (
-            <span>{section.title}</span>
+        <div className="mb-3 flex items-center gap-2">
+          <div className="text-sm font-semibold text-slate-700 flex-1">
+            {editMode ? (
+              <input
+                value={section.title}
+                onChange={(e) => updateSectionTitle(secActive, e.target.value)}
+                className="min-w-[220px] w-full sm:w-96 rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                placeholder="Judul section…"
+              />
+            ) : (
+              <span>{section.title}</span>
+            )}
+          </div>
+
+          {isSuper && editMode && (
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-slate-600">Sembunyikan:</label>
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-rose-600"
+                onChange={(e) =>
+                  toggleSectionHidden(secActive, e.target.checked)
+                }
+                checked={Boolean(overrides.sections?.[secActive]?.hidden)}
+              />
+            </div>
           )}
         </div>
 
@@ -971,7 +1143,7 @@ export default function ChecklistArea({
 
         {section.rows.length === 0 ? (
           <div className="p-4 text-sm text-slate-600 border border-dashed border-slate-300 rounded-xl mt-3 bg-slate-50">
-            Konten menyusul untuk bagian{" "}
+            Konten kosong untuk bagian{" "}
             <span className="font-medium">{section.title}</span>.
           </div>
         ) : (
@@ -993,11 +1165,17 @@ export default function ChecklistArea({
                   onEditSuffix={(suf) =>
                     updateRowSuffix(secActive, row.key, suf)
                   }
+                  onDelete={() => deleteRow(secActive, row.key)}
                   onChange={(v) => patchData(secActive, row.key, v)}
                 />
               );
             })}
           </div>
+        )}
+
+        {/* ===== Add Row Panel (Superadmin) ===== */}
+        {isSuper && editMode && (
+          <AddRowPanel onAdd={(payload) => addRow(secActive, payload)} />
         )}
 
         <div className="mt-4 flex items-center justify-between gap-3">
@@ -1093,6 +1271,7 @@ function ChecklistRow({
   onEditLabel,
   onEditOptions,
   onEditSuffix,
+  onDelete,
 }: {
   row: RowDef;
   value?: RowValue;
@@ -1100,6 +1279,7 @@ function ChecklistRow({
   onEditLabel: (label: string) => void;
   onEditOptions: (csv: string) => void;
   onEditSuffix: (suffix: string) => void;
+  onDelete: () => void;
   onChange: (v: RowValue) => void;
 }) {
   const [note, setNote] = useState(value?.note || "");
@@ -1156,12 +1336,21 @@ function ChecklistRow({
       {/* Label */}
       <div className="sm:col-span-4 py-3 px-2 text-sm">
         {editable ? (
-          <input
-            value={row.label}
-            onChange={(e) => onEditLabel(e.target.value)}
-            className={INPUT_BASE}
-            placeholder="Nama area/pertanyaan…"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              value={row.label}
+              onChange={(e) => onEditLabel(e.target.value)}
+              className={INPUT_BASE}
+              placeholder="Nama area/pertanyaan…"
+            />
+            <button
+              onClick={onDelete}
+              className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+              title="Hapus baris ini"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Hapus
+            </button>
+          </div>
         ) : (
           row.label
         )}
@@ -1184,7 +1373,7 @@ function ChecklistRow({
           )}
           {editable && row.kind === "number" && (
             <input
-              defaultValue={row.suffix || ""}
+              defaultValue={(row as any).suffix || ""}
               onBlur={(e) => onEditSuffix(e.target.value)}
               className={`${INPUT_BASE} mb-2`}
               placeholder="Suffix (mis: pcs, faktur, kali)"
@@ -1209,13 +1398,13 @@ function ChecklistRow({
           {/* Number */}
           {row.kind === "number" && (
             <NumberWithSuffix
-              suffix={row.suffix}
+              suffix={(row as any).suffix}
               value={numStr}
               onChange={(v) =>
                 onChange({
                   kind: "number",
                   value: v,
-                  suffix: row.suffix,
+                  suffix: (row as any).suffix,
                   note,
                 } as RVNumber)
               }
@@ -1332,6 +1521,145 @@ function ChecklistRow({
                      placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 
                      focus:border-blue-500 resize-none overflow-y-auto min-h-[40px] max-h-40"
         />
+      </div>
+    </div>
+  );
+}
+
+/* ===== Add Row Panel ===== */
+function AddRowPanel({
+  onAdd,
+}: {
+  onAdd: (payload: {
+    key: string;
+    label: string;
+    kind: AddedRowMeta["kind"];
+    optionsCsv?: string;
+    suffix?: string;
+    extras?: AddedRowMeta["extras"];
+  }) => void;
+}) {
+  const [key, setKey] = useState("");
+  const [label, setLabel] = useState("");
+  const [kind, setKind] = useState<AddedRowMeta["kind"]>("options");
+  const [optionsCsv, setOptionsCsv] = useState("Cocok, Tidak Cocok");
+  const [suffix, setSuffix] = useState("");
+  const [exText, setExText] = useState(false);
+  const [exCurr, setExCurr] = useState(false);
+  const [exNum, setExNum] = useState(false);
+
+  const submit = () => {
+    onAdd({
+      key,
+      label,
+      kind,
+      optionsCsv,
+      suffix,
+      extras: { text: exText, currency: exCurr, number: exNum },
+    });
+    // reset small
+    setKey("");
+    setLabel("");
+    if (kind === "options" || kind === "compound")
+      setOptionsCsv("Cocok, Tidak Cocok");
+    setSuffix("");
+    setExText(false);
+    setExCurr(false);
+    setExNum(false);
+  };
+
+  return (
+    <div className="mt-5 border rounded-xl p-3 bg-slate-50">
+      <div className="flex items-center gap-2 mb-2">
+        <Plus className="h-4 w-4 text-blue-600" />
+        <div className="font-medium text-slate-700 text-sm">
+          Tambah Pertanyaan / Baris
+        </div>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+        <input
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          className="rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+          placeholder="Key unik (tanpa spasi), mis: kasbon-baru"
+        />
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          className="rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+          placeholder="Label tampilan"
+        />
+        <div>
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value as any)}
+            className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+          >
+            <option value="options">Checkbox (multi)</option>
+            <option value="number">Angka + suffix</option>
+            <option value="score">Score (1–5)</option>
+            <option value="compound">Gabungan + extras</option>
+          </select>
+        </div>
+
+        {(kind === "options" || kind === "compound") && (
+          <input
+            value={optionsCsv}
+            onChange={(e) => setOptionsCsv(e.target.value)}
+            className="rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+            placeholder="Opsi dipisah koma"
+          />
+        )}
+
+        {kind === "number" && (
+          <input
+            value={suffix}
+            onChange={(e) => setSuffix(e.target.value)}
+            className="rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+            placeholder="Suffix (mis: pcs, faktur, kali)"
+          />
+        )}
+
+        {kind === "compound" && (
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-blue-600"
+                checked={exText}
+                onChange={(e) => setExText(e.target.checked)}
+              />
+              Text
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-blue-600"
+                checked={exCurr}
+                onChange={(e) => setExCurr(e.target.checked)}
+              />
+              Currency
+            </label>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-blue-600"
+                checked={exNum}
+                onChange={(e) => setExNum(e.target.checked)}
+              />
+              Number
+            </label>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-3 flex justify-end">
+        <button
+          onClick={submit}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+        >
+          <Plus className="h-4 w-4" /> Tambah Baris
+        </button>
       </div>
     </div>
   );
