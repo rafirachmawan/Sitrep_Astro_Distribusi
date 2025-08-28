@@ -22,9 +22,16 @@ type RowOverride = AddedRowMeta & {
   suffix?: string;
 };
 
+// >>> NEW: dukung section custom (key diawali x_)
+type AnySectionKey = SectionKey | `x_${string}`;
+type ExtraSectionMeta = { title: string; hidden?: boolean; order?: number };
+
 type ChecklistOverrides = {
   sections?: Partial<Record<SectionKey, { title?: string; hidden?: boolean }>>;
-  rows?: Partial<Record<SectionKey, Record<string, RowOverride>>>;
+  // rows sekarang bisa untuk base section & custom section
+  rows?: Partial<Record<AnySectionKey, Record<string, RowOverride>>>;
+  // daftar section custom
+  extraSections?: Record<`x_${string}`, ExtraSectionMeta>;
 };
 
 const OV_KEY = "sitrep-checklist-copy-v2";
@@ -45,7 +52,7 @@ function writeRoleOverrides(role: Role, v: ChecklistOverrides) {
 }
 function mergeRowOverride(
   src: ChecklistOverrides,
-  sec: SectionKey,
+  sec: AnySectionKey,
   rowKey: string,
   patch: RowOverride
 ): ChecklistOverrides {
@@ -78,6 +85,26 @@ function mergeSectionHidden(
   sections[sec] = { ...prev, hidden };
   return { ...src, sections };
 }
+// >>> NEW: manage section custom
+function mergeExtraSection(
+  src: ChecklistOverrides,
+  key: `x_${string}`,
+  meta: ExtraSectionMeta
+): ChecklistOverrides {
+  const extra = { ...(src.extraSections || {}) };
+  extra[key] = { ...(extra[key] || {}), ...meta };
+  return { ...src, extraSections: extra };
+}
+function deleteExtraSection(
+  src: ChecklistOverrides,
+  key: `x_${string}`
+): ChecklistOverrides {
+  const extra = { ...(src.extraSections || {}) };
+  delete extra[key];
+  const rows = { ...(src.rows || {}) };
+  delete rows[key];
+  return { ...src, extraSections: extra, rows };
+}
 
 /* ================= DEFINISI ROW & BASE ================= */
 type RowBase = { key: string; label: string };
@@ -104,19 +131,6 @@ function isScore(r: RowDef): r is RowDefScore {
 function isCompound(r: RowDef): r is RowDefCompound {
   return r.kind === "compound";
 }
-
-const SECTION_TABS: { key: SectionKey; label: string }[] = [
-  { key: "kas", label: "Kas Kecil" },
-  { key: "buku", label: "Buku Penunjang" },
-  { key: "ar", label: "AR" },
-  { key: "klaim", label: "Klaim" },
-  { key: "pengiriman", label: "Pengiriman" },
-  { key: "setoran", label: "Setoran Bank" },
-  { key: "pembelian", label: "Proses Pembelian" },
-  { key: "faktur", label: "Penjualan" },
-  { key: "retur", label: "Mutasi antar Depo" },
-  { key: "marketing", label: "Marketing" },
-];
 
 /* =============== UTIL FORMAT CURRENCY =============== */
 const toDigits = (s: string) => (s || "").replace(/[^\d]/g, "");
@@ -189,8 +203,9 @@ function CurrencyField({
 }
 
 /* =============== SERIALIZER & SENDER ke GAS =============== */
+// >>> UBAH: sectionKey jadi string agar muat custom section x_...
 type TidyChecklistRow = {
-  sectionKey: SectionKey;
+  sectionKey: string;
   sectionTitle: string;
   rowKey: string;
   rowLabel: string;
@@ -209,16 +224,17 @@ function rowDefLabel(def: RowDef): string {
 
 function toTidyChecklistRows(
   data: ChecklistState,
-  FINAL_MAP: Record<SectionKey, { title: string; rows: RowDef[] }>
+  FINAL_MAP: Record<string, { title: string; rows: RowDef[] }>
 ): TidyChecklistRow[] {
   const rows: TidyChecklistRow[] = [];
-  (Object.keys(FINAL_MAP) as SectionKey[]).forEach((sec) => {
-    const secTitle = FINAL_MAP[sec].title;
-    FINAL_MAP[sec].rows.forEach((def) => {
-      const v = data?.[sec]?.[def.key] as RowValue | undefined;
+  Object.keys(FINAL_MAP).forEach((sec) => {
+    const secKey = sec as AnySectionKey;
+    const secTitle = FINAL_MAP[secKey].title;
+    FINAL_MAP[secKey].rows.forEach((def) => {
+      const v = (data as any)?.[secKey]?.[def.key] as RowValue | undefined;
       if (!v) {
         rows.push({
-          sectionKey: sec,
+          sectionKey: String(secKey),
           sectionTitle: secTitle,
           rowKey: def.key,
           rowLabel: rowDefLabel(def),
@@ -234,7 +250,7 @@ function toTidyChecklistRows(
       }
       if (v.kind === "options") {
         rows.push({
-          sectionKey: sec,
+          sectionKey: String(secKey),
           sectionTitle: secTitle,
           rowKey: def.key,
           rowLabel: rowDefLabel(def),
@@ -248,7 +264,7 @@ function toTidyChecklistRows(
         });
       } else if (v.kind === "number") {
         rows.push({
-          sectionKey: sec,
+          sectionKey: String(secKey),
           sectionTitle: secTitle,
           rowKey: def.key,
           rowLabel: rowDefLabel(def),
@@ -262,7 +278,7 @@ function toTidyChecklistRows(
         });
       } else if (v.kind === "score") {
         rows.push({
-          sectionKey: sec,
+          sectionKey: String(secKey),
           sectionTitle: secTitle,
           rowKey: def.key,
           rowLabel: rowDefLabel(def),
@@ -276,7 +292,7 @@ function toTidyChecklistRows(
         });
       } else if (v.kind === "compound") {
         rows.push({
-          sectionKey: sec,
+          sectionKey: String(secKey),
           sectionTitle: secTitle,
           rowKey: def.key,
           rowLabel: rowDefLabel(def),
@@ -294,10 +310,12 @@ function toTidyChecklistRows(
   return rows;
 }
 
+// URL GAS
 const FALLBACK_GAS_URL: string =
   (typeof window !== "undefined" && (process.env.NEXT_PUBLIC_GAS_URL ?? "")) ||
   "";
 
+// POST helper
 async function postToGAS(gasUrl: string, payload: Record<string, unknown>) {
   if (!gasUrl) {
     console.warn(
@@ -335,7 +353,10 @@ export default function ChecklistArea({
 
   // NEW: inline quick add toggle state
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  // NEW: add section inline
+  const [showAddSection, setShowAddSection] = useState(false);
 
+  /* ===== BASE (fixed) ===== */
   const BASE_MAP: Record<SectionKey, { title: string; rows: RowDef[] }> =
     useMemo(
       () => ({
@@ -825,19 +846,25 @@ export default function ChecklistArea({
       []
     );
 
+  // refresh overrides dari localStorage
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const overrides = useMemo(() => readRoleOverrides(viewRole), [viewRole, rev]);
 
+  /* ===== FINAL MAP (base + custom) ===== */
   const FINAL_MAP = useMemo(() => {
-    const clone = (Object.keys(BASE_MAP) as SectionKey[]).reduce((acc, k) => {
+    // clone base
+    const clone: Record<AnySectionKey, { title: string; rows: RowDef[] }> = (
+      Object.keys(BASE_MAP) as SectionKey[]
+    ).reduce((acc, k) => {
       const sec = BASE_MAP[k];
       acc[k] = {
         title: sec.title,
         rows: sec.rows.map((r) => ({ ...r })) as RowDef[],
       };
       return acc;
-    }, {} as Record<SectionKey, { title: string; rows: RowDef[] }>);
+    }, {} as Record<AnySectionKey, { title: string; rows: RowDef[] }>);
 
+    // apply base title/hidden
     if (overrides.sections) {
       (Object.keys(overrides.sections) as SectionKey[]).forEach((sec) => {
         const patch = overrides.sections?.[sec];
@@ -846,36 +873,49 @@ export default function ChecklistArea({
       });
     }
 
-    if (overrides.rows) {
-      (Object.keys(overrides.rows) as SectionKey[]).forEach((sec) => {
-        const rmap = overrides.rows?.[sec] || {};
-        const existingKeys = new Set(clone[sec].rows.map((r) => r.key));
+    // inject extra sections
+    const extras = overrides.extraSections || {};
+    (Object.keys(extras) as `x_${string}`[]).forEach((ek) => {
+      const meta = extras[ek];
+      clone[ek] = clone[ek] || { title: meta.title, rows: [] };
+      clone[ek].title = meta.title;
+      if (meta.hidden) clone[ek].rows = [];
+    });
 
-        clone[sec].rows = clone[sec].rows
+    // apply row-level overrides (base & custom)
+    if (overrides.rows) {
+      (Object.keys(overrides.rows) as AnySectionKey[]).forEach((sec) => {
+        const rmap = overrides.rows?.[sec] || {};
+        const existingKeys = new Set(
+          (clone[sec]?.rows || []).map((r) => r.key)
+        );
+        const curRows = (clone[sec]?.rows || []) as RowDef[];
+
+        // patch & delete
+        const patched = curRows
           .filter((r) => !(rmap[r.key]?.__delete === true))
           .map((r) => {
-            const patch = rmap[r.key];
-            if (!patch) return r;
+            const p = rmap[r.key];
+            if (!p) return r;
             const rn: RowDef = { ...r };
-            if (patch.label) rn.label = patch.label;
-            if (isNumber(rn) && patch.suffix !== undefined)
-              rn.suffix = patch.suffix;
-            if ((isOptions(rn) || isCompound(rn)) && patch.options)
-              rn.options = patch.options;
-            type CompoundExtra = {
-              type: "text" | "currency" | "number";
-              placeholder?: string;
-            };
-            if (isCompound(rn) && patch.extras) {
-              const extras: CompoundExtra[] = [];
-              if (patch.extras.text) extras.push({ type: "text" });
-              if (patch.extras.currency) extras.push({ type: "currency" });
-              if (patch.extras.number) extras.push({ type: "number" });
-              rn.extra = extras;
+            if (p.label) rn.label = p.label;
+            if (isNumber(rn) && p.suffix !== undefined) rn.suffix = p.suffix;
+            if ((isOptions(rn) || isCompound(rn)) && p.options)
+              rn.options = p.options;
+            if (isCompound(rn) && p.extras) {
+              const extrasArr: {
+                type: "text" | "currency" | "number";
+                placeholder?: string;
+              }[] = [];
+              if (p.extras.text) extrasArr.push({ type: "text" });
+              if (p.extras.currency) extrasArr.push({ type: "currency" });
+              if (p.extras.number) extrasArr.push({ type: "number" });
+              rn.extra = extrasArr;
             }
             return rn;
           });
 
+        // add baru
         Object.keys(rmap).forEach((rowKey) => {
           const p = rmap[rowKey]!;
           if (p.__delete) return;
@@ -912,41 +952,139 @@ export default function ChecklistArea({
                         : []),
                     ],
                   };
-            clone[sec].rows.push(def);
+            patched.push(def);
           }
         });
 
-        const withOrder = clone[sec].rows.map((r, idx) => {
+        // reorder
+        const withOrder = patched.map((r, idx) => {
           const ord = rmap[r.key]?.order;
           return { r, idx, ord: typeof ord === "number" ? ord : idx };
         });
         withOrder.sort((a, b) => a.ord - b.ord || a.idx - b.idx);
-        clone[sec].rows = withOrder.map((x) => x.r);
+        clone[sec] = {
+          title: clone[sec]?.title || "",
+          rows: withOrder.map((x) => x.r),
+        };
       });
     }
+
     return clone;
   }, [BASE_MAP, overrides]);
 
-  const [secActive, setSecActive] = useState<SectionKey>("kas");
+  /* ===== TABS: base + custom ===== */
+  const BASE_TABS = useMemo(() => {
+    return (Object.keys(BASE_MAP) as SectionKey[]).map((k) => ({
+      key: k as AnySectionKey,
+      label: BASE_MAP[k].title,
+      order: 0,
+      isCustom: false,
+    }));
+  }, [BASE_MAP]);
+
+  const EXTRA_TABS = useMemo(() => {
+    const ex = overrides.extraSections || {};
+    return Object.keys(ex).map((k) => {
+      const kk = k as `x_${string}`;
+      return {
+        key: kk as AnySectionKey,
+        label: ex[kk].title,
+        order: ex[kk].order ?? 999,
+        isCustom: true,
+      };
+    });
+  }, [overrides.extraSections]);
+
+  const SECTION_TABS = useMemo(() => {
+    const arr = [...BASE_TABS, ...EXTRA_TABS];
+    arr.sort((a, b) => a.order - b.order || a.label.localeCompare(b.label));
+    return arr;
+  }, [BASE_TABS, EXTRA_TABS]);
+
+  const [secActive, setSecActive] = useState<AnySectionKey>("kas");
   const section = FINAL_MAP[secActive];
 
-  const patchData = (sec: SectionKey, key: string, v: RowValue) =>
-    onChange({ ...data, [sec]: { ...data[sec], [key]: v } });
+  const patchData = (sec: AnySectionKey, key: string, v: RowValue) =>
+    onChange({
+      ...(data as any),
+      [sec]: { ...(data as any)[sec], [key]: v },
+    });
 
-  // ===== Superadmin Edit Handlers =====
+  // ===== Superadmin Section/Row Handlers =====
+  const updateSectionTitleAny = (sec: AnySectionKey, title: string) => {
+    if (!isSuper) return;
+    const cur = readRoleOverrides(viewRole);
+    if (String(sec).startsWith("x_")) {
+      const next = mergeExtraSection(cur, sec as `x_${string}`, { title });
+      writeRoleOverrides(viewRole, next);
+    } else {
+      writeRoleOverrides(
+        viewRole,
+        mergeSectionTitle(cur, sec as SectionKey, title)
+      );
+    }
+    setRev((x) => x + 1);
+  };
+
+  const addSection = (rawKey: string, title: string) => {
+    if (!isSuper) return;
+    const key = rawKey.trim();
+    const ttl = (title ?? "").trim();
+
+    if (!/^x_[a-z0-9\-]+$/i.test(key)) {
+      alert(
+        'Key section custom harus diawali "x_" dan hanya huruf/angka/dash. Contoh: x_kas-cabang'
+      );
+      return;
+    }
+    if (!ttl) {
+      alert("Judul section tidak boleh kosong");
+      return;
+    }
+
+    const cur = readRoleOverrides(viewRole);
+    const next = mergeExtraSection(cur, key as `x_${string}`, { title: ttl });
+    writeRoleOverrides(viewRole, next);
+    setRev((x) => x + 1);
+    setSecActive(key as AnySectionKey);
+  };
+
+  const removeSection = (key: `x_${string}`) => {
+    if (!isSuper) return;
+    if (
+      !confirm(
+        `Hapus section ${key}? Semua baris custom di dalamnya juga ikut terhapus.`
+      )
+    )
+      return;
+    const cur = readRoleOverrides(viewRole);
+    const next = deleteExtraSection(cur, key);
+    writeRoleOverrides(viewRole, next);
+    setRev((x) => x + 1);
+    setSecActive("kas");
+  };
+
   const updateSectionTitle = (sec: SectionKey, title: string) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
     writeRoleOverrides(viewRole, mergeSectionTitle(cur, sec, title));
     setRev((x) => x + 1);
   };
-  const updateRowLabel = (sec: SectionKey, rowKey: string, label: string) => {
+  const updateRowLabel = (
+    sec: AnySectionKey,
+    rowKey: string,
+    label: string
+  ) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
     writeRoleOverrides(viewRole, mergeRowOverride(cur, sec, rowKey, { label }));
     setRev((x) => x + 1);
   };
-  const updateRowOptions = (sec: SectionKey, rowKey: string, csv: string) => {
+  const updateRowOptions = (
+    sec: AnySectionKey,
+    rowKey: string,
+    csv: string
+  ) => {
     if (!isSuper) return;
     const opts = csv
       .split(",")
@@ -959,7 +1097,11 @@ export default function ChecklistArea({
     );
     setRev((x) => x + 1);
   };
-  const updateRowSuffix = (sec: SectionKey, rowKey: string, suffix: string) => {
+  const updateRowSuffix = (
+    sec: AnySectionKey,
+    rowKey: string,
+    suffix: string
+  ) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
     writeRoleOverrides(
@@ -968,7 +1110,7 @@ export default function ChecklistArea({
     );
     setRev((x) => x + 1);
   };
-  const deleteRow = (sec: SectionKey, rowKey: string) => {
+  const deleteRow = (sec: AnySectionKey, rowKey: string) => {
     if (!isSuper) return;
     if (!confirm("Hapus baris ini dari section?")) return;
     const cur = readRoleOverrides(viewRole);
@@ -979,7 +1121,7 @@ export default function ChecklistArea({
     setRev((x) => x + 1);
   };
   const addRow = (
-    sec: SectionKey,
+    sec: AnySectionKey,
     payload: {
       key: string;
       label: string;
@@ -1008,12 +1150,7 @@ export default function ChecklistArea({
     writeRoleOverrides(viewRole, mergeRowOverride(cur, sec, key, patch));
     setRev((x) => x + 1);
   };
-  const toggleSectionHidden = (sec: SectionKey, hidden: boolean) => {
-    if (!isSuper) return;
-    const cur = readRoleOverrides(viewRole);
-    writeRoleOverrides(viewRole, mergeSectionHidden(cur, sec, hidden));
-    setRev((x) => x + 1);
-  };
+
   const resetOverrides = () => {
     if (!isSuper) return;
     if (
@@ -1035,7 +1172,7 @@ export default function ChecklistArea({
   const submitChecklistAndSend = async () => {
     try {
       if (onSubmitGeneratePDF) await onSubmitGeneratePDF();
-      const rows = toTidyChecklistRows(data, FINAL_MAP);
+      const rows = toTidyChecklistRows(data, FINAL_MAP as any);
       await postToGAS(gasUrl || FALLBACK_GAS_URL, {
         module: "checklist-area",
         submittedAt: new Date().toISOString(),
@@ -1050,12 +1187,43 @@ export default function ChecklistArea({
     }
   };
 
+  // helper hidden status (base/custom)
+  const isHiddenActive = useMemo(() => {
+    if (String(secActive).startsWith("x_")) {
+      return Boolean(
+        overrides.extraSections?.[secActive as `x_${string}`]?.hidden
+      );
+    }
+    return Boolean(overrides.sections?.[secActive as SectionKey]?.hidden);
+  }, [overrides, secActive]);
+
+  // >>> NEW: toggle hidden untuk base/custom
+  const toggleSectionHiddenAny = (sec: AnySectionKey, hidden: boolean) => {
+    if (!isSuper) return;
+    const cur = readRoleOverrides(viewRole);
+    if (String(sec).startsWith("x_")) {
+      const k = sec as `x_${string}`;
+      const prev = (cur.extraSections || {})[k];
+      const next = mergeExtraSection(cur, k, {
+        title: prev?.title ?? (FINAL_MAP[k]?.title || "Custom Section"),
+        hidden,
+        order: prev?.order,
+      });
+      writeRoleOverrides(viewRole, next);
+    } else {
+      writeRoleOverrides(
+        viewRole,
+        mergeSectionHidden(cur, sec as SectionKey, hidden)
+      );
+    }
+    setRev((x) => x + 1);
+  };
+
   return (
     <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
       <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <ClipboardList className="h-5 w-5 text-blue-600" />
-          <h2 className="text-slate-800 font-semibold">Checklist Area</h2>
         </div>
 
         {isSuper && (
@@ -1081,6 +1249,15 @@ export default function ChecklistArea({
               />
               Mode Edit
             </label>
+            {editMode && (
+              <button
+                onClick={() => setShowAddSection(true)}
+                className="text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                title="Tambah Section (tab) baru"
+              >
+                + Section
+              </button>
+            )}
             <button
               onClick={resetOverrides}
               className="text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
@@ -1100,33 +1277,56 @@ export default function ChecklistArea({
           </div>
           <p className="text-sm text-slate-700">
             <span className="font-medium">Instruksi:</span> Gunakan sub-tab di
-            bawah. Setelah TTD & Submit, data akan dikirim ke Spreadsheet. Untuk
-            Superadmin: aktifkan{" "}
+            bawah. Setelah TTD &amp; Submit, data akan dikirim ke Spreadsheet.
+            Untuk Superadmin: aktifkan{" "}
             <span className="font-semibold">Mode Edit</span> untuk
-            menambah/menghapus/ubah pertanyaan per section.
+            menambah/hapus/ubah pertanyaan atau menambah section custom.
           </p>
         </div>
       </div>
+
+      {/* Add Section Inline */}
+      {isSuper && editMode && showAddSection && (
+        <div className="px-3 sm:px-6">
+          <AddSectionInline
+            onCancel={() => setShowAddSection(false)}
+            onAdd={(k, t) => {
+              addSection(k, t);
+              setShowAddSection(false);
+            }}
+          />
+        </div>
+      )}
 
       {/* Sub tabs */}
       <div className="px-3 sm:px-6 pb-3">
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 flex flex-wrap gap-2 gap-y-2">
           {SECTION_TABS.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => {
-                setSecActive(t.key);
-                setQuickAddOpen(false);
-              }}
-              className={
-                "px-3.5 py-2 rounded-lg text-sm transition whitespace-nowrap " +
-                (secActive === t.key
-                  ? "bg-blue-600 text-white shadow"
-                  : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100")
-              }
-            >
-              {t.label}
-            </button>
+            <div key={String(t.key)} className="relative">
+              <button
+                onClick={() => {
+                  setSecActive(t.key);
+                  setQuickAddOpen(false);
+                }}
+                className={
+                  "px-3.5 py-2 rounded-lg text-sm transition whitespace-nowrap " +
+                  (secActive === t.key
+                    ? "bg-blue-600 text-white shadow"
+                    : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100")
+                }
+              >
+                {t.label}
+              </button>
+              {isSuper && editMode && t.isCustom && (
+                <button
+                  onClick={() => removeSection(t.key as `x_${string}`)}
+                  className="absolute -top-2 -right-2 h-5 w-5 rounded-full bg-rose-600 text-white text-xs"
+                  title="Hapus section custom ini"
+                >
+                  ×
+                </button>
+              )}
+            </div>
           ))}
         </div>
       </div>
@@ -1137,23 +1337,25 @@ export default function ChecklistArea({
           <div className="text-sm font-semibold text-slate-700 flex-1">
             {editMode ? (
               <input
-                value={section.title}
-                onChange={(e) => updateSectionTitle(secActive, e.target.value)}
+                value={section?.title || ""}
+                onChange={(e) =>
+                  updateSectionTitleAny(secActive, e.target.value)
+                }
                 className="min-w-[220px] w-full sm:w-96 rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                 placeholder="Judul section…"
               />
             ) : (
-              <span>{section.title}</span>
+              <span>{section?.title}</span>
             )}
           </div>
 
-          {/* NEW: Quick Add (+) */}
+          {/* Quick Add (+) & Hide */}
           {isSuper && editMode && (
             <>
               <button
                 onClick={() => setQuickAddOpen((v) => !v)}
                 className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
-                title={`Tambah baris ke ${section.title}`}
+                title={`Tambah baris ke ${section?.title || ""}`}
               >
                 <Plus className="h-3.5 w-3.5" /> Tambah
               </button>
@@ -1164,19 +1366,19 @@ export default function ChecklistArea({
                   type="checkbox"
                   className="h-4 w-4 accent-rose-600"
                   onChange={(e) =>
-                    toggleSectionHidden(secActive, e.target.checked)
+                    toggleSectionHiddenAny(secActive, e.target.checked)
                   }
-                  checked={Boolean(overrides.sections?.[secActive]?.hidden)}
+                  checked={isHiddenActive}
                 />
               </div>
             </>
           )}
         </div>
 
-        {/* NEW: Inline Add Row Form (appears under header) */}
+        {/* Inline Add Row Form */}
         {isSuper && editMode && quickAddOpen && (
           <InlineAddRow
-            sectionLabel={section.title}
+            sectionLabel={section?.title || ""}
             onCancel={() => setQuickAddOpen(false)}
             onAdd={(payload) => {
               addRow(secActive, payload);
@@ -1192,15 +1394,17 @@ export default function ChecklistArea({
           <div className="col-span-5 py-2.5 px-2">Keterangan</div>
         </div>
 
-        {section.rows.length === 0 ? (
+        {!section || section.rows.length === 0 ? (
           <div className="p-4 text-sm text-slate-600 border border-dashed border-slate-300 rounded-xl mt-3 bg-slate-50">
             Konten kosong untuk bagian{" "}
-            <span className="font-medium">{section.title}</span>.
+            <span className="font-medium">{section?.title || ""}</span>.
           </div>
         ) : (
           <div className="divide-y">
             {section.rows.map((row) => {
-              const current = data[secActive][row.key] as RowValue | undefined;
+              const current = (data as any)?.[secActive]?.[row.key] as
+                | RowValue
+                | undefined;
               return (
                 <ChecklistRow
                   key={row.key}
@@ -1224,7 +1428,7 @@ export default function ChecklistArea({
           </div>
         )}
 
-        {/* Panel besar (tetap ada) */}
+        {/* Panel besar */}
         {isSuper && editMode && (
           <AddRowPanel onAdd={(payload) => addRow(secActive, payload)} />
         )}
@@ -1344,7 +1548,8 @@ function ChecklistRow({
   };
 
   useEffect(() => {
-    if (value && value.note !== note) onChange({ ...value, note } as RowValue);
+    if (value && value.note !== note)
+      onChange({ ...(value as any), note } as RowValue);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note]);
 
@@ -1428,6 +1633,7 @@ function ChecklistRow({
             />
           )}
 
+          {/* Options */}
           {isOptions(row) && (
             <MultiCheckGroup
               options={row.options}
@@ -1442,6 +1648,7 @@ function ChecklistRow({
             />
           )}
 
+          {/* Number */}
           {isNumber(row) && (
             <NumberWithSuffix
               suffix={row.suffix}
@@ -1457,6 +1664,7 @@ function ChecklistRow({
             />
           )}
 
+          {/* Score */}
           {isScore(row) && (
             <ScoreSelect
               value={scoreVal}
@@ -1466,6 +1674,7 @@ function ChecklistRow({
             />
           )}
 
+          {/* Compound */}
           {isCompound(row) && (
             <div className="space-y-2">
               <MultiCheckGroup
@@ -1708,6 +1917,57 @@ function InlineAddRow({
         >
           Batal
         </button>
+      </div>
+    </div>
+  );
+}
+
+/* ===== Add Section Inline ===== */
+function AddSectionInline({
+  onAdd,
+  onCancel,
+}: {
+  onAdd: (key: string, title: string) => void;
+  onCancel: () => void;
+}) {
+  const [key, setKey] = useState("x_");
+  const [title, setTitle] = useState("");
+
+  return (
+    <div className="mb-3 rounded-xl border border-blue-200 bg-blue-50 p-3">
+      <div className="text-xs font-medium text-blue-800 mb-2">
+        Tambah Section (Tab) Baru
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+        <input
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+          placeholder="Key (contoh: x_kas-cabang)"
+        />
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+          placeholder="Judul section"
+        />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onAdd(key, title)}
+            className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs hover:bg-blue-700"
+          >
+            Tambah
+          </button>
+          <button
+            onClick={onCancel}
+            className="px-3 py-1.5 rounded-md border text-xs hover:bg-white"
+          >
+            Batal
+          </button>
+        </div>
+      </div>
+      <div className="text-[11px] text-blue-800 mt-1">
+        Gunakan prefix <code>x_</code> untuk key section custom.
       </div>
     </div>
   );
