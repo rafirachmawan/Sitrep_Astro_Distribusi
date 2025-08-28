@@ -33,7 +33,7 @@ type ChecklistOverrides = {
   rows?: Partial<Record<SectionKey, Record<string, RowOverride>>>;
 };
 
-const OV_KEY = "sitrep-checklist-copy-v2"; // ⬅️ bump key to avoid clash with old structure
+const OV_KEY = "sitrep-checklist-copy-v2";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
 
 function readRoleOverrides(role: Role): ChecklistOverrides {
@@ -86,15 +86,28 @@ function mergeSectionHidden(
 /* ================= DEFINISI ROW & BASE ================= */
 type RowBase = { key: string; label: string };
 
-type RowDef =
-  | (RowBase & { kind: "options"; options: string[] })
-  | (RowBase & { kind: "number"; suffix?: string })
-  | (RowBase & { kind: "score" })
-  | (RowBase & {
-      kind: "compound";
-      options: string[];
-      extra?: { type: "text" | "currency" | "number"; placeholder?: string }[];
-    });
+type RowDefOptions = RowBase & { kind: "options"; options: string[] };
+type RowDefNumber = RowBase & { kind: "number"; suffix?: string };
+type RowDefScore = RowBase & { kind: "score" };
+type RowDefCompound = RowBase & {
+  kind: "compound";
+  options: string[];
+  extra?: { type: "text" | "currency" | "number"; placeholder?: string }[];
+};
+type RowDef = RowDefOptions | RowDefNumber | RowDefScore | RowDefCompound;
+
+function isOptions(r: RowDef): r is RowDefOptions {
+  return r.kind === "options";
+}
+function isNumber(r: RowDef): r is RowDefNumber {
+  return r.kind === "number";
+}
+function isScore(r: RowDef): r is RowDefScore {
+  return r.kind === "score";
+}
+function isCompound(r: RowDef): r is RowDefCompound {
+  return r.kind === "compound";
+}
 
 const SECTION_TABS: { key: SectionKey; label: string }[] = [
   { key: "kas", label: "Kas Kecil" },
@@ -817,30 +830,26 @@ export default function ChecklistArea({
           .map((r) => {
             const patch = rmap[r.key];
             if (!patch) return r;
-            const rn = { ...r } as RowDef;
-            if (patch.label) (rn as any).label = patch.label;
-            if (rn.kind === "number" && patch.suffix !== undefined) {
-              (rn as any).suffix = patch.suffix;
+            let rn: RowDef = { ...r };
+
+            if (patch.label) rn.label = patch.label;
+            if (isNumber(rn) && patch.suffix !== undefined) {
+              rn.suffix = patch.suffix;
             }
-            if (
-              (rn.kind === "options" || rn.kind === "compound") &&
-              patch.options
-            ) {
-              (rn as any).options = patch.options;
+            if ((isOptions(rn) || isCompound(rn)) && patch.options) {
+              rn.options = patch.options;
             }
             type CompoundExtra = {
               type: "text" | "currency" | "number";
               placeholder?: string;
             };
-
-            if (rn.kind === "compound" && patch.extras) {
+            if (isCompound(rn) && patch.extras) {
               const extras: CompoundExtra[] = [];
               if (patch.extras.text) extras.push({ type: "text" });
               if (patch.extras.currency) extras.push({ type: "currency" });
               if (patch.extras.number) extras.push({ type: "number" });
-              (rn as Extract<RowDef, { kind: "compound" }>).extra = extras;
+              rn.extra = extras;
             }
-
             return rn;
           });
 
@@ -881,18 +890,15 @@ export default function ChecklistArea({
                         : []),
                     ],
                   };
-            (def as any).__order =
-              typeof p.order === "number" ? p.order : undefined;
             clone[sec].rows.push(def);
           }
         });
 
-        // reorder if explicit order exists
-        const withOrder = clone[sec].rows.map((r, idx) => ({
-          r,
-          idx,
-          ord: (r as any).__order ?? idx,
-        }));
+        // reorder using override order (if provided)
+        const withOrder = clone[sec].rows.map((r, idx) => {
+          const ord = rmap[r.key]?.order;
+          return { r, idx, ord: typeof ord === "number" ? ord : idx };
+        });
         withOrder.sort((a, b) => a.ord - b.ord || a.idx - b.idx);
         clone[sec].rows = withOrder.map((x) => x.r);
       });
@@ -1302,24 +1308,21 @@ function ChecklistRow({
   }, [value?.note]);
 
   const hasTextExtra =
-    row.kind === "compound" && row.extra?.some((e) => e.type === "text");
+    isCompound(row) && row.extra?.some((e) => e.type === "text");
   const hasCurrencyExtra =
-    row.kind === "compound" && row.extra?.some((e) => e.type === "currency");
+    isCompound(row) && row.extra?.some((e) => e.type === "currency");
   const hasNumberExtra =
-    row.kind === "compound" && row.extra?.some((e) => e.type === "number");
+    isCompound(row) && row.extra?.some((e) => e.type === "number");
 
-  const textPlaceholder =
-    row.kind === "compound"
-      ? row.extra?.find((e) => e.type === "text")?.placeholder
-      : undefined;
-  const currencyPlaceholder =
-    row.kind === "compound"
-      ? row.extra?.find((e) => e.type === "currency")?.placeholder
-      : undefined;
-  const numberPlaceholder =
-    row.kind === "compound"
-      ? row.extra?.find((e) => e.type === "number")?.placeholder
-      : undefined;
+  const textPlaceholder = isCompound(row)
+    ? row.extra?.find((e) => e.type === "text")?.placeholder
+    : undefined;
+  const currencyPlaceholder = isCompound(row)
+    ? row.extra?.find((e) => e.type === "currency")?.placeholder
+    : undefined;
+  const numberPlaceholder = isCompound(row)
+    ? row.extra?.find((e) => e.type === "number")?.placeholder
+    : undefined;
 
   const optVal = value?.kind === "options" ? value.value : null;
   const numStr = value?.kind === "number" ? String(value.value ?? "") : "";
@@ -1363,7 +1366,7 @@ function ChecklistRow({
         </div>
 
         <div className="border border-slate-300 rounded-lg p-2 bg-slate-50">
-          {editable && (row.kind === "options" || row.kind === "compound") && (
+          {editable && (isOptions(row) || isCompound(row)) && (
             <input
               defaultValue={(row.options || []).join(", ")}
               onBlur={(e) => onEditOptions(e.target.value)}
@@ -1371,9 +1374,9 @@ function ChecklistRow({
               placeholder="Opsi dipisah koma (mis: Cocok, Tidak Cocok)"
             />
           )}
-          {editable && row.kind === "number" && (
+          {editable && isNumber(row) && (
             <input
-              defaultValue={(row as any).suffix || ""}
+              defaultValue={row.suffix || ""}
               onBlur={(e) => onEditSuffix(e.target.value)}
               className={`${INPUT_BASE} mb-2`}
               placeholder="Suffix (mis: pcs, faktur, kali)"
@@ -1381,7 +1384,7 @@ function ChecklistRow({
           )}
 
           {/* Options */}
-          {row.kind === "options" && (
+          {isOptions(row) && (
             <MultiCheckGroup
               options={row.options}
               valueJoined={optVal}
@@ -1396,15 +1399,15 @@ function ChecklistRow({
           )}
 
           {/* Number */}
-          {row.kind === "number" && (
+          {isNumber(row) && (
             <NumberWithSuffix
-              suffix={(row as any).suffix}
+              suffix={row.suffix}
               value={numStr}
               onChange={(v) =>
                 onChange({
                   kind: "number",
                   value: v,
-                  suffix: (row as any).suffix,
+                  suffix: row.suffix,
                   note,
                 } as RVNumber)
               }
@@ -1412,7 +1415,7 @@ function ChecklistRow({
           )}
 
           {/* Score */}
-          {row.kind === "score" && (
+          {isScore(row) && (
             <ScoreSelect
               value={scoreVal}
               onChange={(v) =>
@@ -1422,7 +1425,7 @@ function ChecklistRow({
           )}
 
           {/* Compound */}
-          {row.kind === "compound" && (
+          {isCompound(row) && (
             <div className="space-y-2">
               <MultiCheckGroup
                 options={row.options}
@@ -1557,7 +1560,7 @@ function AddRowPanel({
       suffix,
       extras: { text: exText, currency: exCurr, number: exNum },
     });
-    // reset small
+    // reset kecil
     setKey("");
     setLabel("");
     if (kind === "options" || kind === "compound")
@@ -1592,7 +1595,7 @@ function AddRowPanel({
         <div>
           <select
             value={kind}
-            onChange={(e) => setKind(e.target.value as any)}
+            onChange={(e) => setKind(e.target.value as AddedRowMeta["kind"])}
             className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
           >
             <option value="options">Checkbox (multi)</option>
