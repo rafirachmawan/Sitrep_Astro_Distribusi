@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import { Target as TargetIcon } from "lucide-react";
+import { Target as TargetIcon, Plus, Trash2 } from "lucide-react";
 import type { TargetState, Principal, TargetDeadlines } from "@/lib/types";
 import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
@@ -17,13 +17,16 @@ type TargetOverrides = {
     fodksCheckboxLabel?: string;
     deadlineLabel?: string;
   };
+  // relabel principal yang sudah ada (base)
   principals?: Record<string, { label?: string }>;
+  // principal tambahan (custom) yang bisa ditambah/hapus
+  extraPrincipals?: Record<string, { label: string }>;
 };
 
-const OV_KEY = "sitrep-target-copy-v1";
+const OV_KEY = "sitrep-target-copy-v2";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
 
-// kunci penyimpanan "shared" hanya untuk DEADLINES
+// shared key untuk sinkronisasi DEADLINES
 const SHARED_DEADLINES_KEY = "sitrep:target:shared-deadlines";
 
 function readOverrides(role: Role): TargetOverrides {
@@ -50,12 +53,29 @@ function patchCopy(
 }
 function patchPrincipalLabel(
   src: TargetOverrides,
-  principal: Principal,
+  principal: string,
   label: string
 ): TargetOverrides {
   const principals = { ...(src.principals || {}) };
   principals[principal] = { ...(principals[principal] || {}), label };
   return { ...src, principals };
+}
+function addExtraPrincipal(
+  src: TargetOverrides,
+  key: string,
+  label: string
+): TargetOverrides {
+  const extras = { ...(src.extraPrincipals || {}) };
+  extras[key] = { label };
+  return { ...src, extraPrincipals: extras };
+}
+function removeExtraPrincipal(
+  src: TargetOverrides,
+  key: string
+): TargetOverrides {
+  const extras = { ...(src.extraPrincipals || {}) };
+  delete extras[key];
+  return { ...src, extraPrincipals: extras };
 }
 
 /* ================= COMPONENT ================= */
@@ -66,7 +86,7 @@ export default function TargetAchievement({
   data: TargetState;
   onChange: (v: TargetState) => void;
 }) {
-  const { role } = useAuth() as { role?: string };
+  const { role } = useAuth();
   const isSuper = role === "superadmin";
 
   const [targetRole, setTargetRole] = useState<Role>("admin");
@@ -88,8 +108,18 @@ export default function TargetAchievement({
     deadlineLabel: overrides.copy?.deadlineLabel ?? "Deadline",
   };
 
-  const principalLabel = (p: Principal) =>
-    overrides.principals?.[p]?.label ?? p;
+  // daftar principal gabungan: base + custom (berurutan, base dulu)
+  const allPrincipals: string[] = useMemo(() => {
+    const base = [...PRINCIPALS];
+    const extras = Object.keys(overrides.extraPrincipals || {});
+    return [...base, ...extras];
+  }, [overrides.extraPrincipals]);
+
+  // ambil label tampilan principal
+  const principalLabel = (p: string) =>
+    overrides.principals?.[p]?.label ??
+    overrides.extraPrincipals?.[p]?.label ??
+    p;
 
   const saveCopy = (
     k: keyof NonNullable<TargetOverrides["copy"]>,
@@ -99,32 +129,100 @@ export default function TargetAchievement({
     writeOverrides(viewRole, patchCopy(cur, k, v));
     setRev((x) => x + 1);
   };
-  const savePrincipalLabel = (p: Principal, v: string) => {
+  const savePrincipalLabel = (p: string, v: string) => {
     const cur = readOverrides(viewRole);
     writeOverrides(viewRole, patchPrincipalLabel(cur, p, v));
     setRev((x) => x + 1);
   };
   const resetOverrides = () => {
     if (!isSuper) return;
-    if (!confirm(`Reset pengaturan teks untuk role ${viewRole}?`)) return;
+    if (
+      !confirm(
+        `Reset pengaturan teks & principal custom untuk role ${viewRole}?`
+      )
+    )
+      return;
     writeOverrides(viewRole, {});
     setRev((x) => x + 1);
   };
 
-  const toggleKlaim = (p: Principal) =>
-    onChange({
-      ...data,
-      klaimSelesai: { ...data.klaimSelesai, [p]: !data.klaimSelesai[p] },
-    });
+  const addPrincipal = (key: string, label: string) => {
+    if (!isSuper) return;
+    const k = key.trim();
+    const lbl = label.trim();
+    if (!/^p_[a-z0-9\-]+$/i.test(k)) {
+      alert(
+        'Key principal harus diawali "p_" dan hanya huruf/angka/dash. Contoh: p_new'
+      );
+      return;
+    }
+    if (!lbl) {
+      alert("Label tidak boleh kosong");
+      return;
+    }
+    const cur = readOverrides(viewRole);
+    writeOverrides(viewRole, addExtraPrincipal(cur, k, lbl));
+    setRev((x) => x + 1);
 
-  const toggleWeekly = (p: Principal, w: number) =>
+    // siapkan slot data di state jika belum ada
+    const nextWeeklyMap = {
+      ...(data.weekly as unknown as Record<string, boolean[]>),
+    };
+    if (!nextWeeklyMap[k]) nextWeeklyMap[k] = [false, false, false, false];
+
+    const nextKlaimMap = {
+      ...(data.klaimSelesai as unknown as Record<string, boolean>),
+    };
+    if (typeof nextKlaimMap[k] === "undefined") nextKlaimMap[k] = false;
+
+    const nextDeadlines = { ...(data.deadlines as TargetDeadlines) };
+    const nextKlaimDL = {
+      ...(nextDeadlines.klaim as unknown as Record<string, string>),
+    };
+    if (!nextKlaimDL[k]) nextKlaimDL[k] = "";
+    const nextWeeklyDL = {
+      ...(nextDeadlines.weekly as unknown as Record<string, string>),
+    };
+    if (!nextWeeklyDL[k]) nextWeeklyDL[k] = "";
     onChange({
       ...data,
-      weekly: {
-        ...data.weekly,
-        [p]: data.weekly[p].map((v, i) => (i === w ? !v : v)),
+      weekly: nextWeeklyMap as unknown as TargetState["weekly"],
+      klaimSelesai: nextKlaimMap as unknown as TargetState["klaimSelesai"],
+      deadlines: {
+        ...nextDeadlines,
+        klaim: nextKlaimDL as unknown as TargetDeadlines["klaim"],
+        weekly: nextWeeklyDL as unknown as TargetDeadlines["weekly"],
       },
     });
+  };
+
+  const removePrincipal = (key: string) => {
+    if (!isSuper) return;
+    if (!confirm(`Hapus principal ${key}?`)) return;
+    const cur = readOverrides(viewRole);
+    writeOverrides(viewRole, removeExtraPrincipal(cur, key));
+    setRev((x) => x + 1);
+    // Catatan: data state tidak dihapus agar tidak kehilangan histori – bisa ditangani sesuai kebutuhan.
+  };
+
+  const toggleKlaim = (p: string) => {
+    const cur = {
+      ...(data.klaimSelesai as unknown as Record<string, boolean>),
+    };
+    cur[p] = !cur[p];
+    onChange({
+      ...data,
+      klaimSelesai: cur as unknown as TargetState["klaimSelesai"],
+    });
+  };
+
+  const toggleWeekly = (p: string, w: number) => {
+    const cur = { ...(data.weekly as unknown as Record<string, boolean[]>) };
+    const arr = cur[p] ? [...cur[p]] : [false, false, false, false];
+    arr[w] = !arr[w];
+    cur[p] = arr;
+    onChange({ ...data, weekly: cur as unknown as TargetState["weekly"] });
+  };
 
   // styling input konsisten
   const INPUT_BASE =
@@ -134,47 +232,42 @@ export default function TargetAchievement({
 
   type DeadlineScope = keyof TargetDeadlines;
 
-  const setDeadline = (scope: DeadlineScope, value: string, p?: Principal) => {
-    if (!isSuper) return; // admin tidak bisa edit deadline
+  const setDeadline = (scope: DeadlineScope, value: string, p?: string) => {
+    if (!isSuper) return;
     const next: TargetDeadlines = { ...data.deadlines };
-    switch (scope) {
-      case "klaim":
-        if (!p) break;
-        next.klaim = { ...next.klaim, [p]: value };
-        break;
-      case "weekly":
-        if (!p) break;
-        next.weekly = { ...next.weekly, [p]: value };
-        break;
-      case "targetSelesai":
-        next.targetSelesai = value;
-        break;
-      case "fodks":
-        next.fodks = value;
-        break;
+    if (scope === "klaim" && p) {
+      const map = { ...(next.klaim as unknown as Record<string, string>) };
+      map[p] = value;
+      next.klaim = map as unknown as TargetDeadlines["klaim"];
+    } else if (scope === "weekly" && p) {
+      const map = { ...(next.weekly as unknown as Record<string, string>) };
+      map[p] = value;
+      next.weekly = map as unknown as TargetDeadlines["weekly"];
+    } else if (scope === "targetSelesai") {
+      next.targetSelesai = value;
+    } else if (scope === "fodks") {
+      next.fodks = value;
     }
     onChange({ ...data, deadlines: next });
   };
 
-  const getDeadline = (scope: DeadlineScope, p?: Principal): string => {
-    switch (scope) {
-      case "klaim":
-        return data.deadlines.klaim[p as Principal] ?? "";
-      case "weekly":
-        return data.deadlines.weekly[p as Principal] ?? "";
-      case "targetSelesai":
-        return data.deadlines.targetSelesai ?? "";
-      case "fodks":
-        return data.deadlines.fodks ?? "";
-      default:
-        return "";
+  const getDeadline = (scope: DeadlineScope, p?: string): string => {
+    if (scope === "klaim" && p) {
+      return (
+        (data.deadlines.klaim as unknown as Record<string, string>)[p] ?? ""
+      );
     }
+    if (scope === "weekly" && p) {
+      return (
+        (data.deadlines.weekly as unknown as Record<string, string>)[p] ?? ""
+      );
+    }
+    if (scope === "targetSelesai") return data.deadlines.targetSelesai ?? "";
+    if (scope === "fodks") return data.deadlines.fodks ?? "";
+    return "";
   };
 
-  /* ================= Sinkronisasi DEADLINES via localStorage =================
-     - Superadmin: tulis deadlines ke localStorage setiap berubah.
-     - Admin: baca saat mount & saat ada event "storage", lalu merge ke state.
-  =========================================================================== */
+  /* ================= Sinkronisasi DEADLINES via localStorage ================= */
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!isSuper) return;
@@ -183,9 +276,7 @@ export default function TargetAchievement({
         SHARED_DEADLINES_KEY,
         JSON.stringify(data.deadlines)
       );
-    } catch {
-      // noop
-    }
+    } catch {}
   }, [isSuper, data.deadlines]);
 
   useEffect(() => {
@@ -196,31 +287,32 @@ export default function TargetAchievement({
         const raw = localStorage.getItem(SHARED_DEADLINES_KEY);
         if (!raw) return;
         const dl = JSON.parse(raw) as TargetDeadlines;
-        // merge ke state saat ini
         onChange({
           ...data,
           deadlines: {
             ...data.deadlines,
             targetSelesai: dl.targetSelesai ?? data.deadlines.targetSelesai,
             fodks: dl.fodks ?? data.deadlines.fodks,
-            klaim: { ...data.deadlines.klaim, ...(dl.klaim || {}) },
-            weekly: { ...data.deadlines.weekly, ...(dl.weekly || {}) },
+            klaim: {
+              ...(data.deadlines.klaim as object),
+              ...(dl.klaim as object),
+            } as TargetDeadlines["klaim"],
+            weekly: {
+              ...(data.deadlines.weekly as object),
+              ...(dl.weekly as object),
+            } as TargetDeadlines["weekly"],
           },
         });
-      } catch {
-        // noop
-      }
+      } catch {}
     };
 
-    if (!isSuper) pull(); // admin tarik saat mount
-
+    if (!isSuper) pull();
     const handler = (e: StorageEvent) => {
       if (e.key === SHARED_DEADLINES_KEY && !isSuper) pull();
     };
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuper]);
+  }, [isSuper, data, onChange]);
   /* =================== akhir sinkronisasi =================== */
 
   return (
@@ -276,9 +368,8 @@ export default function TargetAchievement({
               <input
                 defaultValue={copy.klaimTitle}
                 onBlur={(e) => saveCopy("klaimTitle", e.target.value)}
-                className={`${INPUT_BASE} sm:w-[420px]`}
+                className="w-full max-w-[420px] rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                 placeholder="Judul bagian klaim…"
-                title="Ubah judul lalu klik di luar untuk menyimpan"
               />
             ) : (
               <span>{copy.klaimTitle}</span>
@@ -289,7 +380,7 @@ export default function TargetAchievement({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[680px] text-sm">
+            <table className="w-full min-w-[740px] text-sm">
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="text-left py-2 px-2">Jenis</th>
@@ -298,17 +389,30 @@ export default function TargetAchievement({
                 </tr>
               </thead>
               <tbody className="divide-y border rounded-xl bg-white">
-                {PRINCIPALS.map((p) => (
+                {allPrincipals.map((p) => (
                   <tr key={p}>
                     <td className="py-3 px-2 font-medium text-slate-800">
                       {editMode ? (
-                        <input
-                          defaultValue={principalLabel(p)}
-                          onBlur={(e) => savePrincipalLabel(p, e.target.value)}
-                          className={INPUT_BASE}
-                          placeholder={`Nama principal untuk ${p}`}
-                          title="Ubah nama tampilan principal lalu klik di luar untuk menyimpan"
-                        />
+                        <div className="flex gap-2 items-center">
+                          <input
+                            defaultValue={principalLabel(p)}
+                            onBlur={(e) =>
+                              savePrincipalLabel(p, e.target.value)
+                            }
+                            className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                            placeholder={`Nama principal untuk ${p}`}
+                            title="Ubah nama tampilan principal lalu klik di luar untuk menyimpan"
+                          />
+                          {overrides.extraPrincipals?.[p] && isSuper && (
+                            <button
+                              onClick={() => removePrincipal(p)}
+                              className="px-2 py-1 rounded-md bg-rose-600 text-white"
+                              title="Hapus principal custom ini"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
                       ) : (
                         principalLabel(p)
                       )}
@@ -318,7 +422,14 @@ export default function TargetAchievement({
                         <input
                           type="checkbox"
                           className="h-4 w-4 accent-blue-600"
-                          checked={data.klaimSelesai[p]}
+                          checked={
+                            (
+                              data.klaimSelesai as unknown as Record<
+                                string,
+                                boolean
+                              >
+                            )[p] || false
+                          }
                           onChange={() => toggleKlaim(p)}
                         />
                         <span className="text-sm text-slate-700">Selesai</span>
@@ -328,8 +439,10 @@ export default function TargetAchievement({
                       <input
                         type="date"
                         disabled={!isSuper}
-                        className={`${INPUT_BASE} ${
-                          !isSuper ? INPUT_DISABLED : ""
+                        className={`w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
+                          !isSuper
+                            ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
+                            : ""
                         }`}
                         value={getDeadline("klaim", p)}
                         onChange={(e) =>
@@ -348,63 +461,19 @@ export default function TargetAchievement({
             </table>
           </div>
 
-          {/* Target selesai + Deadlinenya (global) */}
-          <div className="grid grid-cols-1 sm:grid-cols-12 gap-4 mt-5">
-            <div className="sm:col-span-8" />
-            <div className="sm:col-span-4 space-y-3">
-              <label className="block text-sm font-medium text-slate-700">
-                {editMode ? (
-                  <input
-                    defaultValue={copy.targetSelesaiLabel}
-                    onBlur={(e) =>
-                      saveCopy("targetSelesaiLabel", e.target.value)
-                    }
-                    className={INPUT_BASE}
-                    placeholder="Label Target Selesai…"
-                  />
-                ) : (
-                  copy.targetSelesaiLabel
-                )}
-              </label>
-              <input
-                value={data.targetSelesai}
-                onChange={(e) =>
-                  onChange({ ...data, targetSelesai: e.target.value })
-                }
-                inputMode="numeric"
-                placeholder="mis. 10"
-                className={INPUT_BASE}
-              />
-              <div>
-                <span className="block text-sm font-medium text-slate-700 mb-1">
-                  {copy.deadlineLabel}
-                </span>
-                <input
-                  type="date"
-                  disabled={!isSuper}
-                  className={`${INPUT_BASE} ${!isSuper ? INPUT_DISABLED : ""}`}
-                  value={getDeadline("targetSelesai")}
-                  onChange={(e) => setDeadline("targetSelesai", e.target.value)}
-                  title={
-                    !isSuper
-                      ? "Hanya superadmin yang dapat mengubah deadline"
-                      : ""
-                  }
-                />
-              </div>
-            </div>
-          </div>
+          {/* Form tambah principal */}
+          {isSuper && editMode && <AddPrincipalForm onAdd={addPrincipal} />}
         </div>
       </div>
 
-      {/* ===== Bagian 2: Mingguan (tanpa deadline) ===== */}
+      {/* ===== Bagian 2: Mingguan (tanpa deadline per minggu) ===== */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 font-semibold text-slate-800">
           {editMode ? (
             <input
               defaultValue={copy.weeklyTitle}
               onBlur={(e) => saveCopy("weeklyTitle", e.target.value)}
-              className={`${INPUT_BASE} sm:w-[520px]`}
+              className="w-full max-w-[520px] rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
               placeholder="Judul bagian mingguan…"
             />
           ) : (
@@ -412,7 +481,7 @@ export default function TargetAchievement({
           )}
         </div>
         <div className="p-3 sm:p-6 overflow-x-auto">
-          <table className="w-full min-w-[640px] text-sm">
+          <table className="w-full min-w-[720px] text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="text-left py-2 px-2">Prinsipal</th>
@@ -420,33 +489,47 @@ export default function TargetAchievement({
                 <th className="text-left py-2 px-2">Minggu 2</th>
                 <th className="text-left py-2 px-2">Minggu 3</th>
                 <th className="text-left py-2 px-2">Minggu 4</th>
+                <th className="text-left py-2 px-2">{copy.deadlineLabel}</th>
               </tr>
             </thead>
             <tbody className="divide-y bg-white">
-              {PRINCIPALS.map((p) => (
+              {allPrincipals.map((p) => (
                 <tr key={p}>
                   <td className="py-3 px-2 font-medium text-slate-800">
-                    {editMode ? (
-                      <input
-                        defaultValue={principalLabel(p)}
-                        onBlur={(e) => savePrincipalLabel(p, e.target.value)}
-                        className={INPUT_BASE}
-                        placeholder={`Nama principal untuk ${p}`}
-                      />
-                    ) : (
-                      principalLabel(p)
-                    )}
+                    {principalLabel(p)}
                   </td>
                   {[0, 1, 2, 3].map((w) => (
                     <td key={w} className="py-3 px-2">
                       <input
                         type="checkbox"
                         className="h-4 w-4 accent-blue-600"
-                        checked={data.weekly[p][w]}
+                        checked={
+                          ((
+                            data.weekly as unknown as Record<string, boolean[]>
+                          )[p] || [false, false, false, false])[w]
+                        }
                         onChange={() => toggleWeekly(p, w)}
                       />
                     </td>
                   ))}
+                  <td className="py-3 px-2">
+                    <input
+                      type="date"
+                      disabled={!isSuper}
+                      className={`w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
+                        !isSuper
+                          ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
+                          : ""
+                      }`}
+                      value={getDeadline("weekly", p)}
+                      onChange={(e) => setDeadline("weekly", e.target.value, p)}
+                      title={
+                        !isSuper
+                          ? "Hanya superadmin yang dapat mengubah deadline"
+                          : ""
+                      }
+                    />
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -461,7 +544,7 @@ export default function TargetAchievement({
             <input
               defaultValue={copy.fodksTitle}
               onBlur={(e) => saveCopy("fodksTitle", e.target.value)}
-              className={`${INPUT_BASE} sm:w-[420px]`}
+              className="w-full max-w-[420px] rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
               placeholder="Judul bagian FODKS…"
             />
           ) : (
@@ -482,7 +565,7 @@ export default function TargetAchievement({
               <input
                 defaultValue={copy.fodksCheckboxLabel}
                 onBlur={(e) => saveCopy("fodksCheckboxLabel", e.target.value)}
-                className={INPUT_BASE}
+                className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                 placeholder="Label checkbox…"
               />
             ) : (
@@ -499,7 +582,11 @@ export default function TargetAchievement({
             <input
               type="date"
               disabled={!isSuper}
-              className={`${INPUT_BASE} ${!isSuper ? INPUT_DISABLED : ""}`}
+              className={`w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
+                !isSuper
+                  ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
+                  : ""
+              }`}
               value={getDeadline("fodks")}
               onChange={(e) => setDeadline("fodks", e.target.value)}
               title={
@@ -508,6 +595,51 @@ export default function TargetAchievement({
             />
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ===== Form Tambah Principal ===== */
+function AddPrincipalForm({
+  onAdd,
+}: {
+  onAdd: (key: string, label: string) => void;
+}) {
+  const [key, setKey] = useState("p_");
+  const [label, setLabel] = useState("");
+
+  return (
+    <div className="mt-4 border rounded-xl p-3 bg-blue-50">
+      <div className="text-xs font-medium text-blue-800 mb-2">
+        Tambah Principal / Jenis Baru
+      </div>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          className="rounded-xl border-2 border-blue-200 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+          placeholder="Key unik (contoh: p_klaim-baru)"
+        />
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          className="rounded-xl border-2 border-blue-200 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+          placeholder="Label tampilan"
+        />
+        <button
+          onClick={() => {
+            onAdd(key, label);
+            setKey("p_");
+            setLabel("");
+          }}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+        >
+          <Plus className="h-4 w-4" /> Tambah
+        </button>
+      </div>
+      <div className="text-[11px] text-blue-800 mt-1">
+        Gunakan prefix <code>p_</code> untuk principal custom.
       </div>
     </div>
   );
