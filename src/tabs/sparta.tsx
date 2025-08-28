@@ -39,7 +39,7 @@ type ProjectDef = {
 };
 
 /* -------------------------- Catalog (superadmin) -------------------------- */
-const CATALOG_KEY = "sitrep-sparta-catalog-v3"; // bump versi
+const CATALOG_KEY = "sitrep-sparta-catalog-v3";
 const TARGET_ROLES: TargetRole[] = ["admin", "sales", "gudang"];
 
 function defaultCatalog(): ProjectDef[] {
@@ -59,10 +59,13 @@ function defaultCatalog(): ProjectDef[] {
   ];
 }
 
-// helper normalisasi → hindari properti duplikat & pastikan field wajib terisi
 function normalizeProject(p: Partial<ProjectDef>): ProjectDef {
   return {
-    id: p.id ?? crypto.randomUUID(),
+    id:
+      p.id ??
+      (typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : Math.random().toString(36).slice(2)),
     title: p.title ?? "Proyek",
     steps: Array.isArray(p.steps) ? p.steps : [],
     deadline: p.deadline ?? "",
@@ -102,18 +105,15 @@ function writeCatalog(items: ProjectDef[]) {
 }
 
 /* -------------------------- Util -------------------------- */
-// Parse aman untuk "YYYY-MM-DD" sebagai tanggal lokal (hindari offset timezone)
 function parseYMD(ymd?: string): Date | null {
   if (!ymd) return null;
   const [y, m, d] = ymd.split("-").map(Number);
   if (!y || !m || !d) return null;
   return new Date(y, m - 1, d);
 }
-
 function formatDeadlineWithDay(deadline?: string): string | null {
   const dt = parseYMD(deadline);
   if (!dt) return null;
-  // Contoh: "Rabu, 20 Agustus 2025"
   return new Intl.DateTimeFormat("id-ID", {
     weekday: "long",
     day: "2-digit",
@@ -121,13 +121,11 @@ function formatDeadlineWithDay(deadline?: string): string | null {
     year: "numeric",
   }).format(dt);
 }
-
 function weekdayNameId(deadline?: string): string | null {
   const dt = parseYMD(deadline);
   if (!dt) return null;
   return new Intl.DateTimeFormat("id-ID", { weekday: "long" }).format(dt);
 }
-
 function daysLeft(deadline?: string) {
   const d = parseYMD(deadline);
   if (!d) return null;
@@ -139,7 +137,6 @@ function daysLeft(deadline?: string) {
   ).getTime();
   return Math.ceil((d.getTime() - base) / (1000 * 60 * 60 * 24));
 }
-
 function clampBoolArray(arr: boolean[] | undefined, len: number): boolean[] {
   const a = Array.isArray(arr) ? arr.slice(0, len) : [];
   while (a.length < len) a.push(false);
@@ -214,7 +211,6 @@ export default function SpartaTracking({
       kendala: cur.kendala ?? "",
     };
   };
-
   const setProgress = (id: string, patch: Partial<ProjectProgress>) => {
     const prevMap: Record<string, ProjectProgress> =
       (data as SpartaStateWithProgress).projectsProgress ?? {};
@@ -238,7 +234,10 @@ export default function SpartaTracking({
   // --- Actions (kelola proyek, hanya superadmin) ---
   const addProject = () => {
     const p: ProjectDef = {
-      id: crypto.randomUUID(),
+      id:
+        typeof crypto !== "undefined" && crypto.randomUUID
+          ? crypto.randomUUID()
+          : Math.random().toString(36).slice(2),
       title: "Proyek Baru",
       steps: ["Langkah 1", "Langkah 2"],
       deadline: "",
@@ -264,16 +263,13 @@ export default function SpartaTracking({
     }
   };
 
-  // Edit langkah satu-per-satu (manage mode)
+  // Edit langkah
   const updateStepText = (projId: string, idx: number, text: string) => {
     setCatalog((c) =>
       c.map((p) =>
         p.id !== projId
           ? p
-          : {
-              ...p,
-              steps: p.steps.map((s, i) => (i === idx ? text : s)),
-            }
+          : { ...p, steps: p.steps.map((s, i) => (i === idx ? text : s)) }
       )
     );
   };
@@ -294,13 +290,12 @@ export default function SpartaTracking({
     );
   };
 
-  // Tentukan proyek yang tampil untuk user saat ini
+  // proyek yang tampil
   const visibleCatalog = useMemo(() => {
     if (isSuper) {
       if (viewRole === "semua") return catalog;
       return catalog.filter((p) => p.targetRole === viewRole);
     }
-    // non-superadmin: hanya lihat proyek untuk rolenya
     return catalog.filter((p) => p.targetRole === (role as TargetRole));
   }, [catalog, isSuper, viewRole, role]);
 
@@ -385,7 +380,7 @@ export default function SpartaTracking({
               >
                 {/* Header kartu */}
                 <div className="px-3 sm:px-4 py-3 border-b bg-slate-50 flex flex-wrap items-center justify-between gap-3">
-                  {/* Judul + Deadline + Target Role (editable bila manage mode) */}
+                  {/* Judul + Deadline + Target Role */}
                   <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                     {manage ? (
                       <input
@@ -570,7 +565,7 @@ export default function SpartaTracking({
                     </div>
                   </div>
 
-                  {/* Progress, Next Action, Kendala (hanya saat tidak manage) */}
+                  {/* Progress, Next Action, Kendala (diisi user) */}
                   {!manage && (
                     <>
                       <div>
@@ -598,9 +593,7 @@ export default function SpartaTracking({
                           rows={2}
                           value={prog.nextAction}
                           onChange={(e) =>
-                            setProgress(proj.id, {
-                              nextAction: e.target.value,
-                            })
+                            setProgress(proj.id, { nextAction: e.target.value })
                           }
                           placeholder="Contoh: besok follow-up ke Pak Adi…"
                           className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
