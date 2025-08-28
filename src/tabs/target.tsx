@@ -66,7 +66,7 @@ export default function TargetAchievement({
   data: TargetState;
   onChange: (v: TargetState) => void;
 }) {
-  const { role } = useAuth();
+  const { role } = useAuth() as { role?: string };
   const isSuper = role === "superadmin";
 
   const [targetRole, setTargetRole] = useState<Role>("admin");
@@ -183,7 +183,9 @@ export default function TargetAchievement({
         SHARED_DEADLINES_KEY,
         JSON.stringify(data.deadlines)
       );
-    } catch {}
+    } catch {
+      // noop
+    }
   }, [isSuper, data.deadlines]);
 
   useEffect(() => {
@@ -205,7 +207,9 @@ export default function TargetAchievement({
             weekly: { ...data.deadlines.weekly, ...(dl.weekly || {}) },
           },
         });
-      } catch {}
+      } catch {
+        // noop
+      }
     };
 
     if (!isSuper) pull(); // admin tarik saat mount
@@ -216,7 +220,7 @@ export default function TargetAchievement({
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSuper]); // cukup bergantung pada role
+  }, [isSuper]);
   /* =================== akhir sinkronisasi =================== */
 
   return (
