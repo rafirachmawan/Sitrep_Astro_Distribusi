@@ -9,19 +9,13 @@ import type { Role } from "@/components/AuthProvider";
 
 /* ================= OVERRIDES ================= */
 type AddedRowMeta = {
-  /** mark that this row is newly added by superadmin */
   __added?: boolean;
-  /** mark deletion of a base/added row */
   __delete?: boolean;
-  /** optional explicit order index (0-based) to position among rows */
   order?: number;
-  /** for compound rows */
   extras?: { text?: boolean; currency?: boolean; number?: boolean };
-  /** the row kind to create when this key doesn't exist in base */
   kind?: "options" | "number" | "score" | "compound";
 };
 
-/** Overrides per row/section (persisted in localStorage by role) */
 type RowOverride = AddedRowMeta & {
   label?: string;
   options?: string[];
@@ -55,9 +49,7 @@ function mergeRowOverride(
   rowKey: string,
   patch: RowOverride
 ): ChecklistOverrides {
-  const rows: NonNullable<ChecklistOverrides["rows"]> = {
-    ...(src.rows || {}),
-  };
+  const rows: NonNullable<ChecklistOverrides["rows"]> = { ...(src.rows || {}) };
   const secMap: Record<string, RowOverride> = { ...(rows?.[sec] || {}) };
   rows[sec] = { ...secMap, [rowKey]: { ...(secMap[rowKey] || {}), ...patch } };
   return { ...src, rows };
@@ -197,7 +189,6 @@ function CurrencyField({
 }
 
 /* =============== SERIALIZER & SENDER ke GAS =============== */
-
 type TidyChecklistRow = {
   sectionKey: SectionKey;
   sectionTitle: string;
@@ -303,12 +294,10 @@ function toTidyChecklistRows(
   return rows;
 }
 
-// URL GAS – bisa diisi lewat props, kalau kosong ambil dari env build time
 const FALLBACK_GAS_URL: string =
   (typeof window !== "undefined" && (process.env.NEXT_PUBLIC_GAS_URL ?? "")) ||
   "";
 
-// POST helper
 async function postToGAS(gasUrl: string, payload: Record<string, unknown>) {
   if (!gasUrl) {
     console.warn(
@@ -343,6 +332,9 @@ export default function ChecklistArea({
   const viewRole = (isSuper ? targetRole : (role as Role)) || "admin";
   const [editMode, setEditMode] = useState(false);
   const [rev, setRev] = useState(0);
+
+  // NEW: inline quick add toggle state
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   const BASE_MAP: Record<SectionKey, { title: string; rows: RowDef[] }> =
     useMemo(
@@ -405,7 +397,7 @@ export default function ChecklistArea({
               options: ["Sudah"],
             },
 
-            /* ===== EXTRA KAS KECIL (tambahan konten) ===== */
+            // contoh tambahan konten
             {
               kind: "compound",
               key: "rekonsiliasi-kas-kecil",
@@ -450,8 +442,6 @@ export default function ChecklistArea({
               label: "Buku Kasbon Operasional",
               options: ["Sesuai", "Tidak Sesuai"],
             },
-
-            /* ===== EXTRA BUKU PENUNJANG (tambahan konten) ===== */
             {
               kind: "options",
               key: "buku-pengeluaran-kas",
@@ -835,7 +825,6 @@ export default function ChecklistArea({
       []
     );
 
-  // rev dipakai utk memaksa refresh override dari localStorage
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const overrides = useMemo(() => readRoleOverrides(viewRole), [viewRole, rev]);
 
@@ -849,7 +838,6 @@ export default function ChecklistArea({
       return acc;
     }, {} as Record<SectionKey, { title: string; rows: RowDef[] }>);
 
-    // apply section title/hidden
     if (overrides.sections) {
       (Object.keys(overrides.sections) as SectionKey[]).forEach((sec) => {
         const patch = overrides.sections?.[sec];
@@ -858,27 +846,22 @@ export default function ChecklistArea({
       });
     }
 
-    // apply row-level overrides: patch existing; add new; delete
     if (overrides.rows) {
       (Object.keys(overrides.rows) as SectionKey[]).forEach((sec) => {
         const rmap = overrides.rows?.[sec] || {};
         const existingKeys = new Set(clone[sec].rows.map((r) => r.key));
 
-        // patch existing and mark deletions
         clone[sec].rows = clone[sec].rows
           .filter((r) => !(rmap[r.key]?.__delete === true))
           .map((r) => {
             const patch = rmap[r.key];
             if (!patch) return r;
             const rn: RowDef = { ...r };
-
             if (patch.label) rn.label = patch.label;
-            if (isNumber(rn) && patch.suffix !== undefined) {
+            if (isNumber(rn) && patch.suffix !== undefined)
               rn.suffix = patch.suffix;
-            }
-            if ((isOptions(rn) || isCompound(rn)) && patch.options) {
+            if ((isOptions(rn) || isCompound(rn)) && patch.options)
               rn.options = patch.options;
-            }
             type CompoundExtra = {
               type: "text" | "currency" | "number";
               placeholder?: string;
@@ -893,10 +876,9 @@ export default function ChecklistArea({
             return rn;
           });
 
-        // add new rows that don't exist in base
         Object.keys(rmap).forEach((rowKey) => {
           const p = rmap[rowKey]!;
-          if (p.__delete) return; // skip deleted
+          if (p.__delete) return;
           if (!existingKeys.has(rowKey) && p.kind) {
             const def: RowDef =
               p.kind === "options"
@@ -934,7 +916,6 @@ export default function ChecklistArea({
           }
         });
 
-        // reorder using override order (if provided)
         const withOrder = clone[sec].rows.map((r, idx) => {
           const ord = rmap[r.key]?.order;
           return { r, idx, ord: typeof ord === "number" ? ord : idx };
@@ -1053,9 +1034,7 @@ export default function ChecklistArea({
 
   const submitChecklistAndSend = async () => {
     try {
-      if (onSubmitGeneratePDF) {
-        await onSubmitGeneratePDF();
-      }
+      if (onSubmitGeneratePDF) await onSubmitGeneratePDF();
       const rows = toTidyChecklistRows(data, FINAL_MAP);
       await postToGAS(gasUrl || FALLBACK_GAS_URL, {
         module: "checklist-area",
@@ -1135,7 +1114,10 @@ export default function ChecklistArea({
           {SECTION_TABS.map((t) => (
             <button
               key={t.key}
-              onClick={() => setSecActive(t.key)}
+              onClick={() => {
+                setSecActive(t.key);
+                setQuickAddOpen(false);
+              }}
               className={
                 "px-3.5 py-2 rounded-lg text-sm transition whitespace-nowrap " +
                 (secActive === t.key
@@ -1165,20 +1147,43 @@ export default function ChecklistArea({
             )}
           </div>
 
+          {/* NEW: Quick Add (+) */}
           {isSuper && editMode && (
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-slate-600">Sembunyikan:</label>
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-rose-600"
-                onChange={(e) =>
-                  toggleSectionHidden(secActive, e.target.checked)
-                }
-                checked={Boolean(overrides.sections?.[secActive]?.hidden)}
-              />
-            </div>
+            <>
+              <button
+                onClick={() => setQuickAddOpen((v) => !v)}
+                className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                title={`Tambah baris ke ${section.title}`}
+              >
+                <Plus className="h-3.5 w-3.5" /> Tambah
+              </button>
+
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-slate-600">Sembunyikan:</label>
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-rose-600"
+                  onChange={(e) =>
+                    toggleSectionHidden(secActive, e.target.checked)
+                  }
+                  checked={Boolean(overrides.sections?.[secActive]?.hidden)}
+                />
+              </div>
+            </>
           )}
         </div>
+
+        {/* NEW: Inline Add Row Form (appears under header) */}
+        {isSuper && editMode && quickAddOpen && (
+          <InlineAddRow
+            sectionLabel={section.title}
+            onCancel={() => setQuickAddOpen(false)}
+            onAdd={(payload) => {
+              addRow(secActive, payload);
+              setQuickAddOpen(false);
+            }}
+          />
+        )}
 
         {/* Header 4/3/5 */}
         <div className="hidden sm:grid grid-cols-12 text-[13px] font-medium text-slate-600 border-y bg-slate-50">
@@ -1219,7 +1224,7 @@ export default function ChecklistArea({
           </div>
         )}
 
-        {/* ===== Add Row Panel (Superadmin) ===== */}
+        {/* Panel besar (tetap ada) */}
         {isSuper && editMode && (
           <AddRowPanel onAdd={(payload) => addRow(secActive, payload)} />
         )}
@@ -1423,7 +1428,6 @@ function ChecklistRow({
             />
           )}
 
-          {/* Options */}
           {isOptions(row) && (
             <MultiCheckGroup
               options={row.options}
@@ -1438,7 +1442,6 @@ function ChecklistRow({
             />
           )}
 
-          {/* Number */}
           {isNumber(row) && (
             <NumberWithSuffix
               suffix={row.suffix}
@@ -1454,7 +1457,6 @@ function ChecklistRow({
             />
           )}
 
-          {/* Score */}
           {isScore(row) && (
             <ScoreSelect
               value={scoreVal}
@@ -1464,7 +1466,6 @@ function ChecklistRow({
             />
           )}
 
-          {/* Compound */}
           {isCompound(row) && (
             <div className="space-y-2">
               <MultiCheckGroup
@@ -1569,7 +1570,150 @@ function ChecklistRow({
   );
 }
 
-/* ===== Add Row Panel ===== */
+/* ===== NEW: Inline Add Row (Quick +) ===== */
+function InlineAddRow({
+  sectionLabel,
+  onAdd,
+  onCancel,
+}: {
+  sectionLabel: string;
+  onAdd: (payload: {
+    key: string;
+    label: string;
+    kind: AddedRowMeta["kind"];
+    optionsCsv?: string;
+    suffix?: string;
+    extras?: AddedRowMeta["extras"];
+  }) => void;
+  onCancel: () => void;
+}) {
+  const [key, setKey] = useState("");
+  const [label, setLabel] = useState("");
+  const [kind, setKind] = useState<AddedRowMeta["kind"]>("options");
+  const [optionsCsv, setOptionsCsv] = useState("Cocok, Tidak Cocok");
+  const [suffix, setSuffix] = useState("");
+  const [exText, setExText] = useState(false);
+  const [exCurr, setExCurr] = useState(false);
+  const [exNum, setExNum] = useState(false);
+
+  const submit = () => {
+    onAdd({
+      key,
+      label,
+      kind,
+      optionsCsv,
+      suffix,
+      extras: { text: exText, currency: exCurr, number: exNum },
+    });
+    setKey("");
+    setLabel("");
+    if (kind === "options" || kind === "compound")
+      setOptionsCsv("Cocok, Tidak Cocok");
+    setSuffix("");
+    setExText(false);
+    setExCurr(false);
+    setExNum(false);
+  };
+
+  return (
+    <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3">
+      <div className="text-xs font-medium text-blue-800 mb-2">
+        Tambah baris ke: {sectionLabel}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+        <input
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+          placeholder="Key unik (tanpa spasi)"
+        />
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+          placeholder="Label tampilan"
+        />
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as AddedRowMeta["kind"])}
+          className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+        >
+          <option value="options">Checkbox</option>
+          <option value="number">Angka+suffix</option>
+          <option value="score">Score (1–5)</option>
+          <option value="compound">Gabungan</option>
+        </select>
+
+        {(kind === "options" || kind === "compound") && (
+          <input
+            value={optionsCsv}
+            onChange={(e) => setOptionsCsv(e.target.value)}
+            className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 md:col-span-2"
+            placeholder="Opsi dipisah koma"
+          />
+        )}
+
+        {kind === "number" && (
+          <input
+            value={suffix}
+            onChange={(e) => setSuffix(e.target.value)}
+            className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+            placeholder="Suffix (pcs/faktur/…)"
+          />
+        )}
+
+        {kind === "compound" && (
+          <div className="md:col-span-5 flex items-center flex-wrap gap-4">
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-blue-600"
+                checked={exText}
+                onChange={(e) => setExText(e.target.checked)}
+              />
+              Text
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-blue-600"
+                checked={exCurr}
+                onChange={(e) => setExCurr(e.target.checked)}
+              />
+              Currency
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-blue-600"
+                checked={exNum}
+                onChange={(e) => setExNum(e.target.checked)}
+              />
+              Number
+            </label>
+          </div>
+        )}
+      </div>
+
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          onClick={submit}
+          className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-xs hover:bg-blue-700 inline-flex items-center gap-1"
+        >
+          <Plus className="h-3.5 w-3.5" /> Tambah
+        </button>
+        <button
+          onClick={onCancel}
+          className="px-3 py-1.5 rounded-md border text-xs hover:bg-white"
+        >
+          Batal
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ===== Add Row Panel (versi besar) ===== */
 function AddRowPanel({
   onAdd,
 }: {
@@ -1600,7 +1744,6 @@ function AddRowPanel({
       suffix,
       extras: { text: exText, currency: exCurr, number: exNum },
     });
-    // reset kecil
     setKey("");
     setLabel("");
     if (kind === "options" || kind === "compound")
