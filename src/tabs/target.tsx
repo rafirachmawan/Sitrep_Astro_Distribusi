@@ -148,7 +148,7 @@ export default function TargetAchievement({
     setRev((x) => x + 1);
   };
 
-  /* ===== tambah/hapus principal (berlaku utk semua bagian) ===== */
+  /* ===== tambah/hapus principal ===== */
   const addPrincipal = (key: string, label: string) => {
     if (!isSuper) return;
     const k = key.trim();
@@ -187,6 +187,7 @@ export default function TargetAchievement({
       ...(nextDeadlines.weekly as unknown as Record<string, string>),
     };
     if (!nextWeeklyDL[k]) nextWeeklyDL[k] = "";
+
     onChange({
       ...data,
       weekly: nextWeeklyMap as unknown as TargetState["weekly"],
@@ -208,7 +209,7 @@ export default function TargetAchievement({
     // data state dibiarkan (histori)
   };
 
-  /* ===== toggle helpers (centang) – dengan area klik luas ===== */
+  /* ===== toggle helpers (klik sekali, no double) ===== */
   const toggleKlaim = (p: string) => {
     const cur = {
       ...(data.klaimSelesai as unknown as Record<string, boolean>),
@@ -427,27 +428,25 @@ export default function TargetAchievement({
                         )}
                       </td>
 
-                      {/* SEL ESAI bisa diklik seluruhnya */}
-                      <td
-                        className="py-3 px-2 cursor-pointer select-none"
-                        onClick={() => toggleKlaim(p)}
-                        title="Klik untuk centang/hapus centang"
-                      >
-                        <label
-                          className="inline-flex items-center gap-3"
-                          onClick={(e) => e.stopPropagation()}
+                      {/* Klik sekali: gunakan button wrapper, checkbox readOnly */}
+                      <td className="py-3 px-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleKlaim(p)}
+                          className="inline-flex items-center gap-3 px-2 py-1 rounded-md hover:bg-slate-100 focus:outline-none"
+                          title="Klik untuk centang/hapus centang"
                         >
                           <input
                             type="checkbox"
-                            className="h-6 w-6 accent-blue-600"
+                            className="h-5 w-5 accent-blue-600 pointer-events-none"
                             checked={checked}
-                            onChange={() => toggleKlaim(p)}
-                            onClick={(e) => e.stopPropagation()}
+                            readOnly
+                            aria-hidden
                           />
-                          <span className="text-sm text-slate-700">
+                          <span className="text-sm text-slate-700 select-none">
                             Selesai
                           </span>
-                        </label>
+                        </button>
                       </td>
 
                       <td className="py-3 px-2">
@@ -533,19 +532,21 @@ export default function TargetAchievement({
                     </td>
 
                     {[0, 1, 2, 3].map((w) => (
-                      <td
-                        key={w}
-                        className="py-3 px-2 cursor-pointer select-none"
-                        onClick={() => toggleWeekly(p, w)}
-                        title="Klik untuk centang/hapus centang"
-                      >
-                        <input
-                          type="checkbox"
-                          className="h-6 w-6 accent-blue-600"
-                          checked={weeklyRow[w]}
-                          onChange={() => toggleWeekly(p, w)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
+                      <td key={w} className="py-3 px-2">
+                        <button
+                          type="button"
+                          onClick={() => toggleWeekly(p, w)}
+                          className="inline-flex items-center justify-center w-9 h-9 rounded-md hover:bg-slate-100 focus:outline-none"
+                          title="Klik untuk centang/hapus centang"
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-5 w-5 accent-blue-600 pointer-events-none"
+                            checked={weeklyRow[w]}
+                            readOnly
+                            aria-hidden
+                          />
+                        </button>
                       </td>
                     ))}
 
@@ -616,7 +617,7 @@ export default function TargetAchievement({
           <label className="inline-flex items-center gap-3">
             <input
               type="checkbox"
-              className="h-6 w-6 accent-blue-600"
+              className="h-5 w-5 accent-blue-600"
               checked={data.ketepatanFodks}
               onChange={() =>
                 onChange({ ...data, ketepatanFodks: !data.ketepatanFodks })
