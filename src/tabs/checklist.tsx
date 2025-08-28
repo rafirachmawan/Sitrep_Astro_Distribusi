@@ -55,9 +55,11 @@ function mergeRowOverride(
   rowKey: string,
   patch: RowOverride
 ): ChecklistOverrides {
-  const rows = { ...(src.rows || {}) } as ChecklistOverrides["rows"];
-  const secMap = { ...(rows?.[sec] || {}) } as Record<string, RowOverride>;
-  rows![sec] = { ...secMap, [rowKey]: { ...(secMap[rowKey] || {}), ...patch } };
+  const rows: NonNullable<ChecklistOverrides["rows"]> = {
+    ...(src.rows || {}),
+  };
+  const secMap: Record<string, RowOverride> = { ...(rows?.[sec] || {}) };
+  rows[sec] = { ...secMap, [rowKey]: { ...(secMap[rowKey] || {}), ...patch } };
   return { ...src, rows };
 }
 function mergeSectionTitle(
@@ -72,7 +74,6 @@ function mergeSectionTitle(
   sections[sec] = { ...prev, title };
   return { ...src, sections };
 }
-
 function mergeSectionHidden(
   src: ChecklistOverrides,
   sec: SectionKey,
@@ -403,6 +404,27 @@ export default function ChecklistArea({
               label: "Serah Terima dengan FAT",
               options: ["Sudah"],
             },
+
+            /* ===== EXTRA KAS KECIL (tambahan konten) ===== */
+            {
+              kind: "compound",
+              key: "rekonsiliasi-kas-kecil",
+              label: "Rekonsiliasi Kas Kecil harian",
+              options: ["Selesai", "Belum"],
+              extra: [{ type: "text", placeholder: "Catatan selisih" }],
+            },
+            {
+              kind: "number",
+              key: "jumlah-voucher-bulan-ini",
+              label: "Jumlah voucher bulan berjalan",
+              suffix: "voucher",
+            },
+            {
+              kind: "options",
+              key: "saldo-batas-minimum",
+              label: "Saldo di atas batas minimum",
+              options: ["Ya", "Tidak"],
+            },
           ],
         },
 
@@ -427,6 +449,21 @@ export default function ChecklistArea({
               key: "buku-kasbon-operasional",
               label: "Buku Kasbon Operasional",
               options: ["Sesuai", "Tidak Sesuai"],
+            },
+
+            /* ===== EXTRA BUKU PENUNJANG (tambahan konten) ===== */
+            {
+              kind: "options",
+              key: "buku-pengeluaran-kas",
+              label: "Buku Pengeluaran Kas diperbarui",
+              options: ["Sesuai", "Tidak Sesuai"],
+            },
+            {
+              kind: "compound",
+              key: "buku-retur-pembelian",
+              label: "Buku Retur Pembelian",
+              options: ["Lengkap", "Tidak Lengkap"],
+              extra: [{ type: "text", placeholder: "Penjelasan kekurangan" }],
             },
           ],
         },
