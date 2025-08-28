@@ -65,21 +65,24 @@ function mergeSectionTitle(
   sec: SectionKey,
   title: string
 ): ChecklistOverrides {
-  const sections = {
+  const sections: NonNullable<ChecklistOverrides["sections"]> = {
     ...(src.sections || {}),
-  } as ChecklistOverrides["sections"];
-  sections![sec] = { ...(sections?.[sec] || {}), title } as any;
+  };
+  const prev = sections[sec] ?? {};
+  sections[sec] = { ...prev, title };
   return { ...src, sections };
 }
+
 function mergeSectionHidden(
   src: ChecklistOverrides,
   sec: SectionKey,
   hidden: boolean
 ): ChecklistOverrides {
-  const sections = {
+  const sections: NonNullable<ChecklistOverrides["sections"]> = {
     ...(src.sections || {}),
-  } as ChecklistOverrides["sections"];
-  sections![sec] = { ...(sections?.[sec] || {}), hidden } as any;
+  };
+  const prev = sections[sec] ?? {};
+  sections[sec] = { ...prev, hidden };
   return { ...src, sections };
 }
 
@@ -830,7 +833,7 @@ export default function ChecklistArea({
           .map((r) => {
             const patch = rmap[r.key];
             if (!patch) return r;
-            let rn: RowDef = { ...r };
+            const rn: RowDef = { ...r };
 
             if (patch.label) rn.label = patch.label;
             if (isNumber(rn) && patch.suffix !== undefined) {
