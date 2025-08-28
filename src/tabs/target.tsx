@@ -17,16 +17,12 @@ type TargetOverrides = {
     fodksCheckboxLabel?: string;
     deadlineLabel?: string;
   };
-  // relabel principal yang sudah ada (base)
   principals?: Record<string, { label?: string }>;
-  // principal tambahan (custom) yang bisa ditambah/hapus
   extraPrincipals?: Record<string, { label: string }>;
 };
 
 const OV_KEY = "sitrep-target-copy-v2";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
-
-// shared key untuk sinkronisasi DEADLINES
 const SHARED_DEADLINES_KEY = "sitrep:target:shared-deadlines";
 
 function readOverrides(role: Role): TargetOverrides {
@@ -43,7 +39,7 @@ function writeOverrides(role: Role, v: TargetOverrides) {
   localStorage.setItem(`${OV_KEY}:${role}`, JSON.stringify(v));
 }
 
-// ====== perbaikan typing untuk patchCopy
+/* ===== typing aman untuk copy ===== */
 type CopyShape = NonNullable<TargetOverrides["copy"]>;
 type CopyKeys = keyof Required<CopyShape>;
 
@@ -52,12 +48,11 @@ function patchCopy(
   key: CopyKeys,
   value: string
 ): TargetOverrides {
-  // jadikan map yang bisa diindeks oleh CopyKeys
-  const copyMap = {
-    ...(src.copy || {}),
-  } as Record<CopyKeys, string | undefined>;
+  const copyMap = { ...(src.copy || {}) } as Record<
+    CopyKeys,
+    string | undefined
+  >;
   copyMap[key] = value;
-  // kembalikan ke bentuk aslinya
   const copy: TargetOverrides["copy"] = copyMap;
   return { ...src, copy };
 }
@@ -119,14 +114,13 @@ export default function TargetAchievement({
     deadlineLabel: overrides.copy?.deadlineLabel ?? "Deadline",
   };
 
-  // daftar principal gabungan: base + custom (berurutan, base dulu)
+  /* ===== list principal: base + custom ===== */
   const allPrincipals: string[] = useMemo(() => {
     const base = [...PRINCIPALS];
     const extras = Object.keys(overrides.extraPrincipals || {});
     return [...base, ...extras];
   }, [overrides.extraPrincipals]);
 
-  // ambil label tampilan principal
   const principalLabel = (p: string) =>
     overrides.principals?.[p]?.label ??
     overrides.extraPrincipals?.[p]?.label ??
@@ -154,6 +148,7 @@ export default function TargetAchievement({
     setRev((x) => x + 1);
   };
 
+  /* ===== tambah/hapus principal (berlaku utk semua bagian) ===== */
   const addPrincipal = (key: string, label: string) => {
     if (!isSuper) return;
     const k = key.trim();
@@ -210,9 +205,10 @@ export default function TargetAchievement({
     const cur = readOverrides(viewRole);
     writeOverrides(viewRole, removeExtraPrincipal(cur, key));
     setRev((x) => x + 1);
-    // Catatan: data state tidak dihapus agar tidak kehilangan histori – bisa ditangani sesuai kebutuhan.
+    // data state dibiarkan (histori)
   };
 
+  /* ===== toggle helpers (centang) – dengan area klik luas ===== */
   const toggleKlaim = (p: string) => {
     const cur = {
       ...(data.klaimSelesai as unknown as Record<string, boolean>),
@@ -232,7 +228,7 @@ export default function TargetAchievement({
     onChange({ ...data, weekly: cur as unknown as TargetState["weekly"] });
   };
 
-  // styling input konsisten
+  /* ===== styling ===== */
   const INPUT_BASE =
     "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
   const INPUT_DISABLED =
@@ -397,79 +393,91 @@ export default function TargetAchievement({
                 </tr>
               </thead>
               <tbody className="divide-y border rounded-xl bg-white">
-                {allPrincipals.map((p) => (
-                  <tr key={p}>
-                    <td className="py-3 px-2 font-medium text-slate-800">
-                      {editMode ? (
-                        <div className="flex gap-2 items-center">
-                          <input
-                            defaultValue={principalLabel(p)}
-                            onBlur={(e) =>
-                              savePrincipalLabel(p, e.target.value)
-                            }
-                            className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-                            placeholder={`Nama principal untuk ${p}`}
-                            title="Ubah nama tampilan principal lalu klik di luar untuk menyimpan"
-                          />
-                          {overrides.extraPrincipals?.[p] && isSuper && (
-                            <button
-                              onClick={() => removePrincipal(p)}
-                              className="px-2 py-1 rounded-md bg-rose-600 text-white"
-                              title="Hapus principal custom ini"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        principalLabel(p)
-                      )}
-                    </td>
-                    <td className="py-3 px-2">
-                      <label className="inline-flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 accent-blue-600"
-                          checked={
-                            (
-                              data.klaimSelesai as unknown as Record<
-                                string,
-                                boolean
+                {allPrincipals.map((p) => {
+                  const checked =
+                    (data.klaimSelesai as unknown as Record<string, boolean>)[
+                      p
+                    ] || false;
+                  return (
+                    <tr key={p}>
+                      <td className="py-3 px-2 font-medium text-slate-800">
+                        {editMode ? (
+                          <div className="flex gap-2 items-center">
+                            <input
+                              defaultValue={principalLabel(p)}
+                              onBlur={(e) =>
+                                savePrincipalLabel(p, e.target.value)
+                              }
+                              className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                              placeholder={`Nama principal untuk ${p}`}
+                              title="Ubah nama tampilan principal lalu klik di luar untuk menyimpan"
+                            />
+                            {overrides.extraPrincipals?.[p] && isSuper && (
+                              <button
+                                onClick={() => removePrincipal(p)}
+                                className="px-2 py-1 rounded-md bg-rose-600 text-white"
+                                title="Hapus principal custom ini"
                               >
-                            )[p] || false
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          principalLabel(p)
+                        )}
+                      </td>
+
+                      {/* SEL ESAI bisa diklik seluruhnya */}
+                      <td
+                        className="py-3 px-2 cursor-pointer select-none"
+                        onClick={() => toggleKlaim(p)}
+                        title="Klik untuk centang/hapus centang"
+                      >
+                        <label
+                          className="inline-flex items-center gap-3"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            className="h-6 w-6 accent-blue-600"
+                            checked={checked}
+                            onChange={() => toggleKlaim(p)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <span className="text-sm text-slate-700">
+                            Selesai
+                          </span>
+                        </label>
+                      </td>
+
+                      <td className="py-3 px-2">
+                        <input
+                          type="date"
+                          disabled={!isSuper}
+                          className={`w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
+                            !isSuper
+                              ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
+                              : ""
+                          }`}
+                          value={getDeadline("klaim", p)}
+                          onChange={(e) =>
+                            setDeadline("klaim", e.target.value, p)
                           }
-                          onChange={() => toggleKlaim(p)}
+                          title={
+                            !isSuper
+                              ? "Hanya superadmin yang dapat mengubah deadline"
+                              : ""
+                          }
                         />
-                        <span className="text-sm text-slate-700">Selesai</span>
-                      </label>
-                    </td>
-                    <td className="py-3 px-2">
-                      <input
-                        type="date"
-                        disabled={!isSuper}
-                        className={`w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
-                          !isSuper
-                            ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
-                            : ""
-                        }`}
-                        value={getDeadline("klaim", p)}
-                        onChange={(e) =>
-                          setDeadline("klaim", e.target.value, p)
-                        }
-                        title={
-                          !isSuper
-                            ? "Hanya superadmin yang dapat mengubah deadline"
-                            : ""
-                        }
-                      />
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
 
-          {/* Form tambah principal */}
+          {/* Form tambah principal (klaim) */}
           {isSuper && editMode && <AddPrincipalForm onAdd={addPrincipal} />}
         </div>
       </div>
@@ -504,70 +512,89 @@ export default function TargetAchievement({
               </tr>
             </thead>
             <tbody className="divide-y bg-white">
-              {allPrincipals.map((p) => (
-                <tr key={p}>
-                  <td className="py-3 px-2 font-medium text-slate-800">
-                    {editMode ? (
-                      <input
-                        defaultValue={principalLabel(p)}
-                        onBlur={(e) => savePrincipalLabel(p, e.target.value)}
-                        className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-                        placeholder={`Nama principal untuk ${p}`}
-                        title="Ubah nama tampilan principal lalu klik di luar untuk menyimpan"
-                      />
-                    ) : (
-                      principalLabel(p)
-                    )}
-                  </td>
-                  {[0, 1, 2, 3].map((w) => (
-                    <td key={w} className="py-3 px-2">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 accent-blue-600"
-                        checked={
-                          ((
-                            data.weekly as unknown as Record<string, boolean[]>
-                          )[p] || [false, false, false, false])[w]
-                        }
-                        onChange={() => toggleWeekly(p, w)}
-                      />
-                    </td>
-                  ))}
-                  <td className="py-3 px-2">
-                    <input
-                      type="date"
-                      disabled={!isSuper}
-                      className={`w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
-                        !isSuper
-                          ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
-                          : ""
-                      }`}
-                      value={getDeadline("weekly", p)}
-                      onChange={(e) => setDeadline("weekly", e.target.value, p)}
-                      title={
-                        !isSuper
-                          ? "Hanya superadmin yang dapat mengubah deadline"
-                          : ""
-                      }
-                    />
-                  </td>
-                  {isSuper && editMode ? (
-                    <td className="py-3 px-2">
-                      {overrides.extraPrincipals?.[p] && (
-                        <button
-                          onClick={() => removePrincipal(p)}
-                          className="px-2 py-1 rounded-md bg-rose-600 text-white"
-                          title="Hapus principal custom ini"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+              {allPrincipals.map((p) => {
+                const weeklyRow = (
+                  data.weekly as unknown as Record<string, boolean[]>
+                )[p] || [false, false, false, false];
+                return (
+                  <tr key={p}>
+                    <td className="py-3 px-2 font-medium text-slate-800">
+                      {editMode ? (
+                        <input
+                          defaultValue={principalLabel(p)}
+                          onBlur={(e) => savePrincipalLabel(p, e.target.value)}
+                          className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                          placeholder={`Nama principal untuk ${p}`}
+                          title="Ubah nama tampilan principal lalu klik di luar untuk menyimpan"
+                        />
+                      ) : (
+                        principalLabel(p)
                       )}
                     </td>
-                  ) : null}
-                </tr>
-              ))}
+
+                    {[0, 1, 2, 3].map((w) => (
+                      <td
+                        key={w}
+                        className="py-3 px-2 cursor-pointer select-none"
+                        onClick={() => toggleWeekly(p, w)}
+                        title="Klik untuk centang/hapus centang"
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-6 w-6 accent-blue-600"
+                          checked={weeklyRow[w]}
+                          onChange={() => toggleWeekly(p, w)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </td>
+                    ))}
+
+                    <td className="py-3 px-2">
+                      <input
+                        type="date"
+                        disabled={!isSuper}
+                        className={`w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
+                          !isSuper
+                            ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
+                            : ""
+                        }`}
+                        value={getDeadline("weekly", p)}
+                        onChange={(e) =>
+                          setDeadline("weekly", e.target.value, p)
+                        }
+                        title={
+                          !isSuper
+                            ? "Hanya superadmin yang dapat mengubah deadline"
+                            : ""
+                        }
+                      />
+                    </td>
+
+                    {isSuper && editMode ? (
+                      <td className="py-3 px-2">
+                        {overrides.extraPrincipals?.[p] && (
+                          <button
+                            onClick={() => removePrincipal(p)}
+                            className="px-2 py-1 rounded-md bg-rose-600 text-white"
+                            title="Hapus principal custom ini"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+
+          {/* Form tambah principal juga ada di bagian Mingguan */}
+          {isSuper && editMode && (
+            <div className="mt-4">
+              <AddPrincipalForm onAdd={addPrincipal} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -586,10 +613,10 @@ export default function TargetAchievement({
           )}
         </div>
         <div className="p-3 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
-          <label className="inline-flex items-center gap-2">
+          <label className="inline-flex items-center gap-3">
             <input
               type="checkbox"
-              className="h-5 w-5 accent-blue-600"
+              className="h-6 w-6 accent-blue-600"
               checked={data.ketepatanFodks}
               onChange={() =>
                 onChange({ ...data, ketepatanFodks: !data.ketepatanFodks })
@@ -599,7 +626,7 @@ export default function TargetAchievement({
               <input
                 defaultValue={copy.fodksCheckboxLabel}
                 onBlur={(e) => saveCopy("fodksCheckboxLabel", e.target.value)}
-                className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                className={INPUT_BASE}
                 placeholder="Label checkbox…"
               />
             ) : (
@@ -616,11 +643,7 @@ export default function TargetAchievement({
             <input
               type="date"
               disabled={!isSuper}
-              className={`w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
-                !isSuper
-                  ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
-                  : ""
-              }`}
+              className={`${INPUT_BASE} ${!isSuper ? INPUT_DISABLED : ""}`}
               value={getDeadline("fodks")}
               onChange={(e) => setDeadline("fodks", e.target.value)}
               title={
@@ -644,7 +667,7 @@ function AddPrincipalForm({
   const [label, setLabel] = useState("");
 
   return (
-    <div className="mt-4 border rounded-xl p-3 bg-blue-50">
+    <div className="border rounded-xl p-3 bg-blue-50">
       <div className="text-xs font-medium text-blue-800 mb-2">
         Tambah Principal / Jenis Baru
       </div>
