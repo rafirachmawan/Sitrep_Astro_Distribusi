@@ -48,6 +48,13 @@ const DAY_THEME: Record<1 | 2 | 3 | 4 | 5 | 6, Theme> = {
   5: "kosong",
   6: "kepatuhan",
 };
+const THEME_LABEL: Record<Theme, string> = {
+  attitude: "Attitude (HEBAT)",
+  kompetensi: "Kompetensi",
+  prestasi: "Prestasi",
+  kepatuhan: "Kepatuhan SOP",
+  kosong: "Evaluasi",
+};
 
 const HEBAT_ITEMS = [
   { code: "H", title: "Harmonis & Integritas" },
@@ -330,6 +337,8 @@ const labelStatusChip = (filled: boolean) =>
    ========================= */
 type ScoreValue = string | number;
 type Evaluasi = {
+  theme?: string; // baru: bisa "kepatuhan", "sop", "attitude", "kompetensi", "prestasi"
+  tema?: string; // alias
   hari?: 1 | 2 | 3 | 4 | 5 | 6;
   attitude?: {
     hari?: 1 | 2 | 3 | 4 | 5 | 6;
@@ -339,7 +348,59 @@ type Evaluasi = {
   };
   [key: string]: unknown;
 };
+
+/* ========= Normalisasi & Deteksi Tema Evaluasi ========= */
+const THEME_KEY_ALIASES: Record<Theme, string[]> = {
+  attitude: ["attitude"],
+  kompetensi: ["kompetensi"],
+  prestasi: ["prestasi"],
+  kepatuhan: [
+    "kepatuhan",
+    "sop",
+    "kepatuhanSOP",
+    "kepatuhan_sop",
+    "kepatuhanSop",
+  ],
+  kosong: [],
+};
+
+function normalizeThemeName(raw?: string | null): Theme | null {
+  if (!raw) return null;
+  const s = raw.trim().toLowerCase();
+  if (["attitude", "hebat"].includes(s)) return "attitude";
+  if (["kompetensi", "skill", "kemampuan"].includes(s)) return "kompetensi";
+  if (["prestasi", "achievement"].includes(s)) return "prestasi";
+  if (
+    [
+      "kepatuhan",
+      "sop",
+      "kepatuhan sop",
+      "kepatuhan_sop",
+      "kepatuhansop",
+    ].includes(s)
+  )
+    return "kepatuhan";
+  return null;
+}
+
 function getTheme(evaluasi: Evaluasi): Theme {
+  // 1) eksplisit dari evaluasi.theme / evaluasi.tema
+  const explicit =
+    normalizeThemeName(evaluasi.theme) || normalizeThemeName(evaluasi.tema);
+  if (explicit) return explicit;
+
+  // 2) deteksi dari keberadaan blok data
+  for (const t of [
+    "kepatuhan",
+    "kompetensi",
+    "prestasi",
+    "attitude",
+  ] as Theme[]) {
+    const keys = THEME_KEY_ALIASES[t];
+    if (keys.some((k) => (evaluasi as any)[k] != null)) return t;
+  }
+
+  // 3) fallback: jadwal hari (kompatibilitas lama)
   const hari =
     evaluasi.attitude?.hari ??
     (evaluasi as { hari?: 1 | 2 | 3 | 4 | 5 | 6 }).hari ??
@@ -567,8 +628,9 @@ export default function Lampiran({ data }: { data: AppState }) {
     [data]
   );
 
-  const theme = getTheme((data as unknown as AppLike).evaluasi ?? {});
   const evalData = ((data as unknown as AppLike).evaluasi ?? {}) as Evaluasi;
+  const theme = getTheme(evalData);
+  const themeLabel = THEME_LABEL[theme];
 
   const projectList = useMemo(
     () =>
@@ -927,18 +989,30 @@ export default function Lampiran({ data }: { data: AppState }) {
       head.innerHTML = `<div class="title">${titleMap[theme]}</div>`;
       appendBlock(head);
 
-      // ------ helper baca per-orang beragam skema ------
-      const readPersonPayload = (t: Theme, p: Person) =>
-        ((evalData as any)[`${t}_${p}`] ??
-          (evalData as any)[t]?.[p] ??
-          (evalData as any)[p]?.[t] ??
-          {}) as {
+      // helper baca per-orang (dengan alias kunci tema)
+      const readPersonPayload = (t: Theme, p: Person) => {
+        const keys = THEME_KEY_ALIASES[t];
+        for (const key of keys) {
+          const found =
+            (evalData as any)[`${key}_${p}`] ??
+            (evalData as any)[key]?.[p] ??
+            (evalData as any)[p]?.[key];
+          if (found)
+            return found as any as {
+              scores?: Record<string, unknown>;
+              notes?: Record<string, string>;
+            };
+        }
+        return {} as {
           scores?: Record<string, unknown>;
           notes?: Record<string, string>;
         };
+      };
 
       if (theme === "attitude") {
-        const raw = (evalData?.attitude ?? {}) as any;
+        const raw = (evalData?.attitude ??
+          (evalData as any).attitude ??
+          {}) as any;
 
         const useNestedPerPerson = PERSONS.some(
           (p) => raw?.[p]?.scores || raw?.[p]?.notes
@@ -1034,10 +1108,12 @@ export default function Lampiran({ data }: { data: AppState }) {
             : theme === "prestasi"
             ? PRESTASI_ITEMS
             : SOP_ITEMS;
+
+        // Untuk setiap orang, ambil payload dari alias kunci tema (termasuk "sop")
         PERSONS.forEach((p) => {
           const payload = readPersonPayload(theme, p);
-          const scores = payload.scores ?? {};
-          const notes = payload.notes ?? {};
+          const scores = (payload?.scores ?? {}) as Record<string, unknown>;
+          const notes = (payload?.notes ?? {}) as Record<string, string>;
           const block = doc.createElement("div");
           block.className = "section page-break-avoid";
           block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
@@ -1150,8 +1226,8 @@ export default function Lampiran({ data }: { data: AppState }) {
         isRecord(klaimSrc) ||
         isRecord(laporanSrc) ||
         tgtBulananSrc !== undefined ||
-        rawTarget?.target !== undefined ||
-        rawTarget?.deadline !== undefined;
+        (rawTarget as any)?.target !== undefined ||
+        (rawTarget as any)?.deadline !== undefined;
 
       if (looksLikeUI) {
         // Klaim bulanan
@@ -1204,7 +1280,7 @@ export default function Lampiran({ data }: { data: AppState }) {
                 .map((k) => (tgtBulananSrc as any)[k])
                 .find((v) => v !== undefined)
             : tgtBulananSrc) ??
-          rawTarget?.target ??
+          (rawTarget as any)?.target ??
           "";
         const targetDeadline = fmtDate(
           (isRecord(tgtBulananSrc) &&
@@ -1212,7 +1288,7 @@ export default function Lampiran({ data }: { data: AppState }) {
               .map((k) => (tgtBulananSrc as any)[k])
               .find((v) => v !== undefined)) ||
             (isRecord(deadlinesSrc) && (deadlinesSrc as any).targetSelesai) ||
-            rawTarget?.deadline
+            (rawTarget as any)?.deadline
         );
         const targetTblWrap = doc.createElement("div");
         targetTblWrap.className = "section page-break-avoid";
@@ -1753,7 +1829,7 @@ export default function Lampiran({ data }: { data: AppState }) {
             <div className="rounded-xl border p-4">
               <div className="text-sm text-slate-600">
                 PDF berisi Identitas, Rangkuman Checklist,{" "}
-                <b>Evaluasi (tema hari {theme})</b>, Target & Achievement,
+                <b>Evaluasi (tema: {themeLabel})</b>, Target & Achievement,
                 Project Tracking (SPARTA), dan Agenda & Jadwal.
               </div>
               <div className="mt-3 text-xs text-slate-500">
