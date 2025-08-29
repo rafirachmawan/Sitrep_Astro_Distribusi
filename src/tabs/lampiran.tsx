@@ -730,75 +730,93 @@ export default function Lampiran({ data }: { data: AppState }) {
 
     const st = doc.createElement("style");
     st.textContent = `
-      .page{width:794px;min-height:1123px;box-sizing:border-box;padding:24px;}
-      .section{margin-top:18px;}
-      .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;}
-      .muted{color:#64748b;}
-      .banner{background:#dbeafe;color:#1e3a8a;padding:14px 16px;border-radius:14px;}
-      .info-grid{display:flex;gap:12px;margin-top:12px;}
-      .card{border:1px solid #e6e8f0;border-radius:12px;padding:10px 12px;flex:1;background:#fff;}
-      .card .label{color:#6b7280;font-size:12px;}
-      .table{width:100%;border-collapse:separate;border-spacing:0;}
-      .table th,.table td{border:1px solid #e9edf3;padding:7px 9px;vertical-align:top;}
-      .table th{background:#f8fafc;color:#475569;text-align:left;font-weight:700;}
-      .table.striped tbody tr:nth-child(even){background:#fbfdff;}
-      .subhead{font-weight:700;margin:6px 0 8px;color:#0f172a;}
-      .mb8{margin-bottom:8px;}
-      .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;}
-      .chip{display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;font-size:11px;font-weight:700;line-height:1;}
-      .chip.ok{background:#ecfdf5;border-color:#86efac;color:#065f46;}
-      .chip.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
-      .chip.over{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
-      .sigwrap{page-break-inside:avoid;margin-top:18px;}
-      .sigtitle{text-align:right;margin:0 0 6px 0;}
-      .sigrow{display:flex;justify-content:flex-end;}
-      .sigbox{position:relative;width:360px;margin-top:6px;border:1px dashed #cbd5e1;border-radius:12px;padding:12px;height:140px;display:flex;align-items:center;justify-content:center;background:#fcfdff;}
-      .sigbox img{max-height:96px;display:block;margin:auto;object-fit:contain;}
-      .sigline{position:absolute;left:12px;right:12px;bottom:12px;height:2px;background:#0f172a;opacity:.85;}
-      .foot{margin-top:6px;color:#64748b;font-size:11px;text-align:right;}
-      .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;}
-      .pro-card{border:1px solid #e6e8f0;border-radius:16px;background:#fff;padding:14px;box-shadow:0 1px 0 rgba(16,24,40,.02);}
-      .pro-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
-      .pro-title{font-weight:800;color:#0f172a;}
-      .steps-panel{border:1px solid #eef2f7;border-radius:12px;background:#fcfdff;padding:10px 12px;}
-      .progress{height:10px;background:#eff3fb;border-radius:999px;overflow:hidden}
-      .progress>div{height:100%;background:#2563eb;transition:width .2s ease}
-      .chk{list-style:none;margin:0;padding:0}
-      .step{display:flex;gap:8px;align-items:center;margin:6px 0}
-      .icon{box-sizing:border-box;display:inline-flex;width:16px;height:16px;border-radius:4px;border:1px solid #cbd5e1;align-items:center;justify-content:center;font-size:11px;line-height:1;color:#94a3b8;background:#fff;}
-      .done .icon{background:#10b981;border-color:#10b981;color:#fff}
-      .label{line-height:1.35}
-      .done .label{text-decoration:line-through;color:#6b7280}
-      .kpi th:nth-child(1){width:28%}
-      .kpi th:nth-child(2),.kpi th:nth-child(3),.kpi th:nth-child(4){width:16%}
-      .kpi th:nth-child(5){width:24%}
-      .ul-kv{margin:0;padding-left:18px}
-      /* checkbox mini agar mirip UI input */
-      .cbx{display:inline-flex;width:14px;height:14px;border:1px solid #cbd5e1;border-radius:4px;align-items:center;justify-content:center;font-size:11px;line-height:1}
-      .cbx.on{background:#10b981;border-color:#10b981;color:#fff}
-      .small{font-size:11px}
-      .hint{color:#94a3b8;font-size:11px;margin-left:6px}
+  .page{width:794px;min-height:1123px;box-sizing:border-box;padding:24px;}
+  .section{margin-top:18px;}
+  .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;}
+  .muted{color:#64748b;}
+  .banner{background:#dbeafe;color:#1e3a8a;padding:14px 16px;border-radius:14px;}
+  .info-grid{display:flex;gap:12px;margin-top:12px;}
+  .card{border:1px solid #e6e8f0;border-radius:12px;padding:10px 12px;flex:1;background:#fff;}
+  .card .label{color:#6b7280;font-size:12px;}
+  .table{width:100%;border-collapse:separate;border-spacing:0;}
+  .table th,.table td{border:1px solid #e9edf3;padding:7px 9px;vertical-align:top;}
+  .table th{background:#f8fafc;color:#475569;text-align:left;font-weight:700;}
+  .table.striped tbody tr:nth-child(even){background:#fbfdff;}
 
-      /* === Normalisasi tipografi & warna (override akhir) === */
-      body { color:#0f172a; }
-      .table th, .table td { color:#0f172a; font-weight:500; }
-      .table th { font-weight:700; }
-      b, strong { font-weight:700; color:#0f172a; }
-      .muted { color:#64748b !important; }
-      .title { font-weight:800 !important; color:#0f172a !important; }
-      .subhead { font-weight:700 !important; color:#0f172a !important; }
+  /* Judul seksi (KAS, BUKU, AR...) — dibold + garis tebal */
+  .subhead{
+    font-weight:800;
+    margin:6px 0 8px;
+    color:#0f172a;
+    text-transform:uppercase;
+    letter-spacing:.2px;
+    border-left:5px solid #0f172a;
+    padding-left:10px;
+  }
+  /* pemisah tebal di atas setiap blok seksi */
+  .block-sec{border-top:2px solid #0f172a;padding-top:8px;}
 
-      /* === Badge warna untuk kolom Status checklist === */
-      .status-badge{
-        display:inline-flex;align-items:center;gap:6px;
-        padding:2px 8px;border-radius:999px;border:1px solid #e5e7eb;
-        font-weight:700;font-size:11px;line-height:1;
-      }
-      .status-badge.good{background:#ecfdf5;border-color:#86efac;color:#065f46;}
-      .status-badge.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
-      .status-badge.bad{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
-      .status-badge.neutral{background:#f1f5f9;border-color:#e2e8f0;color:#475569;}
-    `;
+  .mb8{margin-bottom:8px;}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;}
+  .chip{display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;font-size:11px;font-weight:700;line-height:1;}
+  .chip.ok{background:#ecfdf5;border-color:#86efac;color:#065f46;}
+  .chip.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
+  .chip.over{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
+
+  .sigwrap{page-break-inside:avoid;margin-top:18px;}
+  .sigtitle{text-align:right;margin:0 0 6px 0;}
+  .sigrow{display:flex;justify-content:flex-end;}
+  .sigbox{position:relative;width:360px;margin-top:6px;border:1px dashed #cbd5e1;border-radius:12px;padding:12px;height:140px;display:flex;align-items:center;justify-content:center;background:#fcfdff;}
+  .sigbox img{max-height:96px;display:block;margin:auto;object-fit:contain;}
+  .sigline{position:absolute;left:12px;right:12px;bottom:12px;height:2px;background:#0f172a;opacity:.85;}
+  .foot{margin-top:6px;color:#64748b;font-size:11px;text-align:right;}
+
+  .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;}
+  .pro-card{border:1px solid #e6e8f0;border-radius:16px;background:#fff;padding:14px;box-shadow:0 1px 0 rgba(16,24,40,.02);}
+  .pro-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
+  .pro-title{font-weight:800;color:#0f172a;}
+  .steps-panel{border:1px solid #eef2f7;border-radius:12px;background:#fcfdff;padding:10px 12px;}
+  .progress{height:10px;background:#eff3fb;border-radius:999px;overflow:hidden}
+  .progress>div{height:100%;background:#2563eb;transition:width .2s ease}
+  .chk{list-style:none;margin:0;padding:0}
+  .step{display:flex;gap:8px;align-items:center;margin:6px 0}
+  .icon{box-sizing:border-box;display:inline-flex;width:16px;height:16px;border-radius:4px;border:1px solid #cbd5e1;align-items:center;justify-content:center;font-size:11px;line-height:1;color:#94a3b8;background:#fff;}
+  .done .icon{background:#10b981;border-color:#10b981;color:#fff}
+  .label{line-height:1.35}
+  .done .label{text-decoration:line-through;color:#6b7280}
+  .kpi th:nth-child(1){width:28%}
+  .kpi th:nth-child(2),.kpi th:nth-child(3),.kpi th:nth-child(4){width:16%}
+  .kpi th:nth-child(5){width:24%}
+  .ul-kv{margin:0;padding-left:18px}
+
+  /* checkbox mini agar mirip UI input */
+  .cbx{display:inline-flex;width:14px;height:14px;border:1px solid #cbd5e1;border-radius:4px;align-items:center;justify-content:center;font-size:11px;line-height:1}
+  .cbx.on{background:#10b981;border-color:#10b981;color:#fff}
+  .small{font-size:11px}
+  .hint{color:#94a3b8;font-size:11px;margin-left:6px}
+
+  /* === Normalisasi tipografi & warna (override akhir) === */
+  body { color:#0f172a; }
+  .table th, .table td { color:#0f172a; font-weight:500; }
+  .table th { font-weight:700; }
+  b, strong { font-weight:700; color:#0f172a; }
+  .muted { color:#64748b !important; }
+  .title { font-weight:800 !important; color:#0f172a !important; }
+
+  /* === Badge warna untuk kolom Status checklist (samain dengan input) === */
+  .status-badge{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:2px 10px;border-radius:999px;border:1px solid #e5e7eb;
+    font-weight:600;               /* feel seperti UI input */
+    font-size:12px; line-height:1; /* ukuran & line-height */
+    font-family:inherit;           /* samakan font */
+  }
+  .status-badge.good{background:#ecfdf5;border-color:#86efac;color:#065f46;}
+  .status-badge.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
+  .status-badge.bad{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
+  .status-badge.neutral{background:#f1f5f9;border-color:#e2e8f0;color:#475569;}
+`;
+
     root.appendChild(st);
 
     const page = doc.createElement("div");
