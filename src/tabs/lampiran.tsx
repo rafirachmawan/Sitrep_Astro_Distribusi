@@ -735,6 +735,8 @@ export default function Lampiran({ data }: { data: AppState }) {
   .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;}
   .muted{color:#64748b;}
   .page-break-avoid{break-inside:avoid;page-break-inside:avoid;}
+  /* cegah pecah tabel/baris */
+  .table, .table *, thead, tbody, tr, th, td { break-inside: avoid; page-break-inside: avoid; }
 
   /* === Header tone selaras dengan tabel/pill === */
   :root{
@@ -1766,7 +1768,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       const pageH = pdf.internal.pageSize.getHeight();
       const margin = 24;
       const usableW = pageW - margin * 2;
-      // const usableH = pageH - margin * 2; // FYI
+      const usableH = pageH - margin * 2;
 
       for (let i = 0; i < pages.length; i++) {
         const el = pages[i];
@@ -1783,20 +1785,19 @@ export default function Lampiran({ data }: { data: AppState }) {
         });
 
         const imgData = canvas.toDataURL("image/jpeg", 0.92);
-        const drawW = usableW;
-        const drawH = (canvas.height / canvas.width) * drawW;
+
+        // Scale-to-fit agar tidak kepotong
+        let drawW = usableW;
+        let drawH = (canvas.height / canvas.width) * drawW;
+        if (drawH > usableH) {
+          drawH = usableH;
+          drawW = (canvas.width / canvas.height) * drawH;
+        }
+        const x = margin + (usableW - drawW) / 2;
+        const y = margin + (usableH - drawH) / 2;
 
         if (i > 0) pdf.addPage();
-        pdf.addImage(
-          imgData,
-          "JPEG",
-          margin,
-          margin,
-          drawW,
-          drawH,
-          undefined,
-          "FAST"
-        );
+        pdf.addImage(imgData, "JPEG", x, y, drawW, drawH, undefined, "FAST");
       }
 
       // 4) bersihkan iframe
