@@ -734,23 +734,30 @@ export default function Lampiran({ data }: { data: AppState }) {
   .section{margin-top:18px;}
   .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;}
   .muted{color:#64748b;}
+
   /* === Header tone selaras dengan tabel/pill === */
-:root{
-  --brand-bg:#eef2ff;     /* indigo-50, lembut */
-  --brand-bg2:#e9efff;    /* untuk gradasi tipis */
-  --brand-border:#c7d2fe; /* indigo-200 */
-  --brand-fg:#0f172a;     /* warna teks utama (sama spt isi tabel) */
-}
-.banner{
-  background: linear-gradient(180deg, var(--brand-bg) 0%, var(--brand-bg2) 100%);
-  color: var(--brand-fg);
-  border: 1px solid var(--brand-border);
-  padding: 16px 18px;
-  border-radius: 16px;
-  box-shadow: 0 1px 0 rgba(16,24,40,.03);
-}
-/* subjudul dalam header tetap muted */
-.banner .muted{ color:#64748b !important; }
+  :root{
+    --brand-bg:#eef2ff;     /* indigo-50, lembut */
+    --brand-bg2:#e9efff;    /* untuk gradasi tipis */
+    --brand-border:#c7d2fe; /* indigo-200 */
+    --brand-fg:#0f172a;     /* warna teks utama (sama spt isi tabel) */
+
+    /* Status badge */
+    --good-bg:#ecfdf5; --good-fg:#065f46;
+    --warn-bg:#fffbeb; --warn-fg:#92400e;
+    --bad-bg:#fef2f2;  --bad-fg:#7f1d1d;
+    --neu-bg:#f1f5f9;  --neu-fg:#475569;
+  }
+
+  .banner{
+    background: linear-gradient(180deg, var(--brand-bg) 0%, var(--brand-bg2) 100%);
+    color: var(--brand-fg);
+    border: 1px solid var(--brand-border);
+    padding: 16px 18px;
+    border-radius: 16px;
+    box-shadow: 0 1px 0 rgba(16,24,40,.03);
+  }
+  .banner .muted{ color:#64748b !important; }
 
   .info-grid{display:flex;gap:12px;margin-top:12px;}
   .card{border:1px solid #e6e8f0;border-radius:12px;padding:10px 12px;flex:1;background:#fff;}
@@ -758,10 +765,13 @@ export default function Lampiran({ data }: { data: AppState }) {
 
   .table{width:100%;border-collapse:separate;border-spacing:0;}
   .table th,.table td{border:1px solid #e9edf3;padding:8px 10px;vertical-align:middle;}
-  .table th{background:#f8fafc;color:#475569;text-align:left;font-weight:700;border-top:none;border-bottom:2px solid #cbd5e1;}
+  .table th{
+    background:#f8fafc;color:#475569;text-align:left;font-weight:700;
+    border-top:none;border-bottom:2px solid #cbd5e1;
+  }
   .table.striped tbody tr:nth-child(even){background:#fbfdff;}
 
-  /* Perjelas tabel per section */
+  /* Perjelas tabel per section (KAS, BUKU, AR, dst) */
   .table.checklist{
     border:2px solid #cbd5e1;
     border-radius:12px;
@@ -814,8 +824,21 @@ export default function Lampiran({ data }: { data: AppState }) {
   .kpi th:nth-child(5){width:24%}
   .ul-kv{margin:0;padding-left:18px}
 
-  .cbx{display:inline-flex;width:14px;height:14px;border:1px solid #cbd5e1;border-radius:4px;align-items:center;justify-content:center;font-size:11px;line-height:1}
-  .cbx.on{background:#10b981;border-color:#10b981;color:#fff}
+  /* === Minimal checkbox (Klaim/Weekly): bulat & profesional === */
+  .checkline{display:inline-flex;align-items:center;gap:8px}
+  .cbx{
+    display:inline-block;width:14px;height:14px;
+    border:1px solid #cbd5e1;border-radius:50%;
+    background:#fff;vertical-align:middle;
+    box-shadow: inset 0 1px 0 rgba(0,0,0,.02);
+  }
+  .cbx.on{border-color:#22c55e;}
+  .cbx.on::after{
+    content:"";display:block;width:8px;height:8px;margin:2px;
+    border-radius:50%;background:#22c55e;
+  }
+  .cbx-label{font-size:11px;font-weight:600;color:#475569;}
+
   .small{font-size:11px}
   .hint{color:#94a3b8;font-size:11px;margin-left:6px}
 
@@ -826,18 +849,12 @@ export default function Lampiran({ data }: { data: AppState }) {
   b, strong { font-weight:700; color:#0f172a; }
 
   /* Status badge tanpa border/outline */
-  :root{
-    --good-bg:#ecfdf5; --good-fg:#065f46;
-    --warn-bg:#fffbeb; --warn-fg:#92400e;
-    --bad-bg:#fef2f2;  --bad-fg:#7f1d1d;
-    --neu-bg:#f1f5f9;  --neu-fg:#475569;
-  }
   .status-badge{
     display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
     padding:4px 10px;border-radius:9999px;
     background:var(--neu-bg); color:var(--neu-fg);
     font-weight:600;font-size:12px;line-height:1.2;font-family:inherit;
-    margin:2px 0 0 2px; /* sedikit jarak dari border sel */
+    margin:2px 0 0 2px;
     border:none; box-shadow:none;
   }
   .status-badge.good{background:var(--good-bg);color:var(--good-fg);}
