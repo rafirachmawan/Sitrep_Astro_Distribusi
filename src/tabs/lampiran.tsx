@@ -214,8 +214,8 @@ function SignaturePad({
     ctx.lineWidth = 2;
     ctx.strokeStyle = "#111827";
     ctx.beginPath();
-    ctx.moveTo(0, SIG_HEIGHT - 22);
-    ctx.lineTo(widthRef.current, SIG_HEIGHT - 22);
+    ctx.moveTo(0, 140 - 22);
+    ctx.lineTo(widthRef.current, 140 - 22);
     ctx.stroke();
 
     setEmpty(true);
@@ -355,7 +355,6 @@ type Evaluasi = {
     scores?: Record<string, ScoreValue>;
     notes?: Record<string, string>;
   };
-  // sisanya fleksibel (kompetensi_laras, prestasi_emi, dst)
   [key: string]: unknown;
 };
 
@@ -738,14 +737,8 @@ export default function Lampiran({ data }: { data: AppState }) {
   /* cegah pecah tabel/baris */
   .table, .table *, thead, tbody, tr, th, td { break-inside: avoid; page-break-inside: avoid; }
 
-  /* === Header tone selaras dengan tabel/pill === */
   :root{
-    --brand-bg:#eef2ff;     /* indigo-50, lembut */
-    --brand-bg2:#e9efff;    /* untuk gradasi tipis */
-    --brand-border:#c7d2fe; /* indigo-200 */
-    --brand-fg:#0f172a;     /* warna teks utama (sama spt isi tabel) */
-
-    /* Status badge */
+    --brand-bg:#eef2ff; --brand-bg2:#e9efff; --brand-border:#c7d2fe; --brand-fg:#0f172a;
     --good-bg:#ecfdf5; --good-fg:#065f46;
     --warn-bg:#fffbeb; --warn-fg:#92400e;
     --bad-bg:#fef2f2;  --bad-fg:#7f1d1d;
@@ -774,25 +767,10 @@ export default function Lampiran({ data }: { data: AppState }) {
   }
   .table.striped tbody tr:nth-child(even){background:#fbfdff;}
 
-  /* Perjelas tabel per section (KAS, BUKU, AR, dst) */
-  .table.checklist{
-    border:2px solid #cbd5e1;
-    border-radius:12px;
-    overflow:hidden;
-    box-shadow:0 1px 0 rgba(16,24,40,.03);
-    background:#fff;
-  }
-  /* Kolom AREA dibold (hanya tabel checklist) */
-  .table.checklist td:first-child{
-    font-weight:700;
-    color:#0f172a;
-  }
+  .table.checklist{border:2px solid #cbd5e1;border-radius:12px;overflow:hidden;box-shadow:0 1px 0 rgba(16,24,40,.03);background:#fff;}
+  .table.checklist td:first-child{font-weight:700;color:#0f172a;}
 
-  /* Judul seksi (KAS, BUKU, AR...) */
-  .subhead{
-    font-weight:800;margin:6px 0 8px;color:#0f172a;text-transform:uppercase;letter-spacing:.2px;
-    border-left:5px solid #0f172a;padding-left:10px;
-  }
+  .subhead{font-weight:800;margin:6px 0 8px;color:#0f172a;text-transform:uppercase;letter-spacing:.2px;border-left:5px solid #0f172a;padding-left:10px;}
   .mb8{margin-bottom:8px;}
 
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;}
@@ -827,42 +805,22 @@ export default function Lampiran({ data }: { data: AppState }) {
   .kpi th:nth-child(5){width:24%}
   .ul-kv{margin:0;padding-left:18px}
 
-  /* === Minimal checkbox (Klaim/Weekly): bulat & profesional === */
   .checkline{display:inline-flex;align-items:center;gap:8px}
-  .cbx{
-    display:inline-block;width:14px;height:14px;
-    border:1px solid #cbd5e1;border-radius:50%;
-    background:#fff;vertical-align:middle;
-    box-shadow: inset 0 1px 0 rgba(0,0,0,.02);
-  }
-  /* jika menjadi satu-satunya isi sel, center otomatis */
+  .cbx{display:inline-block;width:14px;height:14px;border:1px solid #cbd5e1;border-radius:50%;background:#fff;vertical-align:middle;box-shadow: inset 0 1px 0 rgba(0,0,0,.02);}
   .table td > .cbx:only-child{ display:block; margin:0 auto; }
-
   .cbx.on{border-color:#22c55e;}
-  .cbx.on::after{
-    content:"";display:block;width:8px;height:8px;margin:2px;
-    border-radius:50%;background:#22c55e;
-  }
+  .cbx.on::after{content:"";display:block;width:8px;height:8px;margin:2px;border-radius:50%;background:#22c55e;}
   .cbx-label{font-size:11px;font-weight:600;color:#475569;}
 
   .small{font-size:11px}
   .hint{color:#94a3b8;font-size:11px;margin-left:6px}
 
-  /* Normalisasi tipografi */
   body { color:#0f172a; -webkit-font-smoothing:antialiased; }
   .table th, .table td { color:#0f172a; font-weight:500; }
   .table th { font-weight:700; }
   b, strong { font-weight:700; color:#0f172a; }
 
-  /* Status badge tanpa border/outline */
-  .status-badge{
-    display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
-    padding:4px 10px;border-radius:9999px;
-    background:var(--neu-bg); color:var(--neu-fg);
-    font-weight:600;font-size:12px;line-height:1.2;font-family:inherit;
-    margin:2px 0 0 2px;
-    border:none; box-shadow:none;
-  }
+  .status-badge{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;padding:4px 10px;border-radius:9999px;background:var(--neu-bg); color:var(--neu-fg);font-weight:600;font-size:12px;line-height:1.2;font-family:inherit;margin:2px 0 0 2px;border:none; box-shadow:none;}
   .status-badge.good{background:var(--good-bg);color:var(--good-fg);}
   .status-badge.warn{background:var(--warn-bg);color:var(--warn-fg);}
   .status-badge.bad{background:var(--bad-bg);color:var(--bad-fg);}
@@ -882,7 +840,6 @@ export default function Lampiran({ data }: { data: AppState }) {
 
     const appendBlock = (el: HTMLElement) => {
       page.appendChild(el);
-      // jika melebihi tinggi halaman, pindahkan ke halaman baru
       if (page.scrollHeight > PAGE_MAX_PX) {
         page.removeChild(el);
         page = makePage();
@@ -899,76 +856,36 @@ export default function Lampiran({ data }: { data: AppState }) {
       <div class="muted">Tanggal: ${todayISO()}</div>`;
     appendBlock(header);
 
-    // ==== fungsi bantu klasifikasi status -> warna ====
+    // status → warna
     const classifyStatus = (
       raw: unknown
     ): "good" | "warn" | "bad" | "neutral" => {
       if (raw == null) return "neutral";
-      const str = String(raw).trim();
+      const str = String(raw).trim().toLowerCase();
       if (!str) return "neutral";
-      const s = str.toLowerCase();
-
-      // boolean-ish
-      if (["ya", "yes", "y", "true", "ok", "oke", "on"].includes(s))
+      if (
+        ["ya", "yes", "y", "true", "ok", "oke", "on", "selesai"].includes(str)
+      )
         return "good";
-      if (["tidak", "no", "n", "false", "off"].includes(s)) return "bad";
-
-      // keywords
-      const goodWords = [
-        "baik",
-        "aman",
-        "bersih",
-        "siap",
-        "terpenuhi",
-        "sesuai",
-        "selesai",
-        "done",
-        "lulus",
-      ];
-      const warnWords = [
-        "pending",
-        "proses",
-        "perlu",
-        "kurang",
-        "sebagian",
-        "hampir",
-        "belum lengkap",
-      ];
-      const badWords = [
-        "tidak",
-        "gagal",
-        "rusak",
-        "lewat",
-        "terlambat",
-        "mati",
-        "cacat",
-      ];
-
-      if (goodWords.some((w) => s.includes(w))) return "good";
-      if (badWords.some((w) => s.includes(w))) return "bad";
-      if (warnWords.some((w) => s.includes(w))) return "warn";
-
-      // numeric: percentage
-      const pctMatch = s.match(/^(\d+(?:\.\d+)?)\s*%$/);
-      if (pctMatch) {
-        const v = parseFloat(pctMatch[1]);
+      if (["tidak", "no", "n", "false", "off"].includes(str)) return "bad";
+      if (/\d+(\.\d+)?\s*%$/.test(str)) {
+        const v = parseFloat(str);
         if (v >= 80) return "good";
         if (v >= 50) return "warn";
         return "bad";
       }
-
-      // numeric: score 1..5
-      const num = Number(s);
-      if (!Number.isNaN(num)) {
-        if (num >= 4) return "good";
-        if (num >= 3) return "warn";
+      const n = Number(str);
+      if (!Number.isNaN(n)) return n >= 4 ? "good" : n >= 3 ? "warn" : "bad";
+      if (["pending", "proses", "kurang"].some((w) => str.includes(w)))
+        return "warn";
+      if (["gagal", "lewat", "rusak"].some((w) => str.includes(w)))
         return "bad";
-      }
-
+      if (["baik", "aman", "sesuai"].some((w) => str.includes(w)))
+        return "good";
       return "neutral";
     };
 
-    // ---- Identitas (masih di halaman 1 bila muat) ----
+    // ---- Identitas ----
     const info = doc.createElement("div");
     info.className = "info-grid";
     info.innerHTML = `
@@ -1039,7 +956,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       head.innerHTML = `<div class="title">${titleMap[theme]}</div>`;
       appendBlock(head);
 
-      // --- Attitude ---
       if (theme === "attitude") {
         const rawScores = (evalData?.attitude?.scores ?? {}) as Record<
           string,
@@ -1109,13 +1025,7 @@ export default function Lampiran({ data }: { data: AppState }) {
           );
           appendBlock(tblWrap);
         }
-      }
-      // --- Kompetensi / Prestasi / Kepatuhan ---
-      else if (
-        theme === "kompetensi" ||
-        theme === "prestasi" ||
-        theme === "kepatuhan"
-      ) {
+      } else {
         const ITEMS =
           theme === "kompetensi"
             ? KOMPETENSI_ITEMS
@@ -1175,9 +1085,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       head.innerHTML = `<div class="title">Target & Achievement</div>`;
       appendBlock(head);
 
-      // sumber target yang kita dukung
       const rawTarget = (data as unknown as AppLike).target as any;
-      const PRINCIPALS = ["FRI", "SPJ", "APA", "WPL"] as const;
 
       const pick = (obj: any, keys: string[]) => {
         if (!obj) return undefined;
@@ -1332,7 +1240,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         targetTblWrap.appendChild(targetTbl);
         appendBlock(targetTblWrap);
 
-        // 3) Laporan Penjualan ke Prinsipal Mingguan
+        // 3) Laporan Mingguan
         const reportBlock = doc.createElement("div");
         reportBlock.className = "section page-break-avoid";
         reportBlock.innerHTML = `<div class="subhead">Laporan Penjualan ke Prinsipal Mingguan</div>`;
@@ -1362,7 +1270,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         reportBlock.appendChild(repTbl);
         appendBlock(reportBlock);
       } else {
-        // ---- fallback renderer generik ----
+        // fallback generic renderer (dipertahankan)
         const valueToHTML = (v: unknown): string => {
           if (v == null || v === "") return "";
           if (typeof v === "boolean") return v ? "Ya" : "–";
@@ -1386,8 +1294,7 @@ export default function Lampiran({ data }: { data: AppState }) {
             );
           }
           if (isRecord(v)) {
-            const entries = Object.entries(v);
-            const rows = entries
+            const rows = Object.entries(v)
               .map(([k, val]) => {
                 if (isBoolArray(val)) {
                   const t = val.filter(Boolean).length;
@@ -1513,9 +1420,9 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
     }
 
-    // =========================
-    // PROJECT TRACKING (SPARTA)
-    // =========================
+    /* =========================
+       PROJECT TRACKING (SPARTA)
+       ========================= */
     {
       const head = doc.createElement("div");
       head.className = "section";
@@ -1631,9 +1538,9 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
     }
 
-    // =========================
-    // AGENDA & JADWAL
-    // =========================
+    /* =========================
+       AGENDA & JADWAL
+       ========================= */
     {
       const head = doc.createElement("div");
       head.className = "section";
@@ -1757,18 +1664,15 @@ export default function Lampiran({ data }: { data: AppState }) {
       // 1) buat iframe isolasi
       const { doc: isoDoc, cleanup } = createIsolatedIframe();
 
-      // 2) build layout di dokumen isolasi (sudah auto-paginate)
+      // 2) build layout di dokumen isolasi (auto-paginate)
       buildPrintLayout(isoDoc);
 
-      // 3) render setiap .page menjadi satu halaman PDF
+      // 3) render setiap .page menjadi 1 halaman PDF (full-bleed, tanpa shrink)
       const pages = Array.from(isoDoc.querySelectorAll<HTMLElement>(".page"));
 
       const pdf = new jsPDF({ unit: "pt", format: "a4" });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
-      const margin = 24;
-      const usableW = pageW - margin * 2;
-      const usableH = pageH - margin * 2;
 
       for (let i = 0; i < pages.length; i++) {
         const el = pages[i];
@@ -1786,18 +1690,9 @@ export default function Lampiran({ data }: { data: AppState }) {
 
         const imgData = canvas.toDataURL("image/jpeg", 0.92);
 
-        // Scale-to-fit agar tidak kepotong
-        let drawW = usableW;
-        let drawH = (canvas.height / canvas.width) * drawW;
-        if (drawH > usableH) {
-          drawH = usableH;
-          drawW = (canvas.width / canvas.height) * drawH;
-        }
-        const x = margin + (usableW - drawW) / 2;
-        const y = margin + (usableH - drawH) / 2;
-
         if (i > 0) pdf.addPage();
-        pdf.addImage(imgData, "JPEG", x, y, drawW, drawH, undefined, "FAST");
+        // Isi penuh halaman: tidak diperkecil, 1:1 ratio A4
+        pdf.addImage(imgData, "JPEG", 0, 0, pageW, pageH, undefined, "FAST");
       }
 
       // 4) bersihkan iframe
@@ -1918,7 +1813,7 @@ export default function Lampiran({ data }: { data: AppState }) {
                 Project Tracking (SPARTA), dan Agenda & Jadwal.
               </div>
               <div className="mt-3 text-xs text-slate-500">
-                *Layout khusus agar rapi & konsisten.
+                *Auto pagination, tidak kepotong & tidak mengecil.
               </div>
             </div>
           </div>
