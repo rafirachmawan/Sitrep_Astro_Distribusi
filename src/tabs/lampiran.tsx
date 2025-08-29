@@ -734,6 +734,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   .section{margin-top:18px;}
   .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;}
   .muted{color:#64748b;}
+  .page-break-avoid{break-inside:avoid;page-break-inside:avoid;}
 
   /* === Header tone selaras dengan tabel/pill === */
   :root{
@@ -815,8 +816,8 @@ export default function Lampiran({ data }: { data: AppState }) {
   .progress>div{height:100%;background:#2563eb;transition:width .2s ease}
   .chk{list-style:none;margin:0;padding:0}
   .step{display:flex;gap:8px;align-items:center;margin:6px 0}
-  /* pakai checkbox bulat seragam untuk item langkah */
-  .step .cbx{flex:0 0 14px}
+  .icon{box-sizing:border-box;display:inline-flex;width:16px;height:16px;border-radius:4px;border:1px solid #cbd5e1;align-items:center;justify-content:center;font-size:11px;line-height:1;color:#94a3b8;background:#fff;}
+  .done .icon{background:#10b981;border-color:#10b981;color:#fff}
   .label{line-height:1.35}
   .done .label{text-decoration:line-through;color:#6b7280}
   .kpi th:nth-child(1){width:28%}
@@ -865,20 +866,36 @@ export default function Lampiran({ data }: { data: AppState }) {
   .status-badge.bad{background:var(--bad-bg);color:var(--bad-fg);}
   .status-badge.neutral{background:var(--neu-bg);color:var(--neu-fg);}
 `;
-
     root.appendChild(st);
 
-    const page = doc.createElement("div");
-    page.className = "page";
-    root.appendChild(page);
+    // ---- Pagination helpers ----
+    const PAGE_MAX_PX = 1123; // sesuai .page min-height
+    const makePage = () => {
+      const p = doc.createElement("div");
+      p.className = "page";
+      root.appendChild(p);
+      return p;
+    };
+    let page = makePage();
 
+    const appendBlock = (el: HTMLElement) => {
+      page.appendChild(el);
+      // jika melebihi tinggi halaman, pindahkan ke halaman baru
+      if (page.scrollHeight > PAGE_MAX_PX) {
+        page.removeChild(el);
+        page = makePage();
+        page.appendChild(el);
+      }
+    };
+
+    // ---- Header (halaman pertama) ----
     const header = doc.createElement("div");
     header.className = "banner";
     header.innerHTML = `
       <div style="font-weight:800;font-size:14px;letter-spacing:.3px;">LEADER MONITORING DAILY</div>
       <div class="muted" style="margin-top:2px;">Laporan Harian</div>
       <div class="muted">Tanggal: ${todayISO()}</div>`;
-    page.appendChild(header);
+    appendBlock(header);
 
     // ==== fungsi bantu klasifikasi status -> warna ====
     const classifyStatus = (
@@ -949,6 +966,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       return "neutral";
     };
 
+    // ---- Identitas (masih di halaman 1 bila muat) ----
     const info = doc.createElement("div");
     info.className = "info-grid";
     info.innerHTML = `
@@ -959,701 +977,772 @@ export default function Lampiran({ data }: { data: AppState }) {
         (user as AnyUser | undefined)?.role || ""
       }</div></div>
       <div class="card"><div class="label">Depo</div><div style="font-weight:700">TULUNGAGUNG</div></div>`;
-    page.appendChild(info);
+    appendBlock(info);
 
-    const ck = doc.createElement("div");
-    ck.className = "section";
-    ck.innerHTML = `<div class="title">Rangkuman Checklist</div>`;
-    checklistBlocks.forEach((sec) => {
-      const secEl = doc.createElement("div");
-      secEl.className = "mb8";
-      secEl.innerHTML = `<div class="subhead">${sec.section.toUpperCase()}</div>`;
-      const tbl = doc.createElement("table");
-      tbl.className = "table striped checklist";
-      tbl.innerHTML = `<colgroup>
-        <col style="width:26%">
-        <col style="width:18%">
-        <col style="width:56%">
-      </colgroup>
-      <thead><tr><th>Area</th><th>Status</th><th>Catatan</th></tr></thead>`;
-      const tb = doc.createElement("tbody");
-      sec.rows.forEach((r) => {
-        const cls = classifyStatus(r.value);
-        const valueHtml = `<span class="status-badge ${cls}">${escapeHtml(
-          String(r.value || "")
-        )}</span>`;
-        tb.insertAdjacentHTML(
-          "beforeend",
-          `<tr>
-             <td>${r.label || ""}</td>
-             <td>${valueHtml}</td>
-             <td>${r.note || ""}</td>
-           </tr>`
-        );
+    /* =========================
+       RANGKUMAN CHECKLIST
+       ========================= */
+    {
+      const head = doc.createElement("div");
+      head.className = "section";
+      head.innerHTML = `<div class="title">Rangkuman Checklist</div>`;
+      appendBlock(head);
+
+      checklistBlocks.forEach((sec) => {
+        const secEl = doc.createElement("div");
+        secEl.className = "section page-break-avoid";
+        secEl.innerHTML = `<div class="subhead">${sec.section.toUpperCase()}</div>`;
+        const tbl = doc.createElement("table");
+        tbl.className = "table striped checklist";
+        tbl.innerHTML = `<colgroup>
+          <col style="width:26%">
+          <col style="width:18%">
+          <col style="width:56%">
+        </colgroup>
+        <thead><tr><th>Area</th><th>Status</th><th>Catatan</th></tr></thead>`;
+        const tb = doc.createElement("tbody");
+        sec.rows.forEach((r) => {
+          const cls = classifyStatus(r.value);
+          const valueHtml = `<span class="status-badge ${cls}">${escapeHtml(
+            String(r.value || "")
+          )}</span>`;
+          tb.insertAdjacentHTML(
+            "beforeend",
+            `<tr>
+               <td>${r.label || ""}</td>
+               <td>${valueHtml}</td>
+               <td>${r.note || ""}</td>
+             </tr>`
+          );
+        });
+        tbl.appendChild(tb);
+        secEl.appendChild(tbl);
+        appendBlock(secEl);
       });
-      tbl.appendChild(tb);
-      secEl.appendChild(tbl);
-      ck.appendChild(secEl);
-    });
-    page.appendChild(ck);
+    }
 
     /* =========================
        EVALUASI TIM
        ========================= */
-    const evalSec = doc.createElement("div");
-    evalSec.className = "section";
-    const titleMap: Record<Theme, string> = {
-      attitude: "Evaluasi Tim · Attitude (HEBAT)",
-      kompetensi: "Evaluasi Tim · Kompetensi",
-      prestasi: "Evaluasi Tim · Prestasi",
-      kepatuhan: "Evaluasi Tim · Kepatuhan SOP",
-      kosong: "Evaluasi Tim",
-    };
-    evalSec.innerHTML = `<div class="title">${titleMap[theme]}</div>`;
-
-    // --- Attitude ---
-    if (theme === "attitude") {
-      const rawScores = (evalData?.attitude?.scores ?? {}) as Record<
-        string,
-        unknown
-      >;
-      const rawNotes = (evalData?.attitude?.notes ?? {}) as Record<
-        string,
-        string
-      >;
-
-      const makeTable = (
-        scoreOf: (code: string) => unknown,
-        noteOf: (code: string) => string | undefined
-      ) => {
-        const tbl = doc.createElement("table");
-        tbl.className = "table striped";
-        tbl.innerHTML = `<colgroup>
-          <col style="width:50%">
-          <col style="width:14%">
-          <col style="width:36%">
-        </colgroup>
-        <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
-        const tb = doc.createElement("tbody");
-        HEBAT_ITEMS.forEach((i) => {
-          const val = scoreOf(i.code);
-          const note = noteOf(i.code) || "";
-          tb.insertAdjacentHTML(
-            "beforeend",
-            `<tr>
-               <td>[${i.code}] ${i.title}</td>
-               <td><b>${val ?? ""}</b></td>
-               <td>${note}</td>
-             </tr>`
-          );
-        });
-        tbl.appendChild(tb);
-        return tbl;
+    {
+      const titleMap: Record<Theme, string> = {
+        attitude: "Evaluasi Tim · Attitude (HEBAT)",
+        kompetensi: "Evaluasi Tim · Kompetensi",
+        prestasi: "Evaluasi Tim · Prestasi",
+        kepatuhan: "Evaluasi Tim · Kepatuhan SOP",
+        kosong: "Evaluasi Tim",
       };
+      const head = doc.createElement("div");
+      head.className = "section";
+      head.innerHTML = `<div class="title">${titleMap[theme]}</div>`;
+      appendBlock(head);
 
-      const hasPerPerson = PERSONS.some((p) =>
-        HEBAT_ITEMS.some(
-          (i) =>
-            rawScores[`${p}::${i.code}`] !== undefined ||
-            (rawNotes[`${p}::${i.code}`] || "").trim() !== ""
-        )
-      );
+      // --- Attitude ---
+      if (theme === "attitude") {
+        const rawScores = (evalData?.attitude?.scores ?? {}) as Record<
+          string,
+          unknown
+        >;
+        const rawNotes = (evalData?.attitude?.notes ?? {}) as Record<
+          string,
+          string
+        >;
 
-      if (hasPerPerson) {
-        PERSONS.forEach((p) => {
-          const block = doc.createElement("div");
-          block.className = "mb8";
-          block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
-          const tbl = makeTable(
-            (code) => (rawScores as Record<string, unknown>)[`${p}::${code}`],
-            (code) => (rawNotes as Record<string, string>)[`${p}::${code}`]
-          );
-          block.appendChild(tbl);
-          evalSec.appendChild(block);
-        });
-      } else {
-        const tbl = makeTable(
-          (code) => (rawScores as Record<string, unknown>)[code],
-          (code) => (rawNotes as Record<string, string>)[code]
+        const makeTable = (
+          scoreOf: (code: string) => unknown,
+          noteOf: (code: string) => string | undefined
+        ) => {
+          const wrap = doc.createElement("div");
+          wrap.className = "section page-break-avoid";
+          const tbl = doc.createElement("table");
+          tbl.className = "table striped";
+          tbl.innerHTML = `<colgroup>
+            <col style="width:50%">
+            <col style="width:14%">
+            <col style="width:36%">
+          </colgroup>
+          <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
+          const tb = doc.createElement("tbody");
+          HEBAT_ITEMS.forEach((i) => {
+            const val = scoreOf(i.code);
+            const note = noteOf(i.code) || "";
+            tb.insertAdjacentHTML(
+              "beforeend",
+              `<tr>
+                 <td>[${i.code}] ${i.title}</td>
+                 <td><b>${val ?? ""}</b></td>
+                 <td>${note}</td>
+               </tr>`
+            );
+          });
+          tbl.appendChild(tb);
+          wrap.appendChild(tbl);
+          return wrap;
+        };
+
+        const hasPerPerson = PERSONS.some((p) =>
+          HEBAT_ITEMS.some(
+            (i) =>
+              rawScores[`${p}::${i.code}`] !== undefined ||
+              (rawNotes[`${p}::${i.code}`] || "").trim() !== ""
+          )
         );
-        evalSec.appendChild(tbl);
+
+        if (hasPerPerson) {
+          PERSONS.forEach((p) => {
+            const block = doc.createElement("div");
+            block.className = "section";
+            block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
+            const tblWrap = makeTable(
+              (code) => (rawScores as Record<string, unknown>)[`${p}::${code}`],
+              (code) => (rawNotes as Record<string, string>)[`${p}::${code}`]
+            );
+            block.appendChild(tblWrap.firstChild as HTMLElement);
+            appendBlock(block);
+          });
+        } else {
+          const tblWrap = makeTable(
+            (code) => (rawScores as Record<string, unknown>)[code],
+            (code) => (rawNotes as Record<string, string>)[code]
+          );
+          appendBlock(tblWrap);
+        }
+      }
+      // --- Kompetensi / Prestasi / Kepatuhan ---
+      else if (
+        theme === "kompetensi" ||
+        theme === "prestasi" ||
+        theme === "kepatuhan"
+      ) {
+        const ITEMS =
+          theme === "kompetensi"
+            ? KOMPETENSI_ITEMS
+            : theme === "prestasi"
+            ? PRESTASI_ITEMS
+            : SOP_ITEMS;
+
+        PERSONS.forEach((p) => {
+          const perKey = `${theme}_${p}` as const;
+          const payload = ((evalData as any)[perKey] ?? {}) as {
+            scores?: Record<string, unknown>;
+            notes?: Record<string, string>;
+          };
+          const scores = payload.scores ?? {};
+          const notes = payload.notes ?? {};
+
+          const block = doc.createElement("div");
+          block.className = "section page-break-avoid";
+          block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
+
+          const tbl = doc.createElement("table");
+          tbl.className = "table striped";
+          tbl.innerHTML = `<colgroup>
+            <col style="width:50%">
+            <col style="width:14%">
+            <col style="width:36%">
+          </colgroup>
+          <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
+          const tb = doc.createElement("tbody");
+
+          ITEMS.forEach((i) => {
+            const val = (scores as Record<string, unknown>)[i.key];
+            const note = (notes as Record<string, string>)[i.key] || "";
+            tb.insertAdjacentHTML(
+              "beforeend",
+              `<tr>
+                 <td>${i.title}</td>
+                 <td><b>${val ?? ""}</b></td>
+                 <td>${note}</td>
+               </tr>`
+            );
+          });
+
+          tbl.appendChild(tb);
+          block.appendChild(tbl);
+          appendBlock(block);
+        });
       }
     }
-    // --- Kompetensi / Prestasi / Kepatuhan ---
-    else if (
-      theme === "kompetensi" ||
-      theme === "prestasi" ||
-      theme === "kepatuhan"
-    ) {
-      const ITEMS =
-        theme === "kompetensi"
-          ? KOMPETENSI_ITEMS
-          : theme === "prestasi"
-          ? PRESTASI_ITEMS
-          : SOP_ITEMS;
-
-      PERSONS.forEach((p) => {
-        const perKey = `${theme}_${p}` as const;
-        const payload = ((evalData as any)[perKey] ?? {}) as {
-          scores?: Record<string, unknown>;
-          notes?: Record<string, string>;
-        };
-        const scores = payload.scores ?? {};
-        const notes = payload.notes ?? {};
-
-        const block = doc.createElement("div");
-        block.className = "mb8";
-        block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
-
-        const tbl = doc.createElement("table");
-        tbl.className = "table striped";
-        tbl.innerHTML = `<colgroup>
-          <col style="width:50%">
-          <col style="width:14%">
-          <col style="width:36%">
-        </colgroup>
-        <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
-        const tb = doc.createElement("tbody");
-
-        ITEMS.forEach((i) => {
-          const val = (scores as Record<string, unknown>)[i.key];
-          const note = (notes as Record<string, string>)[i.key] || "";
-          tb.insertAdjacentHTML(
-            "beforeend",
-            `<tr>
-               <td>${i.title}</td>
-               <td><b>${val ?? ""}</b></td>
-               <td>${note}</td>
-             </tr>`
-          );
-        });
-
-        tbl.appendChild(tb);
-        block.appendChild(tbl);
-        evalSec.appendChild(block);
-      });
-    }
-    page.appendChild(evalSec);
 
     /* =========================
        TARGET & ACHIEVEMENT — UI style
        ========================= */
-    const tgtSec = doc.createElement("div");
-    tgtSec.className = "section";
-    tgtSec.innerHTML = `<div class="title">Target & Achievement</div>`;
+    {
+      const head = doc.createElement("div");
+      head.className = "section";
+      head.innerHTML = `<div class="title">Target & Achievement</div>`;
+      appendBlock(head);
 
-    // sumber target yang kita dukung
-    const rawTarget = (data as unknown as AppLike).target as any;
-    const PRINCIPALS = ["FRI", "SPJ", "APA", "WPL"] as const;
+      // sumber target yang kita dukung
+      const rawTarget = (data as unknown as AppLike).target as any;
+      const PRINCIPALS = ["FRI", "SPJ", "APA", "WPL"] as const;
 
-    const pick = (obj: any, keys: string[]) => {
-      if (!obj) return undefined;
-      for (const k of keys) {
-        if (obj[k] !== undefined) return obj[k];
-        const alt = Object.keys(obj).find(
-          (x) => x.toLowerCase() === k.toLowerCase()
-        );
-        if (alt) return obj[alt];
-      }
-      return undefined;
-    };
-    const toBool = (v: any) => {
-      if (typeof v === "boolean") return v;
-      if (typeof v === "number") return v !== 0;
-      if (typeof v === "string")
-        return ["true", "1", "ya", "yes", "y", "selesai"].includes(
-          v.trim().toLowerCase()
-        );
-      return !!v;
-    };
-    const toWeeks = (v: any): boolean[] => {
-      if (Array.isArray(v)) return clampBools(v.map(toBool), 4);
-      if (isRecord(v)) {
-        const a = [
-          pick(v, ["w1", "1"]),
-          pick(v, ["w2", "2"]),
-          pick(v, ["w3", "3"]),
-          pick(v, ["w4", "4"]),
-        ].map(toBool);
-        return clampBools(a, 4);
-      }
-      return [false, false, false, false];
-    };
-    const fmtDate = (d: any) => {
-      if (!d) return "";
-      if (typeof d === "string") return d;
-      try {
-        const x = new Date(d);
-        return Number.isNaN(+x) ? String(d) : x.toISOString().slice(0, 10);
-      } catch {
-        return String(d);
-      }
-    };
-
-    const klaimSrc =
-      pick(rawTarget, ["klaimSelesai"]) ||
-      pick(rawTarget, ["klaimBulanan", "klaim", "penyelesaianKlaim", "claims"]);
-    const laporanSrc =
-      pick(rawTarget, ["weekly"]) ||
-      pick(rawTarget, ["laporanMingguan", "laporanPrinsipal", "weeklyReports"]);
-    const tgtBulananSrc =
-      pick(rawTarget, ["targetSelesai"]) ||
-      pick(rawTarget, [
-        "klaimBulananTarget",
-        "targetBulanan",
-        "targetSelesaiBulanIni",
-      ]);
-    const deadlinesSrc = pick(rawTarget, ["deadlines", "deadline", "dues"]);
-
-    const looksLikeUI =
-      isRecord(klaimSrc) ||
-      isRecord(laporanSrc) ||
-      tgtBulananSrc !== undefined ||
-      rawTarget?.target !== undefined ||
-      rawTarget?.deadline !== undefined;
-
-    if (looksLikeUI) {
-      // 1) Penyelesaian Klaim Bulan Ini
-      const klaimBlock = doc.createElement("div");
-      klaimBlock.className = "mb8";
-      klaimBlock.innerHTML = `<div class="subhead">Penyelesaian Klaim Bulan Ini <span class="hint">(reset setiap awal bulan)</span></div>`;
-      const klaimTable = doc.createElement("table");
-      klaimTable.className = "table striped";
-      klaimTable.innerHTML = `<thead><tr><th>Jenis</th><th style="width:18%">Selesai</th><th style="width:30%">Deadline</th></tr></thead>`;
-      const kbody = doc.createElement("tbody");
-      PRINCIPALS.forEach((p) => {
-        const row =
-          (klaimSrc && (klaimSrc[p] ?? klaimSrc[p.toLowerCase()])) ?? {};
-        const selesai = toBool(
-          isRecord(row)
-            ? pick(row, ["selesai", "done", "value", "checked"])
-            : row
-        );
-        const rowDeadline =
-          (isRecord(row) && pick(row, ["deadline", "due", "tanggal"])) ??
-          (isRecord(deadlinesSrc) &&
-            isRecord((deadlinesSrc as any).klaim) &&
-            ((deadlinesSrc as any).klaim[p] ??
-              (deadlinesSrc as any).klaim[p.toLowerCase()])) ??
-          (isRecord(deadlinesSrc) && (deadlinesSrc as any).klaim);
-        const deadline = fmtDate(rowDeadline);
-
-        kbody.insertAdjacentHTML(
-          "beforeend",
-          `<tr>
-             <td>${p}</td>
-             <td><span class="cbx ${
-               selesai ? "on" : ""
-             }"></span> <span class="small">Selesai</span></td>
-             <td>${escapeHtml(deadline)}</td>
-           </tr>`
-        );
-      });
-      klaimTable.appendChild(kbody);
-      klaimBlock.appendChild(klaimTable);
-      tgtSec.appendChild(klaimBlock);
-
-      // 2) Target Selesai (bulan ini)
-      const targetCount =
-        (isRecord(tgtBulananSrc)
-          ? pick(tgtBulananSrc, ["targetCount", "jumlah", "count", "value"])
-          : tgtBulananSrc) ??
-        rawTarget?.target ??
-        "";
-      const targetDeadline = fmtDate(
-        (isRecord(tgtBulananSrc) && pick(tgtBulananSrc, ["deadline", "due"])) ??
-          (isRecord(deadlinesSrc) && (deadlinesSrc as any).targetSelesai) ??
-          rawTarget?.deadline
-      );
-      const targetTbl = doc.createElement("table");
-      targetTbl.className = "table";
-      targetTbl.innerHTML = `<colgroup><col style="width:40%"><col style="width:60%"></colgroup>
-        <tbody>
-          <tr><th>Target Selesai (bulan ini)</th><td>${escapeHtml(
-            String(targetCount ?? "")
-          )} <span class="hint">mis. 10</span></td></tr>
-          <tr><th>Deadline</th><td>${escapeHtml(targetDeadline)}</td></tr>
-        </tbody>`;
-      tgtSec.appendChild(targetTbl);
-
-      // 3) Laporan Penjualan ke Prinsipal Mingguan
-      const reportBlock = doc.createElement("div");
-      reportBlock.className = "mb8";
-      reportBlock.innerHTML = `<div class="subhead">Laporan Penjualan ke Prinsipal Mingguan</div>`;
-      const repTbl = doc.createElement("table");
-      repTbl.className = "table striped";
-      repTbl.innerHTML = `<thead><tr><th>Prinsipal</th><th>Minggu 1</th><th>Minggu 2</th><th>Minggu 3</th><th>Minggu 4</th></tr></thead>`;
-      const rbody = doc.createElement("tbody");
-      PRINCIPALS.forEach((p) => {
-        const row =
-          (laporanSrc && (laporanSrc[p] ?? laporanSrc[p.toLowerCase()])) ?? {};
-        const weeks = toWeeks(row);
-        rbody.insertAdjacentHTML(
-          "beforeend",
-          `<tr>
-             <td>${p}</td>
-             ${weeks
-               .map(
-                 (w) => `<td><span class="cbx ${w ? "on" : ""}"></span></td>`
-               )
-               .join("")}
-           </tr>`
-        );
-      });
-      repTbl.appendChild(rbody);
-      reportBlock.appendChild(repTbl);
-      tgtSec.appendChild(reportBlock);
-    } else {
-      // ---- fallback renderer generik ----
-      const valueToHTML = (v: unknown): string => {
-        if (v == null || v === "") return "";
-        if (typeof v === "boolean") return v ? "Ya" : "–";
-        if (typeof v === "number") return String(v);
-        if (typeof v === "string") return escapeHtml(v);
-        if (Array.isArray(v)) {
-          if (isBoolArray(v)) {
-            const t = v.filter(Boolean).length;
-            return `${t}/${v.length} ✓`;
-          }
-          return escapeHtml(
-            v
-              .map((x) =>
-                isPrimitive(x)
-                  ? String(x)
-                  : isRecord(x)
-                  ? JSON.stringify(x)
-                  : String(x)
-              )
-              .join(", ")
+      const pick = (obj: any, keys: string[]) => {
+        if (!obj) return undefined;
+        for (const k of keys) {
+          if (obj[k] !== undefined) return obj[k];
+          const alt = Object.keys(obj).find(
+            (x) => x.toLowerCase() === k.toLowerCase()
           );
+          if (alt) return obj[alt];
         }
+        return undefined;
+      };
+      const toBool = (v: any) => {
+        if (typeof v === "boolean") return v;
+        if (typeof v === "number") return v !== 0;
+        if (typeof v === "string")
+          return ["true", "1", "ya", "yes", "y", "selesai"].includes(
+            v.trim().toLowerCase()
+          );
+        return !!v;
+      };
+      const toWeeks = (v: any): boolean[] => {
+        if (Array.isArray(v)) return clampBools(v.map(toBool), 4);
         if (isRecord(v)) {
-          const entries = Object.entries(v);
-          const rows = entries
-            .map(([k, val]) => {
-              if (isBoolArray(val)) {
-                const t = val.filter(Boolean).length;
-                return `<li>${escapeHtml(k)}: ${t}/${val.length} ✓</li>`;
-              }
-              if (typeof val === "boolean")
-                return `<li>${escapeHtml(k)}: ${val ? "✓" : "–"}</li>`;
-              return `<li>${escapeHtml(k)}: ${escapeHtml(
-                isPrimitive(val) ? String(val) : JSON.stringify(val)
-              )}</li>`;
-            })
-            .join("");
-          return `<ul class="ul-kv">${rows}</ul>`;
+          const a = [
+            pick(v, ["w1", "1"]),
+            pick(v, ["w2", "2"]),
+            pick(v, ["w3", "3"]),
+            pick(v, ["w4", "4"]),
+          ].map(toBool);
+          return clampBools(a, 4);
         }
-        return escapeHtml(String(v));
+        return [false, false, false, false];
+      };
+      const fmtDate = (d: any) => {
+        if (!d) return "";
+        if (typeof d === "string") return d;
+        try {
+          const x = new Date(d);
+          return Number.isNaN(+x) ? String(d) : x.toISOString().slice(0, 10);
+        } catch {
+          return String(d);
+        }
       };
 
-      if (targetView.type === "empty") {
-        const tbl = doc.createElement("table");
-        tbl.className = "table striped kpi";
-        tbl.innerHTML = `<thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead>`;
-        tbl.insertAdjacentHTML(
-          "beforeend",
-          `<tbody><tr><td></td><td></td><td>${labelStatusChip(
-            false
-          )}</td></tr></tbody>`
-        );
-        tgtSec.appendChild(tbl);
-      } else if (targetView.type === "kpi") {
-        const tbl = doc.createElement("table");
-        tbl.className = "table striped kpi";
-        tbl.innerHTML = `<thead><tr><th>KPI</th><th>Target</th><th>Realisasi</th><th>%</th><th>Catatan</th><th>Status</th></tr></thead>`;
-        const tb = doc.createElement("tbody");
-        targetView.rows.forEach((r) => {
-          const filled =
-            hasAnyTruthy(r["target"]) ||
-            hasAnyTruthy(r["plan"]) ||
-            hasAnyTruthy(
-              r["actual"] ?? r["real"] ?? r["realisasi"] ?? r["achieved"]
-            ) ||
-            hasAnyTruthy(r["percent"] ?? r["persen"] ?? r["achievement"]) ||
-            hasAnyTruthy(r["notes"] ?? r["catatan"]);
-          tb.insertAdjacentHTML(
+      const klaimSrc =
+        pick(rawTarget, ["klaimSelesai"]) ||
+        pick(rawTarget, [
+          "klaimBulanan",
+          "klaim",
+          "penyelesaianKlaim",
+          "claims",
+        ]);
+      const laporanSrc =
+        pick(rawTarget, ["weekly"]) ||
+        pick(rawTarget, [
+          "laporanMingguan",
+          "laporanPrinsipal",
+          "weeklyReports",
+        ]);
+      const tgtBulananSrc =
+        pick(rawTarget, ["targetSelesai"]) ||
+        pick(rawTarget, [
+          "klaimBulananTarget",
+          "targetBulanan",
+          "targetSelesaiBulanIni",
+        ]);
+      const deadlinesSrc = pick(rawTarget, ["deadlines", "deadline", "dues"]);
+
+      const looksLikeUI =
+        isRecord(klaimSrc) ||
+        isRecord(laporanSrc) ||
+        tgtBulananSrc !== undefined ||
+        rawTarget?.target !== undefined ||
+        rawTarget?.deadline !== undefined;
+
+      if (looksLikeUI) {
+        // 1) Penyelesaian Klaim Bulan Ini
+        const klaimBlock = doc.createElement("div");
+        klaimBlock.className = "section page-break-avoid";
+        klaimBlock.innerHTML = `<div class="subhead">Penyelesaian Klaim Bulan Ini <span class="hint">(reset setiap awal bulan)</span></div>`;
+        const klaimTable = doc.createElement("table");
+        klaimTable.className = "table striped";
+        klaimTable.innerHTML = `<thead><tr><th>Jenis</th><th style="width:18%">Selesai</th><th style="width:30%">Deadline</th></tr></thead>`;
+        const kbody = doc.createElement("tbody");
+        (["FRI", "SPJ", "APA", "WPL"] as const).forEach((p) => {
+          const row =
+            (klaimSrc && (klaimSrc[p] ?? (klaimSrc as any)[p.toLowerCase()])) ??
+            {};
+          const selesai = toBool(
+            isRecord(row)
+              ? (["selesai", "done", "value", "checked"] as const)
+                  .map((k) => (row as any)[k])
+                  .find((v) => v !== undefined)
+              : row
+          );
+          const rowDeadline =
+            (isRecord(row) &&
+              (["deadline", "due", "tanggal"] as const)
+                .map((k) => (row as any)[k])
+                .find((v) => v !== undefined)) ??
+            (isRecord(deadlinesSrc) &&
+              isRecord((deadlinesSrc as any).klaim) &&
+              ((deadlinesSrc as any).klaim[p] ??
+                (deadlinesSrc as any).klaim[p.toLowerCase()])) ??
+            (isRecord(deadlinesSrc) && (deadlinesSrc as any).klaim);
+          const deadline = fmtDate(rowDeadline);
+
+          kbody.insertAdjacentHTML(
             "beforeend",
             `<tr>
-              <td>${escapeHtml(
-                String(r["title"] ?? r["name"] ?? r["kpi"] ?? "")
-              )}</td>
-              <td>${valueToHTML(r["target"] ?? r["plan"])}</td>
-              <td>${valueToHTML(
+               <td>${p}</td>
+               <td><span class="cbx ${
+                 selesai ? "on" : ""
+               }"></span> <span class="small">Selesai</span></td>
+               <td>${escapeHtml(deadline)}</td>
+             </tr>`
+          );
+        });
+        klaimTable.appendChild(kbody);
+        klaimBlock.appendChild(klaimTable);
+        appendBlock(klaimBlock);
+
+        // 2) Target Selesai (bulan ini)
+        const targetCount =
+          (isRecord(tgtBulananSrc)
+            ? (["targetCount", "jumlah", "count", "value"] as const)
+                .map((k) => (tgtBulananSrc as any)[k])
+                .find((v) => v !== undefined)
+            : tgtBulananSrc) ??
+          rawTarget?.target ??
+          "";
+        const targetDeadline = fmtDate(
+          (isRecord(tgtBulananSrc) &&
+            (["deadline", "due"] as const)
+              .map((k) => (tgtBulananSrc as any)[k])
+              .find((v) => v !== undefined)) ??
+            (isRecord(deadlinesSrc) && (deadlinesSrc as any).targetSelesai) ??
+            rawTarget?.deadline
+        );
+        const targetTblWrap = doc.createElement("div");
+        targetTblWrap.className = "section page-break-avoid";
+        const targetTbl = doc.createElement("table");
+        targetTbl.className = "table";
+        targetTbl.innerHTML = `<colgroup><col style="width:40%"><col style="width:60%"></colgroup>
+          <tbody>
+            <tr><th>Target Selesai (bulan ini)</th><td>${escapeHtml(
+              String(targetCount ?? "")
+            )} <span class="hint">mis. 10</span></td></tr>
+            <tr><th>Deadline</th><td>${escapeHtml(targetDeadline)}</td></tr>
+          </tbody>`;
+        targetTblWrap.appendChild(targetTbl);
+        appendBlock(targetTblWrap);
+
+        // 3) Laporan Penjualan ke Prinsipal Mingguan
+        const reportBlock = doc.createElement("div");
+        reportBlock.className = "section page-break-avoid";
+        reportBlock.innerHTML = `<div class="subhead">Laporan Penjualan ke Prinsipal Mingguan</div>`;
+        const repTbl = doc.createElement("table");
+        repTbl.className = "table striped";
+        repTbl.innerHTML = `<thead><tr><th>Prinsipal</th><th>Minggu 1</th><th>Minggu 2</th><th>Minggu 3</th><th>Minggu 4</th></tr></thead>`;
+        const rbody = doc.createElement("tbody");
+        (["FRI", "SPJ", "APA", "WPL"] as const).forEach((p) => {
+          const row =
+            (laporanSrc &&
+              (laporanSrc[p] ?? (laporanSrc as any)[p.toLowerCase()])) ??
+            {};
+          const weeks = toWeeks(row);
+          rbody.insertAdjacentHTML(
+            "beforeend",
+            `<tr>
+               <td>${p}</td>
+               ${weeks
+                 .map(
+                   (w) => `<td><span class="cbx ${w ? "on" : ""}"></span></td>`
+                 )
+                 .join("")}
+             </tr>`
+          );
+        });
+        repTbl.appendChild(rbody);
+        reportBlock.appendChild(repTbl);
+        appendBlock(reportBlock);
+      } else {
+        // ---- fallback renderer generik ----
+        const valueToHTML = (v: unknown): string => {
+          if (v == null || v === "") return "";
+          if (typeof v === "boolean") return v ? "Ya" : "–";
+          if (typeof v === "number") return String(v);
+          if (typeof v === "string") return escapeHtml(v);
+          if (Array.isArray(v)) {
+            if (isBoolArray(v)) {
+              const t = v.filter(Boolean).length;
+              return `${t}/${v.length} ✓`;
+            }
+            return escapeHtml(
+              v
+                .map((x) =>
+                  isPrimitive(x)
+                    ? String(x)
+                    : isRecord(x)
+                    ? JSON.stringify(x)
+                    : String(x)
+                )
+                .join(", ")
+            );
+          }
+          if (isRecord(v)) {
+            const entries = Object.entries(v);
+            const rows = entries
+              .map(([k, val]) => {
+                if (isBoolArray(val)) {
+                  const t = val.filter(Boolean).length;
+                  return `<li>${escapeHtml(k)}: ${t}/${val.length} ✓</li>`;
+                }
+                if (typeof val === "boolean")
+                  return `<li>${escapeHtml(k)}: ${val ? "✓" : "–"}</li>`;
+                return `<li>${escapeHtml(k)}: ${escapeHtml(
+                  isPrimitive(val) ? String(val) : JSON.stringify(val)
+                )}</li>`;
+              })
+              .join("");
+            return `<ul class="ul-kv">${rows}</ul>`;
+          }
+          return escapeHtml(String(v));
+        };
+
+        if (targetView.type === "empty") {
+          const tblWrap = doc.createElement("div");
+          tblWrap.className = "section page-break-avoid";
+          const tbl = doc.createElement("table");
+          tbl.className = "table striped kpi";
+          tbl.innerHTML = `<thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead>`;
+          tbl.insertAdjacentHTML(
+            "beforeend",
+            `<tbody><tr><td></td><td></td><td>${labelStatusChip(
+              false
+            )}</td></tr></tbody>`
+          );
+          tblWrap.appendChild(tbl);
+          appendBlock(tblWrap);
+        } else if (targetView.type === "kpi") {
+          const tblWrap = doc.createElement("div");
+          tblWrap.className = "section page-break-avoid";
+          const tbl = doc.createElement("table");
+          tbl.className = "table striped kpi";
+          tbl.innerHTML = `<thead><tr><th>KPI</th><th>Target</th><th>Realisasi</th><th>%</th><th>Catatan</th><th>Status</th></tr></thead>`;
+          const tb = doc.createElement("tbody");
+          targetView.rows.forEach((r) => {
+            const filled =
+              hasAnyTruthy(r["target"]) ||
+              hasAnyTruthy(r["plan"]) ||
+              hasAnyTruthy(
                 r["actual"] ?? r["real"] ?? r["realisasi"] ?? r["achieved"]
-              )}</td>
-              <td>${valueToHTML(
-                r["percent"] ?? r["persen"] ?? r["achievement"]
-              )}</td>
-              <td>${escapeHtml(String(r["notes"] ?? r["catatan"] ?? ""))}</td>
-              <td>${labelStatusChip(filled)}</td>
-            </tr>`
-          );
-        });
-        tbl.appendChild(tb);
-        tgtSec.appendChild(tbl);
-      } else if (targetView.type === "table") {
-        const cols = targetView.cols;
-        const tbl = doc.createElement("table");
-        tbl.className = "table striped";
-        const thead = doc.createElement("thead");
-        thead.innerHTML = `<tr>${cols
-          .map((c) => `<th>${c}</th>`)
-          .join("")}<th>Status</th></tr>`;
-        tbl.appendChild(thead);
-        const tb = doc.createElement("tbody");
-        targetView.rows.forEach((row) => {
-          const filled = hasAnyTruthy(row);
-          tb.insertAdjacentHTML(
-            "beforeend",
-            `<tr>${cols
-              .map((c) => `<td>${valueToHTML(row[c])}</td>`)
-              .join("")}<td>${labelStatusChip(filled)}</td></tr>`
-          );
-        });
-        tbl.appendChild(tb);
-        tgtSec.appendChild(tbl);
-      } else if (targetView.type === "kv") {
-        const kv = targetView.kv;
-        const tbl = doc.createElement("table");
-        tbl.className = "table striped";
-        tbl.innerHTML = `<colgroup><col style="width:35%"><col style="width:45%"><col style="width:20%"></colgroup>
-          <thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead>`;
-        const tb = doc.createElement("tbody");
-        const entries = Object.entries(kv);
-        if (entries.length === 0) {
-          tb.insertAdjacentHTML(
-            "beforeend",
-            `<tr><td></td><td></td><td>${labelStatusChip(false)}</td></tr>`
-          );
-        } else {
-          entries.forEach(([k, v]) => {
-            const filled = hasAnyTruthy(v);
+              ) ||
+              hasAnyTruthy(r["percent"] ?? r["persen"] ?? r["achievement"]) ||
+              hasAnyTruthy(r["notes"] ?? r["catatan"]);
             tb.insertAdjacentHTML(
               "beforeend",
-              `<tr><td>${escapeHtml(k)}</td><td>${valueToHTML(
-                v
-              )}</td><td>${labelStatusChip(filled)}</td></tr>`
+              `<tr>
+                <td>${escapeHtml(
+                  String(r["title"] ?? r["name"] ?? r["kpi"] ?? "")
+                )}</td>
+                <td>${valueToHTML(r["target"] ?? r["plan"])}</td>
+                <td>${valueToHTML(
+                  r["actual"] ?? r["real"] ?? r["realisasi"] ?? r["achieved"]
+                )}</td>
+                <td>${valueToHTML(
+                  r["percent"] ?? r["persen"] ?? r["achievement"]
+                )}</td>
+                <td>${escapeHtml(String(r["notes"] ?? r["catatan"] ?? ""))}</td>
+                <td>${labelStatusChip(filled)}</td>
+              </tr>`
             );
           });
-        }
-        tbl.appendChild(tb);
-        tgtSec.appendChild(tbl);
-      }
-    }
-
-    page.appendChild(tgtSec);
-
-    // PROJECT TRACKING (SPARTA)
-    const spSec = doc.createElement("div");
-    spSec.className = "section";
-    spSec.innerHTML = `<div class="title">Project Tracking (SPARTA)</div>`;
-    const renderCard = (
-      p: {
-        name: string;
-        ownerRole: string;
-        deadline: string;
-        daysLeft: number | null;
-        steps: Array<{ label: string; done?: boolean }>;
-        percent: number;
-        nextAction?: string;
-        kendala?: string;
-      },
-      idx: number
-    ) => {
-      const card = doc.createElement("div");
-      card.className = "pro-card";
-      let chip = "";
-      if (p.daysLeft !== null && p.deadline) {
-        const cls = p.daysLeft < 0 ? "over" : p.daysLeft <= 3 ? "warn" : "ok";
-        const text =
-          p.daysLeft < 0
-            ? `Lewat ${Math.abs(p.daysLeft)} hari`
-            : `Kurang ${p.daysLeft} hari`;
-        chip = `<span class="chip ${cls}">${text}</span>`;
-      } else if (p.deadline) {
-        chip = `<span class="chip">${p.deadline}</span>`;
-      }
-      card.insertAdjacentHTML(
-        "beforeend",
-        `<div class="pro-head">
-           <div class="pro-title">${idx + 1}. ${p.name || ""}</div>
-           <div>${chip}</div>
-         </div>`
-      );
-      const grid = doc.createElement("div");
-      grid.className = "grid";
-      const left = doc.createElement("div");
-      left.innerHTML = `
-        <table class="table" style="border-radius:12px;overflow:hidden">
-          <tbody>
-            <tr><th style="width:30%">Owner/Role</th><td>${
-              p.ownerRole || ""
-            }</td></tr>
-            <tr><th>Deadline</th><td>${p.deadline || ""}</td></tr>
-            <tr><th>Progress</th><td>
-              <div class="progress"><div style="width:${Math.max(
-                0,
-                Math.min(100, p.percent || 0)
-              )}%"></div></div>
-              <div class="muted" style="margin-top:4px;font-weight:700">${
-                p.percent ?? 0
-              }%</div>
-            </td></tr>
-            <tr><th>Next Action</th><td>${p.nextAction || ""}</td></tr>
-            <tr><th>Kendala</th><td>${p.kendala || ""}</td></tr>
-          </tbody>
-        </table>
-      `;
-      const right = doc.createElement("div");
-      const box = doc.createElement("div");
-      box.className = "steps-panel";
-      box.innerHTML = `<div class="subhead" style="margin:0 0 6px">Langkah</div>`;
-      const steps =
-        p.steps && p.steps.length ? p.steps : [{ label: "" }, { label: "" }];
-      const ul = doc.createElement("ul");
-      ul.className = "chk";
-      steps.forEach((s) => {
-        ul.insertAdjacentHTML(
-          "beforeend",
-          `<li class="step ${s.done ? "done" : ""}">
-             <span class="cbx ${s.done ? "on" : ""}"></span>
-             <span class="label">${s.label || ""}</span>
-           </li>`
-        );
-      });
-      box.appendChild(ul);
-      right.appendChild(box);
-      grid.appendChild(left);
-      grid.appendChild(right);
-      card.appendChild(grid);
-      return card;
-    };
-    if (!projectList.length) {
-      spSec.appendChild(
-        renderCard(
-          {
-            name: "",
-            ownerRole: "",
-            deadline: "",
-            daysLeft: null,
-            percent: 0,
-            steps: [{ label: "" }],
-          },
-          0
-        )
-      );
-    } else {
-      projectList.forEach((p, idx) => spSec.appendChild(renderCard(p, idx)));
-    }
-    page.appendChild(spSec);
-
-    // AGENDA & JADWAL
-    const agSec = doc.createElement("div");
-    agSec.className = "section";
-    agSec.innerHTML = `<div class="title">Agenda & Jadwal</div>`;
-
-    const agenda = ((data as unknown as AppLike).agenda?.entries ??
-      []) as AppLike["agenda"]["entries"];
-
-    if (agenda.length) {
-      const sorted = [...agenda].sort((a, b) =>
-        a.date === b.date
-          ? a.updatedAt && b.updatedAt
-            ? a.updatedAt < b.updatedAt
-              ? 1
-              : -1
-            : 0
-          : a.date < b.date
-          ? 1
-          : -1
-      );
-
-      type AgendaEntry = NonNullable<AppLike["agenda"]>["entries"][number];
-      const groups: Record<string, AgendaEntry[]> = {};
-      for (const e of sorted as AgendaEntry[]) {
-        (groups[e.date] ||= []).push(e);
-      }
-
-      Object.entries(groups).forEach(([tgl, items]) => {
-        const block = doc.createElement("div");
-        block.className = "mb8";
-        block.innerHTML = `<div class="subhead">${tgl}</div>`;
-
-        items.forEach((e, i) => {
+          tbl.appendChild(tb);
+          tblWrap.appendChild(tbl);
+          appendBlock(tblWrap);
+        } else if (targetView.type === "table") {
+          const cols = targetView.cols;
+          const tblWrap = doc.createElement("div");
+          tblWrap.className = "section page-break-avoid";
           const tbl = doc.createElement("table");
           tbl.className = "table striped";
-          const planHtml = (e.plan ?? [])
-            .map((x) => `<li>${escapeHtml(x)}</li>`)
-            .join("");
-          const realHtml = (e.realisasi ?? [])
-            .map((x) => `<li>${escapeHtml(x)}</li>`)
-            .join("");
+          const thead = doc.createElement("thead");
+          thead.innerHTML = `<tr>${cols
+            .map((c) => `<th>${c}</th>`)
+            .join("")}<th>Status</th></tr>`;
+          tbl.appendChild(thead);
+          const tb = doc.createElement("tbody");
+          targetView.rows.forEach((row) => {
+            const filled = hasAnyTruthy(row);
+            tb.insertAdjacentHTML(
+              "beforeend",
+              `<tr>${cols
+                .map((c) => `<td>${valueToHTML(row[c])}</td>`)
+                .join("")}<td>${labelStatusChip(filled)}</td></tr>`
+            );
+          });
+          tbl.appendChild(tb);
+          tblWrap.appendChild(tbl);
+          appendBlock(tblWrap);
+        } else if (targetView.type === "kv") {
+          const kv = targetView.kv;
+          const tblWrap = doc.createElement("div");
+          tblWrap.className = "section page-break-avoid";
+          const tbl = doc.createElement("table");
+          tbl.className = "table striped";
+          tbl.innerHTML = `<colgroup><col style="width:35%"><col style="width:45%"><col style="width:20%"></colgroup>
+            <thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead>`;
+          const tb = doc.createElement("tbody");
+          const entries = Object.entries(kv);
+          if (entries.length === 0) {
+            tb.insertAdjacentHTML(
+              "beforeend",
+              `<tr><td></td><td></td><td>${labelStatusChip(false)}</td></tr>`
+            );
+          } else {
+            entries.forEach(([k, v]) => {
+              const filled = hasAnyTruthy(v);
+              tb.insertAdjacentHTML(
+                "beforeend",
+                `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(
+                  isPrimitive(v) ? String(v) : JSON.stringify(v)
+                )}</td><td>${labelStatusChip(filled)}</td></tr>`
+              );
+            });
+          }
+          tbl.appendChild(tb);
+          tblWrap.appendChild(tbl);
+          appendBlock(tblWrap);
+        }
+      }
+    }
 
-          tbl.innerHTML = `<colgroup><col style="width:20%"><col style="width:80%"></colgroup>
-        <tbody>
-          <tr><th>Plan ${i + 1}</th><td>${
-            planHtml ? `<ul class="ul-kv">${planHtml}</ul>` : ""
-          }</td></tr>
-          <tr><th>Realisasi ${i + 1}</th><td>${
-            realHtml ? `<ul class="ul-kv">${realHtml}</ul>` : ""
-          }</td></tr>
-          <tr><th>Status</th><td>
-            <span class="pill">${
-              e.planSubmitted ? "Plan terkunci" : "Plan draft"
-            }</span>
-            &nbsp;
-            <span class="pill">${
-              e.realSubmitted ? "Realisasi terkunci" : "Realisasi draft"
-            }</span>
-          </td></tr>
-        </tbody>`;
-          block.appendChild(tbl);
+    // =========================
+    // PROJECT TRACKING (SPARTA)
+    // =========================
+    {
+      const head = doc.createElement("div");
+      head.className = "section";
+      head.innerHTML = `<div class="title">Project Tracking (SPARTA)</div>`;
+      appendBlock(head);
+
+      const renderCard = (
+        p: {
+          name: string;
+          ownerRole: string;
+          deadline: string;
+          daysLeft: number | null;
+          steps: Array<{ label: string; done?: boolean }>;
+          percent: number;
+          nextAction?: string;
+          kendala?: string;
+        },
+        idx: number
+      ) => {
+        const card = doc.createElement("div");
+        card.className = "pro-card page-break-avoid";
+        let chip = "";
+        if (p.daysLeft !== null && p.deadline) {
+          const cls = p.daysLeft < 0 ? "over" : p.daysLeft <= 3 ? "warn" : "ok";
+          const text =
+            p.daysLeft < 0
+              ? `Lewat ${Math.abs(p.daysLeft)} hari`
+              : `Kurang ${p.daysLeft} hari`;
+          chip = `<span class="chip ${cls}">${text}</span>`;
+        } else if (p.deadline) {
+          chip = `<span class="chip">${p.deadline}</span>`;
+        }
+        card.insertAdjacentHTML(
+          "beforeend",
+          `<div class="pro-head">
+             <div class="pro-title">${idx + 1}. ${p.name || ""}</div>
+             <div>${chip}</div>
+           </div>`
+        );
+        const grid = doc.createElement("div");
+        grid.className = "grid";
+        const left = doc.createElement("div");
+        left.innerHTML = `
+          <table class="table" style="border-radius:12px;overflow:hidden">
+            <tbody>
+              <tr><th style="width:30%">Owner/Role</th><td>${
+                p.ownerRole || ""
+              }</td></tr>
+              <tr><th>Deadline</th><td>${p.deadline || ""}</td></tr>
+              <tr><th>Progress</th><td>
+                <div class="progress"><div style="width:${Math.max(
+                  0,
+                  Math.min(100, p.percent || 0)
+                )}%"></div></div>
+                <div class="muted" style="margin-top:4px;font-weight:700">${
+                  p.percent ?? 0
+                }%</div>
+              </td></tr>
+              <tr><th>Next Action</th><td>${p.nextAction || ""}</td></tr>
+              <tr><th>Kendala</th><td>${p.kendala || ""}</td></tr>
+            </tbody>
+          </table>
+        `;
+        const right = doc.createElement("div");
+        const box = doc.createElement("div");
+        box.className = "steps-panel";
+        box.innerHTML = `<div class="subhead" style="margin:0 0 6px">Langkah</div>`;
+        const steps =
+          p.steps && p.steps.length ? p.steps : [{ label: "" }, { label: "" }];
+        const ul = doc.createElement("ul");
+        ul.className = "chk";
+        steps.forEach((s) => {
+          ul.insertAdjacentHTML(
+            "beforeend",
+            `<li class="step ${s.done ? "done" : ""}">
+               <span class="icon">${s.done ? "✓" : ""}</span>
+               <span class="label">${s.label || ""}</span>
+             </li>`
+          );
         });
+        box.appendChild(ul);
+        right.appendChild(box);
+        grid.appendChild(left);
+        grid.appendChild(right);
+        card.appendChild(grid);
+        return card;
+      };
 
-        agSec.appendChild(block);
-      });
+      if (!projectList.length) {
+        const wrap = doc.createElement("div");
+        wrap.className = "section";
+        wrap.appendChild(
+          renderCard(
+            {
+              name: "",
+              ownerRole: "",
+              deadline: "",
+              daysLeft: null,
+              percent: 0,
+              steps: [{ label: "" }],
+            },
+            0
+          )
+        );
+        appendBlock(wrap);
+      } else {
+        projectList.forEach((p, idx) => {
+          const wrap = doc.createElement("div");
+          wrap.className = "section";
+          wrap.appendChild(renderCard(p, idx));
+          appendBlock(wrap);
+        });
+      }
     }
-    page.appendChild(agSec);
 
-    // TTD
-    const sigWrap = doc.createElement("div");
-    sigWrap.className = "section sigwrap";
-    const sigTitle = doc.createElement("div");
-    sigTitle.className = "title sigtitle";
-    sigTitle.textContent = "Tanda Tangan";
-    sigWrap.appendChild(sigTitle);
-    const sigRow = doc.createElement("div");
-    sigRow.className = "sigrow";
-    const sigBox = doc.createElement("div");
-    sigBox.className = "sigbox";
-    if (sigDataUrl) {
-      const img = doc.createElement("img");
-      img.src = sigDataUrl;
-      sigBox.appendChild(img);
-    } else {
-      sigBox.appendChild(doc.createTextNode(" "));
+    // =========================
+    // AGENDA & JADWAL
+    // =========================
+    {
+      const head = doc.createElement("div");
+      head.className = "section";
+      head.innerHTML = `<div class="title">Agenda & Jadwal</div>`;
+      appendBlock(head);
+
+      const agenda = ((data as unknown as AppLike).agenda?.entries ??
+        []) as AppLike["agenda"]["entries"];
+
+      if (agenda.length) {
+        const sorted = [...agenda].sort((a, b) =>
+          a.date === b.date
+            ? a.updatedAt && b.updatedAt
+              ? a.updatedAt < b.updatedAt
+                ? 1
+                : -1
+              : 0
+            : a.date < b.date
+            ? 1
+            : -1
+        );
+
+        type AgendaEntry = NonNullable<AppLike["agenda"]>["entries"][number];
+        const groups: Record<string, AgendaEntry[]> = {};
+        for (const e of sorted as AgendaEntry[]) {
+          (groups[e.date] ||= []).push(e);
+        }
+
+        Object.entries(groups).forEach(([tgl, items]) => {
+          const block = doc.createElement("div");
+          block.className = "section page-break-avoid";
+          block.innerHTML = `<div class="subhead">${tgl}</div>`;
+
+          items.forEach((e, i) => {
+            const tbl = doc.createElement("table");
+            tbl.className = "table striped";
+            const planHtml = (e.plan ?? [])
+              .map((x) => `<li>${escapeHtml(x)}</li>`)
+              .join("");
+            const realHtml = (e.realisasi ?? [])
+              .map((x) => `<li>${escapeHtml(x)}</li>`)
+              .join("");
+
+            tbl.innerHTML = `<colgroup><col style="width:20%"><col style="width:80%"></colgroup>
+          <tbody>
+            <tr><th>Plan ${i + 1}</th><td>${
+              planHtml ? `<ul class="ul-kv">${planHtml}</ul>` : ""
+            }</td></tr>
+            <tr><th>Realisasi ${i + 1}</th><td>${
+              realHtml ? `<ul class="ul-kv">${realHtml}</ul>` : ""
+            }</td></tr>
+            <tr><th>Status</th><td>
+              <span class="pill">${
+                e.planSubmitted ? "Plan terkunci" : "Plan draft"
+              }</span>
+              &nbsp;
+              <span class="pill">${
+                e.realSubmitted ? "Realisasi terkunci" : "Realisasi draft"
+              }</span>
+            </td></tr>
+          </tbody>`;
+            block.appendChild(tbl);
+          });
+
+          appendBlock(block);
+        });
+      }
     }
-    const line = doc.createElement("div");
-    line.className = "sigline";
-    sigBox.appendChild(line);
-    sigRow.appendChild(sigBox);
-    sigWrap.appendChild(sigRow);
-    const foot = doc.createElement("div");
-    foot.className = "foot";
-    foot.textContent = `Ditandatangani oleh ${
-      (user as AnyUser | undefined)?.name || ""
-    } (${
-      (user as AnyUser | undefined)?.role || ""
-    }) • ${new Date().toLocaleString()}`;
-    sigWrap.appendChild(foot);
-    page.appendChild(sigWrap);
+
+    // =========================
+    // Tanda Tangan
+    // =========================
+    {
+      const sigWrap = doc.createElement("div");
+      sigWrap.className = "section sigwrap page-break-avoid";
+      const sigTitle = doc.createElement("div");
+      sigTitle.className = "title sigtitle";
+      sigTitle.textContent = "Tanda Tangan";
+      sigWrap.appendChild(sigTitle);
+      const sigRow = doc.createElement("div");
+      sigRow.className = "sigrow";
+      const sigBox = doc.createElement("div");
+      sigBox.className = "sigbox";
+      if (sigDataUrl) {
+        const img = doc.createElement("img");
+        img.src = sigDataUrl;
+        sigBox.appendChild(img);
+      } else {
+        sigBox.appendChild(doc.createTextNode(" "));
+      }
+      const line = doc.createElement("div");
+      line.className = "sigline";
+      sigBox.appendChild(line);
+      sigRow.appendChild(sigBox);
+      sigWrap.appendChild(sigRow);
+      const foot = doc.createElement("div");
+      foot.className = "foot";
+      foot.textContent = `Ditandatangani oleh ${
+        (user as AnyUser | undefined)?.name || ""
+      } (${
+        (user as AnyUser | undefined)?.role || ""
+      }) • ${new Date().toLocaleString()}`;
+      sigWrap.appendChild(foot);
+      appendBlock(sigWrap);
+    }
 
     doc.body.appendChild(root);
     return root;
   };
 
-  /* -------- Export PDF + Upload ke Supabase (ISOLATED IFRAME) -------- */
+  /* -------- Export PDF + Upload ke Supabase (RENDER PER HALAMAN) -------- */
   const submitAndGenerate = async () => {
     if (!sigDataUrl) {
       alert("Mohon tanda tangan terlebih dahulu.");
@@ -1666,78 +1755,57 @@ export default function Lampiran({ data }: { data: AppState }) {
       // 1) buat iframe isolasi
       const { doc: isoDoc, cleanup } = createIsolatedIframe();
 
-      // 2) build layout di dokumen isolasi
-      const root = buildPrintLayout(isoDoc);
+      // 2) build layout di dokumen isolasi (sudah auto-paginate)
+      buildPrintLayout(isoDoc);
 
-      // 3) tunggu satu frame supaya layout settle
-      await new Promise((r) => setTimeout(r, 30));
-
-      // 4) ukur dimensi
-      const width = Math.ceil(root.scrollWidth || 794);
-      const height = Math.ceil(root.scrollHeight || 1123);
-
-      // 5) render ke canvas (di konteks iframe)
-      const canvas: HTMLCanvasElement = await html2canvas(root, {
-        backgroundColor: "#ffffff",
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        foreignObjectRendering: false,
-        width,
-        height,
-        windowWidth: width,
-        windowHeight: height,
-      });
-
-      // 6) bersihkan iframe
-      cleanup();
-
-      if (!canvas.width || !canvas.height) {
-        throw new Error("Render canvas 0px — elemen tidak terukur");
-      }
-
-      // 7) slicing canvas -> PDF A4
-      const imgW = canvas.width;
-      const imgH = canvas.height;
+      // 3) render setiap .page menjadi satu halaman PDF
+      const pages = Array.from(isoDoc.querySelectorAll<HTMLElement>(".page"));
 
       const pdf = new jsPDF({ unit: "pt", format: "a4" });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
       const margin = 24;
       const usableW = pageW - margin * 2;
-      const usableH = pageH - margin * 2;
-      const pageHeightPx = Math.floor((imgW * usableH) / usableW);
+      // const usableH = pageH - margin * 2; // FYI
 
-      let sY = 0;
-      while (sY < imgH) {
-        const sHeight = Math.min(pageHeightPx, imgH - sY);
-        const pageCanvas = document.createElement("canvas");
-        pageCanvas.width = imgW;
-        pageCanvas.height = sHeight;
-        const ctx = pageCanvas.getContext("2d")!;
-        ctx.drawImage(canvas, 0, sY, imgW, sHeight, 0, 0, imgW, sHeight);
+      for (let i = 0; i < pages.length; i++) {
+        const el = pages[i];
+        const canvas: HTMLCanvasElement = await html2canvas(el, {
+          backgroundColor: "#ffffff",
+          scale: 2,
+          useCORS: true,
+          allowTaint: true,
+          foreignObjectRendering: false,
+          width: el.scrollWidth,
+          height: el.scrollHeight,
+          windowWidth: el.scrollWidth,
+          windowHeight: el.scrollHeight,
+        });
 
-        const imgData = pageCanvas.toDataURL("image/jpeg", 0.92);
-        const drawH = (sHeight / imgW) * usableW;
+        const imgData = canvas.toDataURL("image/jpeg", 0.92);
+        const drawW = usableW;
+        const drawH = (canvas.height / canvas.width) * drawW;
+
+        if (i > 0) pdf.addPage();
         pdf.addImage(
           imgData,
           "JPEG",
           margin,
           margin,
-          usableW,
+          drawW,
           drawH,
           undefined,
           "FAST"
         );
-
-        sY += sHeight;
-        if (sY < imgH) pdf.addPage();
       }
+
+      // 4) bersihkan iframe
+      cleanup();
 
       const date = todayISO();
       const filename = `${date}.pdf`;
 
-      // 8) upload ke API
+      // 5) upload ke API
       try {
         const arrayBuffer = pdf.output("arraybuffer") as ArrayBuffer;
         const u = (user ?? {}) as AnyUser;
@@ -1758,7 +1826,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         console.warn("Upload error:", e);
       }
 
-      // 9) simpan lokal + download
+      // 6) simpan lokal + download
       const pdfDataUrl = pdf.output("datauristring") as string;
       const entry: PdfEntry = {
         id: uuid(),
