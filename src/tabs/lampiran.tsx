@@ -384,12 +384,22 @@ function normalizeThemeName(raw?: string | null): Theme | null {
 }
 
 function getTheme(evaluasi: Evaluasi): Theme {
-  // 1) eksplisit dari evaluasi.theme / evaluasi.tema
+  // 1) Tema eksplisit dari input (evaluasi.theme / evaluasi.tema)
   const explicit =
     normalizeThemeName(evaluasi.theme) || normalizeThemeName(evaluasi.tema);
   if (explicit) return explicit;
 
-  // 2) deteksi dari keberadaan blok data
+  // 2) Tema berdasarkan jadwal hari (prioritas utama kalau ada)
+  //    pakai evaluasi.hari dulu, kalau tidak ada, coba attitude.hari, default 1
+  const hari =
+    (evaluasi as any).hari ??
+    evaluasi.attitude?.hari ??
+    (1 as 1 | 2 | 3 | 4 | 5 | 6);
+  const byDay = DAY_THEME[hari as 1 | 2 | 3 | 4 | 5 | 6] ?? "attitude";
+  // Jika jadwal hari menghasilkan tema selain "kosong", gunakan itu
+  if (byDay !== "kosong") return byDay;
+
+  // 3) Deteksi dari keberadaan blok data (fallback bila byDay = "kosong")
   for (const t of [
     "kepatuhan",
     "kompetensi",
@@ -400,12 +410,8 @@ function getTheme(evaluasi: Evaluasi): Theme {
     if (keys.some((k) => (evaluasi as any)[k] != null)) return t;
   }
 
-  // 3) fallback: jadwal hari (kompatibilitas lama)
-  const hari =
-    evaluasi.attitude?.hari ??
-    (evaluasi as { hari?: 1 | 2 | 3 | 4 | 5 | 6 }).hari ??
-    1;
-  return DAY_THEME[hari as 1 | 2 | 3 | 4 | 5 | 6] ?? "attitude";
+  // 4) Default terakhir
+  return "attitude";
 }
 
 /* =========================
