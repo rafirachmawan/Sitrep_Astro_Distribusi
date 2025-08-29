@@ -741,17 +741,30 @@ export default function Lampiran({ data }: { data: AppState }) {
 
   .table{width:100%;border-collapse:separate;border-spacing:0;}
   .table th,.table td{border:1px solid #e9edf3;padding:8px 10px;vertical-align:middle;}
-  .table th{background:#f8fafc;color:#475569;text-align:left;font-weight:700;}
+  .table th{background:#f8fafc;color:#475569;text-align:left;font-weight:700;border-top:none;border-bottom:2px solid #cbd5e1;}
   .table.striped tbody tr:nth-child(even){background:#fbfdff;}
 
-  /* Judul seksi (KAS, BUKU, AR...) — dibold + garis tebal kiri */
+  /* Perjelas tabel per section */
+  .table.checklist{
+    border:2px solid #cbd5e1;
+    border-radius:12px;
+    overflow:hidden;
+    box-shadow:0 1px 0 rgba(16,24,40,.03);
+    background:#fff;
+  }
+  /* Kolom AREA dibold (hanya tabel checklist) */
+  .table.checklist td:first-child{
+    font-weight:700;
+    color:#0f172a;
+  }
+
+  /* Judul seksi (KAS, BUKU, AR...) */
   .subhead{
     font-weight:800;margin:6px 0 8px;color:#0f172a;text-transform:uppercase;letter-spacing:.2px;
     border-left:5px solid #0f172a;padding-left:10px;
   }
-  .block-sec{border-top:2px solid #0f172a;padding-top:8px;}
-
   .mb8{margin-bottom:8px;}
+
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;}
   .chip{display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;font-size:11px;font-weight:700;line-height:1;}
   .chip.ok{background:#ecfdf5;border-color:#86efac;color:#065f46;}
@@ -784,7 +797,6 @@ export default function Lampiran({ data }: { data: AppState }) {
   .kpi th:nth-child(5){width:24%}
   .ul-kv{margin:0;padding-left:18px}
 
-  /* checkbox mini */
   .cbx{display:inline-flex;width:14px;height:14px;border:1px solid #cbd5e1;border-radius:4px;align-items:center;justify-content:center;font-size:11px;line-height:1}
   .cbx.on{background:#10b981;border-color:#10b981;color:#fff}
   .small{font-size:11px}
@@ -796,27 +808,25 @@ export default function Lampiran({ data }: { data: AppState }) {
   .table th { font-weight:700; }
   b, strong { font-weight:700; color:#0f172a; }
 
-  /* === Badge Status: anti-clip & warna stabil === */
+  /* Status badge tanpa border/outline */
   :root{
-    --good-bg:#ecfdf5; --good-ol:#86efac; --good-fg:#065f46;
-    --warn-bg:#fffbeb; --warn-ol:#fde68a; --warn-fg:#92400e;
-    --bad-bg:#fef2f2;  --bad-ol:#fca5a5; --bad-fg:#7f1d1d;
-    --neu-bg:#f1f5f9;  --neu-ol:#e2e8f0; --neu-fg:#475569;
+    --good-bg:#ecfdf5; --good-fg:#065f46;
+    --warn-bg:#fffbeb; --warn-fg:#92400e;
+    --bad-bg:#fef2f2;  --bad-fg:#7f1d1d;
+    --neu-bg:#f1f5f9;  --neu-fg:#475569;
   }
   .status-badge{
     display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
-    padding:3px 10px;border-radius:9999px;
-    /* gunakan inset shadow agar tidak “digunting” border sel */
-    box-shadow: inset 0 0 0 1.25px var(--neu-ol);
+    padding:4px 10px;border-radius:9999px;
     background:var(--neu-bg); color:var(--neu-fg);
     font-weight:600;font-size:12px;line-height:1.2;font-family:inherit;
-    /* beri jarak dari tepi sel supaya tak nempel border tabel */
-    margin:2px 0 0 2px;
+    margin:2px 0 0 2px; /* sedikit jarak dari border sel */
+    border:none; box-shadow:none;
   }
-  .status-badge.good{background:var(--good-bg);box-shadow:inset 0 0 0 1.25px var(--good-ol);color:var(--good-fg);}
-  .status-badge.warn{background:var(--warn-bg);box-shadow:inset 0 0 0 1.25px var(--warn-ol);color:var(--warn-fg);}
-  .status-badge.bad{background:var(--bad-bg);box-shadow:inset 0 0 0 1.25px var(--bad-ol);color:var(--bad-fg);}
-  .status-badge.neutral{background:var(--neu-bg);box-shadow:inset 0 0 0 1.25px var(--neu-ol);color:var(--neu-fg);}
+  .status-badge.good{background:var(--good-bg);color:var(--good-fg);}
+  .status-badge.warn{background:var(--warn-bg);color:var(--warn-fg);}
+  .status-badge.bad{background:var(--bad-bg);color:var(--bad-fg);}
+  .status-badge.neutral{background:var(--neu-bg);color:var(--neu-fg);}
 `;
 
     root.appendChild(st);
