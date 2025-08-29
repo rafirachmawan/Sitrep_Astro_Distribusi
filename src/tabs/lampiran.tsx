@@ -734,7 +734,24 @@ export default function Lampiran({ data }: { data: AppState }) {
   .section{margin-top:18px;}
   .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;}
   .muted{color:#64748b;}
-  .banner{background:#dbeafe;color:#1e3a8a;padding:14px 16px;border-radius:14px;}
+  /* === Header tone selaras dengan tabel/pill === */
+:root{
+  --brand-bg:#eef2ff;     /* indigo-50, lembut */
+  --brand-bg2:#e9efff;    /* untuk gradasi tipis */
+  --brand-border:#c7d2fe; /* indigo-200 */
+  --brand-fg:#0f172a;     /* warna teks utama (sama spt isi tabel) */
+}
+.banner{
+  background: linear-gradient(180deg, var(--brand-bg) 0%, var(--brand-bg2) 100%);
+  color: var(--brand-fg);
+  border: 1px solid var(--brand-border);
+  padding: 16px 18px;
+  border-radius: 16px;
+  box-shadow: 0 1px 0 rgba(16,24,40,.03);
+}
+/* subjudul dalam header tetap muted */
+.banner .muted{ color:#64748b !important; }
+
   .info-grid{display:flex;gap:12px;margin-top:12px;}
   .card{border:1px solid #e6e8f0;border-radius:12px;padding:10px 12px;flex:1;background:#fff;}
   .card .label{color:#6b7280;font-size:12px;}
