@@ -606,7 +606,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       const ok = await refreshRiwayatFromSupabase();
       if (!ok) setHistory(loadHistory());
     })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filtered = useMemo(
@@ -719,7 +718,6 @@ export default function Lampiran({ data }: { data: AppState }) {
   const buildPrintLayout = (doc: Document) => {
     const root = doc.createElement("div");
     root.id = "pdf-print-root";
-    // keep things explicit — no inheritance from app
     (root.style as any).all = "initial";
     root.style.display = "block";
     root.style.width = "794px";
@@ -789,6 +787,17 @@ export default function Lampiran({ data }: { data: AppState }) {
       .muted { color:#64748b !important; }
       .title { font-weight:800 !important; color:#0f172a !important; }
       .subhead { font-weight:700 !important; color:#0f172a !important; }
+
+      /* === Badge warna untuk kolom Status checklist === */
+      .status-badge{
+        display:inline-flex;align-items:center;gap:6px;
+        padding:2px 8px;border-radius:999px;border:1px solid #e5e7eb;
+        font-weight:700;font-size:11px;line-height:1;
+      }
+      .status-badge.good{background:#ecfdf5;border-color:#86efac;color:#065f46;}
+      .status-badge.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
+      .status-badge.bad{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
+      .status-badge.neutral{background:#f1f5f9;border-color:#e2e8f0;color:#475569;}
     `;
     root.appendChild(st);
 
@@ -803,6 +812,75 @@ export default function Lampiran({ data }: { data: AppState }) {
       <div class="muted" style="margin-top:2px;">Laporan Harian</div>
       <div class="muted">Tanggal: ${todayISO()}</div>`;
     page.appendChild(header);
+
+    // ==== fungsi bantu klasifikasi status -> warna ====
+    const classifyStatus = (
+      raw: unknown
+    ): "good" | "warn" | "bad" | "neutral" => {
+      if (raw == null) return "neutral";
+      const str = String(raw).trim();
+      if (!str) return "neutral";
+      const s = str.toLowerCase();
+
+      // boolean-ish
+      if (["ya", "yes", "y", "true", "ok", "oke", "on"].includes(s))
+        return "good";
+      if (["tidak", "no", "n", "false", "off"].includes(s)) return "bad";
+
+      // keywords
+      const goodWords = [
+        "baik",
+        "aman",
+        "bersih",
+        "siap",
+        "terpenuhi",
+        "sesuai",
+        "selesai",
+        "done",
+        "lulus",
+      ];
+      const warnWords = [
+        "pending",
+        "proses",
+        "perlu",
+        "kurang",
+        "sebagian",
+        "hampir",
+        "belum lengkap",
+      ];
+      const badWords = [
+        "tidak",
+        "gagal",
+        "rusak",
+        "lewat",
+        "terlambat",
+        "mati",
+        "cacat",
+      ];
+
+      if (goodWords.some((w) => s.includes(w))) return "good";
+      if (badWords.some((w) => s.includes(w))) return "bad";
+      if (warnWords.some((w) => s.includes(w))) return "warn";
+
+      // numeric: percentage
+      const pctMatch = s.match(/^(\d+(?:\.\d+)?)\s*%$/);
+      if (pctMatch) {
+        const v = parseFloat(pctMatch[1]);
+        if (v >= 80) return "good";
+        if (v >= 50) return "warn";
+        return "bad";
+      }
+
+      // numeric: score 1..5
+      const num = Number(s);
+      if (!Number.isNaN(num)) {
+        if (num >= 4) return "good";
+        if (num >= 3) return "warn";
+        return "bad";
+      }
+
+      return "neutral";
+    };
 
     const info = doc.createElement("div");
     info.className = "info-grid";
@@ -825,7 +903,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       secEl.innerHTML = `<div class="subhead">${sec.section.toUpperCase()}</div>`;
       const tbl = doc.createElement("table");
       tbl.className = "table striped";
-      // === Lebarkan Catatan (56%), Area (26%), Status (18%)
       tbl.innerHTML = `<colgroup>
         <col style="width:26%">
         <col style="width:18%">
@@ -834,11 +911,17 @@ export default function Lampiran({ data }: { data: AppState }) {
       <thead><tr><th>Area</th><th>Status</th><th>Catatan</th></tr></thead>`;
       const tb = doc.createElement("tbody");
       sec.rows.forEach((r) => {
+        const cls = classifyStatus(r.value);
+        const valueHtml = `<span class="status-badge ${cls}">${escapeHtml(
+          String(r.value || "")
+        )}</span>`;
         tb.insertAdjacentHTML(
           "beforeend",
-          `<tr><td>${r.label || ""}</td><td><b>${r.value || ""}</b></td><td>${
-            r.note || ""
-          }</td></tr>`
+          `<tr>
+             <td>${r.label || ""}</td>
+             <td>${valueHtml}</td>
+             <td>${r.note || ""}</td>
+           </tr>`
         );
       });
       tbl.appendChild(tb);
@@ -878,7 +961,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       ) => {
         const tbl = doc.createElement("table");
         tbl.className = "table striped";
-        // Sedikit lebarkan kolom Catatan
         tbl.innerHTML = `<colgroup>
           <col style="width:50%">
           <col style="width:14%">
@@ -916,16 +998,16 @@ export default function Lampiran({ data }: { data: AppState }) {
           block.className = "mb8";
           block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
           const tbl = makeTable(
-            (code) => rawScores[`${p}::${code}`],
-            (code) => rawNotes[`${p}::${code}`]
+            (code) => (rawScores as Record<string, unknown>)[`${p}::${code}`],
+            (code) => (rawNotes as Record<string, string>)[`${p}::${code}`]
           );
           block.appendChild(tbl);
           evalSec.appendChild(block);
         });
       } else {
         const tbl = makeTable(
-          (code) => rawScores[code],
-          (code) => rawNotes[code]
+          (code) => (rawScores as Record<string, unknown>)[code],
+          (code) => (rawNotes as Record<string, string>)[code]
         );
         evalSec.appendChild(tbl);
       }
@@ -958,7 +1040,6 @@ export default function Lampiran({ data }: { data: AppState }) {
 
         const tbl = doc.createElement("table");
         tbl.className = "table striped";
-        // Sedikit lebarkan kolom Catatan
         tbl.innerHTML = `<colgroup>
           <col style="width:50%">
           <col style="width:14%">
@@ -1042,7 +1123,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
     };
 
-    // dukung nama-nama field yang kamu pakai
     const klaimSrc =
       pick(rawTarget, ["klaimSelesai"]) ||
       pick(rawTarget, ["klaimBulanan", "klaim", "penyelesaianKlaim", "claims"]);
@@ -1082,13 +1162,13 @@ export default function Lampiran({ data }: { data: AppState }) {
             ? pick(row, ["selesai", "done", "value", "checked"])
             : row
         );
-        // deadline per-prinsipal
         const rowDeadline =
           (isRecord(row) && pick(row, ["deadline", "due", "tanggal"])) ??
           (isRecord(deadlinesSrc) &&
-            isRecord(deadlinesSrc.klaim) &&
-            (deadlinesSrc.klaim[p] ?? deadlinesSrc.klaim[p.toLowerCase()])) ??
-          (isRecord(deadlinesSrc) && deadlinesSrc.klaim);
+            isRecord((deadlinesSrc as any).klaim) &&
+            ((deadlinesSrc as any).klaim[p] ??
+              (deadlinesSrc as any).klaim[p.toLowerCase()])) ??
+          (isRecord(deadlinesSrc) && (deadlinesSrc as any).klaim);
         const deadline = fmtDate(rowDeadline);
 
         kbody.insertAdjacentHTML(
@@ -1115,7 +1195,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         "";
       const targetDeadline = fmtDate(
         (isRecord(tgtBulananSrc) && pick(tgtBulananSrc, ["deadline", "due"])) ??
-          (isRecord(deadlinesSrc) && deadlinesSrc.targetSelesai) ??
+          (isRecord(deadlinesSrc) && (deadlinesSrc as any).targetSelesai) ??
           rawTarget?.deadline
       );
       const targetTbl = doc.createElement("table");
@@ -1545,7 +1625,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         windowHeight: height,
       });
 
-      // 6) bersihkan iframe (sudah tidak diperlukan)
+      // 6) bersihkan iframe
       cleanup();
 
       if (!canvas.width || !canvas.height) {
