@@ -738,22 +738,17 @@ export default function Lampiran({ data }: { data: AppState }) {
   .info-grid{display:flex;gap:12px;margin-top:12px;}
   .card{border:1px solid #e6e8f0;border-radius:12px;padding:10px 12px;flex:1;background:#fff;}
   .card .label{color:#6b7280;font-size:12px;}
+
   .table{width:100%;border-collapse:separate;border-spacing:0;}
-  .table th,.table td{border:1px solid #e9edf3;padding:7px 9px;vertical-align:top;}
+  .table th,.table td{border:1px solid #e9edf3;padding:8px 10px;vertical-align:middle;}
   .table th{background:#f8fafc;color:#475569;text-align:left;font-weight:700;}
   .table.striped tbody tr:nth-child(even){background:#fbfdff;}
 
-  /* Judul seksi (KAS, BUKU, AR...) — dibold + garis tebal */
+  /* Judul seksi (KAS, BUKU, AR...) — dibold + garis tebal kiri */
   .subhead{
-    font-weight:800;
-    margin:6px 0 8px;
-    color:#0f172a;
-    text-transform:uppercase;
-    letter-spacing:.2px;
-    border-left:5px solid #0f172a;
-    padding-left:10px;
+    font-weight:800;margin:6px 0 8px;color:#0f172a;text-transform:uppercase;letter-spacing:.2px;
+    border-left:5px solid #0f172a;padding-left:10px;
   }
-  /* pemisah tebal di atas setiap blok seksi */
   .block-sec{border-top:2px solid #0f172a;padding-top:8px;}
 
   .mb8{margin-bottom:8px;}
@@ -789,32 +784,39 @@ export default function Lampiran({ data }: { data: AppState }) {
   .kpi th:nth-child(5){width:24%}
   .ul-kv{margin:0;padding-left:18px}
 
-  /* checkbox mini agar mirip UI input */
+  /* checkbox mini */
   .cbx{display:inline-flex;width:14px;height:14px;border:1px solid #cbd5e1;border-radius:4px;align-items:center;justify-content:center;font-size:11px;line-height:1}
   .cbx.on{background:#10b981;border-color:#10b981;color:#fff}
   .small{font-size:11px}
   .hint{color:#94a3b8;font-size:11px;margin-left:6px}
 
-  /* === Normalisasi tipografi & warna (override akhir) === */
-  body { color:#0f172a; }
+  /* Normalisasi tipografi */
+  body { color:#0f172a; -webkit-font-smoothing:antialiased; }
   .table th, .table td { color:#0f172a; font-weight:500; }
   .table th { font-weight:700; }
   b, strong { font-weight:700; color:#0f172a; }
-  .muted { color:#64748b !important; }
-  .title { font-weight:800 !important; color:#0f172a !important; }
 
-  /* === Badge warna untuk kolom Status checklist (samain dengan input) === */
-  .status-badge{
-    display:inline-flex;align-items:center;gap:6px;
-    padding:2px 10px;border-radius:999px;border:1px solid #e5e7eb;
-    font-weight:600;               /* feel seperti UI input */
-    font-size:12px; line-height:1; /* ukuran & line-height */
-    font-family:inherit;           /* samakan font */
+  /* === Badge Status: anti-clip & warna stabil === */
+  :root{
+    --good-bg:#ecfdf5; --good-ol:#86efac; --good-fg:#065f46;
+    --warn-bg:#fffbeb; --warn-ol:#fde68a; --warn-fg:#92400e;
+    --bad-bg:#fef2f2;  --bad-ol:#fca5a5; --bad-fg:#7f1d1d;
+    --neu-bg:#f1f5f9;  --neu-ol:#e2e8f0; --neu-fg:#475569;
   }
-  .status-badge.good{background:#ecfdf5;border-color:#86efac;color:#065f46;}
-  .status-badge.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
-  .status-badge.bad{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
-  .status-badge.neutral{background:#f1f5f9;border-color:#e2e8f0;color:#475569;}
+  .status-badge{
+    display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+    padding:3px 10px;border-radius:9999px;
+    /* gunakan inset shadow agar tidak “digunting” border sel */
+    box-shadow: inset 0 0 0 1.25px var(--neu-ol);
+    background:var(--neu-bg); color:var(--neu-fg);
+    font-weight:600;font-size:12px;line-height:1.2;font-family:inherit;
+    /* beri jarak dari tepi sel supaya tak nempel border tabel */
+    margin:2px 0 0 2px;
+  }
+  .status-badge.good{background:var(--good-bg);box-shadow:inset 0 0 0 1.25px var(--good-ol);color:var(--good-fg);}
+  .status-badge.warn{background:var(--warn-bg);box-shadow:inset 0 0 0 1.25px var(--warn-ol);color:var(--warn-fg);}
+  .status-badge.bad{background:var(--bad-bg);box-shadow:inset 0 0 0 1.25px var(--bad-ol);color:var(--bad-fg);}
+  .status-badge.neutral{background:var(--neu-bg);box-shadow:inset 0 0 0 1.25px var(--neu-ol);color:var(--neu-fg);}
 `;
 
     root.appendChild(st);
