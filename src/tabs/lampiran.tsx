@@ -670,7 +670,8 @@ export default function Lampiran({ data }: { data: AppState }) {
   .table, .table *, thead, tbody, tr, th, td { break-inside: avoid; page-break-inside: avoid; }
 
   :root{--brand-bg:#eef2ff; --brand-bg2:#e9efff; --brand-border:#c7d2fe; --brand-fg:#0f172a;
-        --good-bg:#ecfdf5; --good-fg:#065f46; --warn-bg:#fffbeb; --warn-fg:#92400e; --bad-bg:#fef2f2; --bad-fg:#7f1d1d; --neu-bg:#f1f5f9; --neu-fg:#475569;}
+        --good-bg:#ecfdf5; --good-fg:#065f46; --due-bg:#eff6ff; --due-fg:#1d4ed8; --due-bd:#93c5fd;
+        --bad-bg:#fef2f2; --bad-fg:#7f1d1d; --neu-bg:#f1f5f9; --neu-fg:#475569;}
 
   .banner{background:linear-gradient(180deg,var(--brand-bg) 0%,var(--brand-bg2) 100%);color:var(--brand-fg);border:1px solid var(--brand-border);
     padding:16px 18px;border-radius:16px;box-shadow:0 1px 0 rgba(16,24,40,.03);}
@@ -689,7 +690,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;}
   .chip{display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;font-size:11px;font-weight:700;line-height:1;}
   .chip.ok{background:#ecfdf5;border-color:#86efac;color:#065f46;}
-  .chip.warn{background:#fffbeb;border-color:#fde68a;color:#92400e;}
+  .chip.due{background:var(--due-bg);border-color:var(--due-bd);color:var(--due-fg);} /* <= warna biru untuk 'Kurang N hari' */
   .chip.over{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
 
   .sigwrap{page-break-inside:avoid;margin-top:18px;}
@@ -709,15 +710,15 @@ export default function Lampiran({ data }: { data: AppState }) {
   .progress>div{height:100%;background:#2563eb;transition:width .2s ease}
   .chk{list-style:none;margin:0;padding:0}
   .step{display:flex;gap:8px;align-items:center;margin:6px 0}
-  .icon{box-sizing:border-box;display:inline-flex;width:16px;height:16px;border-radius:4px;border:1px solid #cbd5e1;align-items:center;justify-content:center;font-size:11px;line-height:1;color:#94a3b8;background:#fff;}
-  .done .icon{background:#10b981;border-color:#10b981;color:#fff}
+  .icon{display:inline-block;width:14px;height:14px;border-radius:999px;border:2px solid #cbd5e1;background:#fff;box-sizing:border-box} /* <= lingkaran polos */
+  .done .icon{background:#2563eb;border-color:#2563eb} /* <= jika done jadi biru solid */
   .label{line-height:1.35}
   .done .label{text-decoration:line-through;color:#6b7280}
   .ul-kv{margin:0;padding-left:18px}
 `;
     root.appendChild(st);
 
-    // ⬇️ PENTING: mount root SEBELUM bangun konten, agar scrollHeight valid
+    // mount root dulu
     doc.body.appendChild(root);
 
     const PAGE_MAX_PX = 1123;
@@ -729,7 +730,6 @@ export default function Lampiran({ data }: { data: AppState }) {
     };
     let page = makePage();
 
-    // Smart splitter untuk section berisi tabel panjang
     function splitTableSection(sectionEl: HTMLElement, suffix = "") {
       const titleEl = sectionEl.querySelector(".subhead");
       const titleText = titleEl?.textContent || "";
@@ -747,7 +747,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       let first = true;
 
       while (idx < rows.length) {
-        // buat container section baru
         const sec = doc.createElement("div");
         sec.className = "section page-break-avoid";
         if (titleText) {
@@ -763,18 +762,16 @@ export default function Lampiran({ data }: { data: AppState }) {
         t.appendChild(tb);
         sec.appendChild(t);
 
-        // isi baris satu per satu sampai halaman penuh
         while (idx < rows.length) {
           tb.appendChild(rows[idx].cloneNode(true));
           page.appendChild(sec);
           if (page.scrollHeight > PAGE_MAX_PX) {
-            // overflow → cabut baris terakhir & pindah ke halaman baru
             tb.removeChild(tb.lastElementChild!);
             page.removeChild(sec);
             page = makePage();
             break;
           } else {
-            page.removeChild(sec); // tes dulu, nanti appendBlock yg final
+            page.removeChild(sec);
             idx++;
           }
         }
@@ -787,16 +784,13 @@ export default function Lampiran({ data }: { data: AppState }) {
     const appendBlock = (el: HTMLElement) => {
       page.appendChild(el);
       if (page.scrollHeight > PAGE_MAX_PX) {
-        // coba pindahkan seluruh block ke halaman baru
         page.removeChild(el);
         page = makePage();
         page.appendChild(el);
         if (page.scrollHeight > PAGE_MAX_PX) {
-          // el sendirian tetap overflow → kalau ada tabel, split per baris
           page.removeChild(el);
           if (el.querySelector("table")) splitTableSection(el);
           else {
-            // fallback: bungkus jadi beberapa chunk berdasarkan child
             const children = Array.from(el.children) as HTMLElement[];
             if (!children.length) {
               appendBlock(doc.createElement("div"));
@@ -814,7 +808,6 @@ export default function Lampiran({ data }: { data: AppState }) {
                 page.removeChild(newContainer);
                 if (newContainer.childElementCount) appendBlock(newContainer);
                 page = makePage();
-                // mulai container baru
                 const nc = doc.createElement("div");
                 nc.className = el.className;
                 newContainer.replaceWith(nc);
@@ -839,7 +832,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       <div class="muted">Tanggal: ${todayISO()}</div>`;
     appendBlock(header);
 
-    // status → warna
     const classifyStatus = (
       raw: unknown
     ): "good" | "warn" | "bad" | "neutral" => {
@@ -1205,7 +1197,6 @@ export default function Lampiran({ data }: { data: AppState }) {
         reportBlock.appendChild(repTbl);
         appendBlock(reportBlock);
       } else {
-        // Fallback generic (tetap ada tapi jarang dipakai)
         const valueToHTML = (v: unknown): string => {
           if (v == null || v === "") return "";
           if (typeof v === "boolean") return v ? "Ya" : "–";
@@ -1374,7 +1365,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         card.className = "pro-card page-break-avoid";
         let chip = "";
         if (p.daysLeft !== null && p.deadline) {
-          const cls = p.daysLeft < 0 ? "over" : p.daysLeft <= 3 ? "warn" : "ok";
+          const cls = p.daysLeft < 0 ? "over" : p.daysLeft <= 3 ? "due" : "ok"; // <= biru untuk <=3 hari
           const text =
             p.daysLeft < 0
               ? `Lewat ${Math.abs(p.daysLeft)} hari`
@@ -1419,9 +1410,11 @@ export default function Lampiran({ data }: { data: AppState }) {
         steps.forEach((s) =>
           ul.insertAdjacentHTML(
             "beforeend",
-            `<li class="step ${s.done ? "done" : ""}"><span class="icon">${
-              s.done ? "✓" : ""
-            }</span><span class="label">${s.label || ""}</span></li>`
+            `<li class="step ${
+              s.done ? "done" : ""
+            }"><span class="icon"></span><span class="label">${
+              s.label || ""
+            }</span></li>`
           )
         );
         box.appendChild(ul);
@@ -1587,7 +1580,6 @@ export default function Lampiran({ data }: { data: AppState }) {
         });
         const imgData = canvas.toDataURL("image/jpeg", 0.92);
         if (i > 0) pdf.addPage();
-        // Full-bleed: isi satu halaman A4 tanpa shrink
         pdf.addImage(imgData, "JPEG", 0, 0, pageW, pageH, undefined, "FAST");
       }
 
