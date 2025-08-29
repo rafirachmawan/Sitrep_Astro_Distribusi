@@ -780,6 +780,15 @@ export default function Lampiran({ data }: { data: AppState }) {
       .cbx.on{background:#10b981;border-color:#10b981;color:#fff}
       .small{font-size:11px}
       .hint{color:#94a3b8;font-size:11px;margin-left:6px}
+
+      /* === Normalisasi tipografi & warna (override akhir) === */
+      body { color:#0f172a; }
+      .table th, .table td { color:#0f172a; font-weight:500; }
+      .table th { font-weight:700; }
+      b, strong { font-weight:700; color:#0f172a; }
+      .muted { color:#64748b !important; }
+      .title { font-weight:800 !important; color:#0f172a !important; }
+      .subhead { font-weight:700 !important; color:#0f172a !important; }
     `;
     root.appendChild(st);
 
@@ -816,8 +825,13 @@ export default function Lampiran({ data }: { data: AppState }) {
       secEl.innerHTML = `<div class="subhead">${sec.section.toUpperCase()}</div>`;
       const tbl = doc.createElement("table");
       tbl.className = "table striped";
-      tbl.innerHTML = `<colgroup><col style="width:40%"><col style="width:30%"><col style="width:30%"></colgroup>
-        <thead><tr><th>Area</th><th>Status / Nilai</th><th>Catatan</th></tr></thead>`;
+      // === Lebarkan Catatan (56%), Area (26%), Status (18%)
+      tbl.innerHTML = `<colgroup>
+        <col style="width:26%">
+        <col style="width:18%">
+        <col style="width:56%">
+      </colgroup>
+      <thead><tr><th>Area</th><th>Status</th><th>Catatan</th></tr></thead>`;
       const tb = doc.createElement("tbody");
       sec.rows.forEach((r) => {
         tb.insertAdjacentHTML(
@@ -834,7 +848,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     page.appendChild(ck);
 
     /* =========================
-       EVALUASI TIM (baru)
+       EVALUASI TIM
        ========================= */
     const evalSec = doc.createElement("div");
     evalSec.className = "section";
@@ -864,8 +878,13 @@ export default function Lampiran({ data }: { data: AppState }) {
       ) => {
         const tbl = doc.createElement("table");
         tbl.className = "table striped";
-        tbl.innerHTML = `<colgroup><col style="width:55%"><col style="width:15%"><col style="width:30%"></colgroup>
-          <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
+        // Sedikit lebarkan kolom Catatan
+        tbl.innerHTML = `<colgroup>
+          <col style="width:50%">
+          <col style="width:14%">
+          <col style="width:36%">
+        </colgroup>
+        <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
         const tb = doc.createElement("tbody");
         HEBAT_ITEMS.forEach((i) => {
           const val = scoreOf(i.code);
@@ -939,8 +958,13 @@ export default function Lampiran({ data }: { data: AppState }) {
 
         const tbl = doc.createElement("table");
         tbl.className = "table striped";
-        tbl.innerHTML = `<colgroup><col style="width:55%"><col style="width:15%"><col style="width:30%"></colgroup>
-          <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
+        // Sedikit lebarkan kolom Catatan
+        tbl.innerHTML = `<colgroup>
+          <col style="width:50%">
+          <col style="width:14%">
+          <col style="width:36%">
+        </colgroup>
+        <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
         const tb = doc.createElement("tbody");
 
         ITEMS.forEach((i) => {
@@ -1058,7 +1082,7 @@ export default function Lampiran({ data }: { data: AppState }) {
             ? pick(row, ["selesai", "done", "value", "checked"])
             : row
         );
-        // deadline per-prinsipal: dari row.deadline atau dari deadlines.klaim.{P}
+        // deadline per-prinsipal
         const rowDeadline =
           (isRecord(row) && pick(row, ["deadline", "due", "tanggal"])) ??
           (isRecord(deadlinesSrc) &&
@@ -1136,7 +1160,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       reportBlock.appendChild(repTbl);
       tgtSec.appendChild(reportBlock);
     } else {
-      // ---- fallback ke renderer generik lama (pakai targetView) ----
+      // ---- fallback renderer generik ----
       const valueToHTML = (v: unknown): string => {
         if (v == null || v === "") return "";
         if (typeof v === "boolean") return v ? "Ya" : "–";
