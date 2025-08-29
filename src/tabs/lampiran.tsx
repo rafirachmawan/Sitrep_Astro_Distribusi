@@ -331,6 +331,7 @@ const labelStatusChip = (filled: boolean) =>
 type ScoreValue = string | number;
 type Evaluasi = {
   hari?: 1 | 2 | 3 | 4 | 5 | 6;
+  theme?: Theme;
   attitude?: {
     hari?: 1 | 2 | 3 | 4 | 5 | 6;
     scores?: Record<string, ScoreValue>;
@@ -339,12 +340,26 @@ type Evaluasi = {
   };
   [key: string]: unknown;
 };
+
+/* === PATCH 1: Tema otomatis sesuai hari + dukung explicit === */
 function getTheme(evaluasi: Evaluasi): Theme {
-  const hari =
-    evaluasi.attitude?.hari ??
-    (evaluasi as { hari?: 1 | 2 | 3 | 4 | 5 | 6 }).hari ??
-    1;
-  return DAY_THEME[hari as 1 | 2 | 3 | 4 | 5 | 6] ?? "attitude";
+  const explicit = (evaluasi as any)?.theme as Theme | undefined;
+  if (
+    explicit &&
+    ["attitude", "kompetensi", "prestasi", "kepatuhan", "kosong"].includes(
+      explicit
+    )
+  ) {
+    return explicit;
+  }
+  const hariFromData =
+    (evaluasi as any)?.hari ?? (evaluasi.attitude as any)?.hari;
+  if ([1, 2, 3, 4, 5, 6].includes(hariFromData)) {
+    return DAY_THEME[hariFromData as 1 | 2 | 3 | 4 | 5 | 6];
+  }
+  const dow = new Date().getDay(); // 0=Min,1=Sen,...,6=Sab
+  if (dow === 0) return "kosong";
+  return DAY_THEME[dow as 1 | 2 | 3 | 4 | 5 | 6];
 }
 
 /* =========================
@@ -792,43 +807,58 @@ export default function Lampiran({ data }: { data: AppState }) {
 
     const appendBlock = (el: HTMLElement) => {
       page.appendChild(el);
-      if (page.scrollHeight > PAGE_MAX_PX) {
-        page.removeChild(el);
+      if (page.scrollHeight <= PAGE_MAX_PX) return;
+
+      // Overflow: remove, lalu coba pecah
+      page.removeChild(el);
+
+      if (el.querySelector("table")) {
+        splitTableSection(el);
+        return;
+      }
+
+      const children = Array.from(el.children) as HTMLElement[];
+      if (!children.length) {
+        // tidak ada child, pindah ke halaman baru dan render kosong
         page = makePage();
-        page.appendChild(el);
+        page.appendChild(doc.createElement("div"));
+        return;
+      }
+
+      // buat container baru dan tambahkan child satu per satu
+      let container = doc.createElement("div");
+      container.className = el.className;
+
+      let i = 0;
+      while (i < children.length) {
+        const part = children[i].cloneNode(true) as HTMLElement;
+
+        container.appendChild(part);
+        page.appendChild(container);
+
         if (page.scrollHeight > PAGE_MAX_PX) {
-          page.removeChild(el);
-          if (el.querySelector("table")) splitTableSection(el);
-          else {
-            const children = Array.from(el.children) as HTMLElement[];
-            if (!children.length) {
-              appendBlock(doc.createElement("div"));
-              return;
-            }
-            const newContainer = doc.createElement("div");
-            newContainer.className = el.className;
-            let i = 0;
-            while (i < children.length) {
-              const part = children[i].cloneNode(true) as HTMLElement;
-              newContainer.appendChild(part);
-              page.appendChild(newContainer);
-              if (page.scrollHeight > PAGE_MAX_PX) {
-                newContainer.removeChild(part);
-                page.removeChild(newContainer);
-                if (newContainer.childElementCount) appendBlock(newContainer);
-                page = makePage();
-                const nc = doc.createElement("div");
-                nc.className = el.className;
-                newContainer.replaceWith(nc);
-                (newContainer as any) = nc;
-              } else {
-                page.removeChild(newContainer);
-                i++;
-              }
-            }
-            if (newContainer.childElementCount) appendBlock(newContainer);
+          // kebanyakan → batalkan part terakhir, pindah halaman
+          container.removeChild(part);
+          page.removeChild(container);
+
+          if (container.childElementCount) {
+            // tempel yang sudah muat
+            page.appendChild(container);
           }
+
+          // halaman baru & container baru
+          page = makePage();
+          container = doc.createElement("div");
+          container.className = el.className;
+        } else {
+          // masih muat → lanjut tambahkan part berikutnya
+          page.removeChild(container);
+          i++;
         }
+      }
+
+      if (container.childElementCount) {
+        page.appendChild(container);
       }
     };
 
@@ -927,7 +957,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       head.innerHTML = `<div class="title">${titleMap[theme]}</div>`;
       appendBlock(head);
 
-      // ------ helper baca per-orang beragam skema ------
       const readPersonPayload = (t: Theme, p: Person) =>
         ((evalData as any)[`${t}_${p}`] ??
           (evalData as any)[t]?.[p] ??
@@ -945,7 +974,6 @@ export default function Lampiran({ data }: { data: AppState }) {
         );
 
         if (useNestedPerPerson) {
-          // evaluasi.attitude.laras/emi/novi.{scores,notes}
           PERSONS.forEach((p) => {
             const scores = (raw?.[p]?.scores ?? {}) as Record<string, unknown>;
             const notes = (raw?.[p]?.notes ?? {}) as Record<string, string>;
@@ -970,11 +998,9 @@ export default function Lampiran({ data }: { data: AppState }) {
             appendBlock(block);
           });
         } else {
-          // skema 1) attitude.scores / attitude.notes
           const rawScores = (raw?.scores ?? {}) as Record<string, unknown>;
           const rawNotes = (raw?.notes ?? {}) as Record<string, string>;
 
-          // atau skema 2) "laras::H"
           const hasPerPersonInline = PERSONS.some((p) =>
             HEBAT_ITEMS.some(
               (i) =>
@@ -1034,13 +1060,65 @@ export default function Lampiran({ data }: { data: AppState }) {
             : theme === "prestasi"
             ? PRESTASI_ITEMS
             : SOP_ITEMS;
-        PERSONS.forEach((p) => {
-          const payload = readPersonPayload(theme, p);
-          const scores = payload.scores ?? {};
-          const notes = payload.notes ?? {};
+
+        const hasPerPerson = PERSONS.some((p) => {
+          const payload =
+            (evalData as any)[`${theme}_${p}`] ??
+            (evalData as any)[theme]?.[p] ??
+            (evalData as any)[p]?.[theme] ??
+            {};
+          return (
+            hasAnyTruthy((payload as any)?.scores) ||
+            hasAnyTruthy((payload as any)?.notes)
+          );
+        });
+
+        const rawTheme =
+          (evalData as any)[theme] ??
+          (theme === "kepatuhan"
+            ? (evalData as any).kepatuhanSOP ?? (evalData as any).sop
+            : undefined) ??
+          {};
+        const globalScores = (rawTheme?.scores ?? {}) as Record<
+          string,
+          unknown
+        >;
+        const globalNotes = (rawTheme?.notes ?? {}) as Record<string, string>;
+        const hasGlobal =
+          hasAnyTruthy(globalScores) || hasAnyTruthy(globalNotes);
+
+        if (hasPerPerson) {
+          PERSONS.forEach((p) => {
+            const payload =
+              (evalData as any)[`${theme}_${p}`] ??
+              (evalData as any)[theme]?.[p] ??
+              (evalData as any)[p]?.[theme] ??
+              {};
+            const scores = (payload as any).scores ?? {};
+            const notes = (payload as any).notes ?? {};
+            const block = doc.createElement("div");
+            block.className = "section page-break-avoid";
+            block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
+            const tbl = doc.createElement("table");
+            tbl.className = "table striped";
+            tbl.innerHTML = `<colgroup><col style="width:50%"><col style="width:14%"><col style="width:36%"></colgroup>
+              <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
+            const tb = doc.createElement("tbody");
+            ITEMS.forEach((i) =>
+              tb.insertAdjacentHTML(
+                "beforeend",
+                `<tr><td>${i.title}</td><td><b>${
+                  (scores as any)[i.key] ?? ""
+                }</b></td><td>${(notes as any)[i.key] || ""}</td></tr>`
+              )
+            );
+            tbl.appendChild(tb);
+            block.appendChild(tbl);
+            appendBlock(block);
+          });
+        } else if (hasGlobal) {
           const block = doc.createElement("div");
           block.className = "section page-break-avoid";
-          block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
           const tbl = doc.createElement("table");
           tbl.className = "table striped";
           tbl.innerHTML = `<colgroup><col style="width:50%"><col style="width:14%"><col style="width:36%"></colgroup>
@@ -1050,14 +1128,31 @@ export default function Lampiran({ data }: { data: AppState }) {
             tb.insertAdjacentHTML(
               "beforeend",
               `<tr><td>${i.title}</td><td><b>${
-                (scores as any)[i.key] ?? ""
-              }</b></td><td>${(notes as any)[i.key] || ""}</td></tr>`
+                (globalScores as any)[i.key] ?? ""
+              }</b></td><td>${(globalNotes as any)[i.key] || ""}</td></tr>`
             )
           );
           tbl.appendChild(tb);
           block.appendChild(tbl);
           appendBlock(block);
-        });
+        } else {
+          const block = doc.createElement("div");
+          block.className = "section page-break-avoid";
+          const tbl = doc.createElement("table");
+          tbl.className = "table striped";
+          tbl.innerHTML = `<colgroup><col style="width:50%"><col style="width:14%"><col style="width:36%"></colgroup>
+            <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
+          const tb = doc.createElement("tbody");
+          ITEMS.forEach((i) =>
+            tb.insertAdjacentHTML(
+              "beforeend",
+              `<tr><td>${i.title}</td><td></td><td></td></tr>`
+            )
+          );
+          tbl.appendChild(tb);
+          block.appendChild(tbl);
+          appendBlock(block);
+        }
       }
     }
 
@@ -1068,7 +1163,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       head.innerHTML = `<div class="title">Target & Achievement</div>`;
       appendBlock(head);
 
-      // Ambil apapun yang tersedia
       const rawTarget =
         ((data as any).target ??
           (data as any).targets ??
@@ -1150,11 +1244,10 @@ export default function Lampiran({ data }: { data: AppState }) {
         isRecord(klaimSrc) ||
         isRecord(laporanSrc) ||
         tgtBulananSrc !== undefined ||
-        rawTarget?.target !== undefined ||
-        rawTarget?.deadline !== undefined;
+        (rawTarget as any)?.target !== undefined ||
+        (rawTarget as any)?.deadline !== undefined;
 
       if (looksLikeUI) {
-        // Klaim bulanan
         const klaimBlock = doc.createElement("div");
         klaimBlock.className = "section page-break-avoid";
         klaimBlock.innerHTML = `<div class="subhead">Penyelesaian Klaim Bulan Ini <span class="muted" style="font-weight:600;font-size:11px">(reset setiap awal bulan)</span></div>`;
@@ -1197,14 +1290,13 @@ export default function Lampiran({ data }: { data: AppState }) {
         klaimBlock.appendChild(klaimTable);
         appendBlock(klaimBlock);
 
-        // Target selesai
         const targetCount =
           (isRecord(tgtBulananSrc)
             ? (["targetCount", "jumlah", "count", "value"] as const)
                 .map((k) => (tgtBulananSrc as any)[k])
                 .find((v) => v !== undefined)
             : tgtBulananSrc) ??
-          rawTarget?.target ??
+          (rawTarget as any)?.target ??
           "";
         const targetDeadline = fmtDate(
           (isRecord(tgtBulananSrc) &&
@@ -1212,7 +1304,7 @@ export default function Lampiran({ data }: { data: AppState }) {
               .map((k) => (tgtBulananSrc as any)[k])
               .find((v) => v !== undefined)) ||
             (isRecord(deadlinesSrc) && (deadlinesSrc as any).targetSelesai) ||
-            rawTarget?.deadline
+            (rawTarget as any)?.deadline
         );
         const targetTblWrap = doc.createElement("div");
         targetTblWrap.className = "section page-break-avoid";
@@ -1228,7 +1320,6 @@ export default function Lampiran({ data }: { data: AppState }) {
         targetTblWrap.appendChild(targetTbl);
         appendBlock(targetTblWrap);
 
-        // Laporan mingguan
         const reportBlock = doc.createElement("div");
         reportBlock.className = "section page-break-avoid";
         reportBlock.innerHTML = `<div class="subhead">Laporan Penjualan ke Prinsipal Mingguan</div>`;
@@ -1253,7 +1344,6 @@ export default function Lampiran({ data }: { data: AppState }) {
         reportBlock.appendChild(repTbl);
         appendBlock(reportBlock);
       } else {
-        // ---- Fallback generic (pakai extractor any-shape) ----
         const tv = extractTarget(rawTarget);
 
         const valueToHTML = (v: unknown): string => {
