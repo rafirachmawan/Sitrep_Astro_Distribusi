@@ -815,8 +815,8 @@ export default function Lampiran({ data }: { data: AppState }) {
   .progress>div{height:100%;background:#2563eb;transition:width .2s ease}
   .chk{list-style:none;margin:0;padding:0}
   .step{display:flex;gap:8px;align-items:center;margin:6px 0}
-  .icon{box-sizing:border-box;display:inline-flex;width:16px;height:16px;border-radius:4px;border:1px solid #cbd5e1;align-items:center;justify-content:center;font-size:11px;line-height:1;color:#94a3b8;background:#fff;}
-  .done .icon{background:#10b981;border-color:#10b981;color:#fff}
+  /* pakai checkbox bulat seragam untuk item langkah */
+  .step .cbx{flex:0 0 14px}
   .label{line-height:1.35}
   .done .label{text-decoration:line-through;color:#6b7280}
   .kpi th:nth-child(1){width:28%}
@@ -1517,7 +1517,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         ul.insertAdjacentHTML(
           "beforeend",
           `<li class="step ${s.done ? "done" : ""}">
-             <span class="icon">${s.done ? "✓" : ""}</span>
+             <span class="cbx ${s.done ? "on" : ""}"></span>
              <span class="label">${s.label || ""}</span>
            </li>`
         );
