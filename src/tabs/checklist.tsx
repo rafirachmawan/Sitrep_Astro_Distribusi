@@ -313,6 +313,95 @@ function toTidyChecklistRows(
   return rows;
 }
 
+/* >>> NEW: serializer khusus section aktif */
+function toTidyRowsForSection(
+  data: ExtendedChecklistState,
+  sectionKey: AnySectionKey,
+  FINAL_MAP: Record<string, { title: string; rows: RowDef[] }>
+): TidyChecklistRow[] {
+  const sec = FINAL_MAP[sectionKey];
+  if (!sec) return [];
+  const secTitle = sec.title;
+  const out: TidyChecklistRow[] = [];
+  sec.rows.forEach((def) => {
+    const v = data[sectionKey]?.[def.key];
+    if (!v) {
+      out.push({
+        sectionKey: String(sectionKey),
+        sectionTitle: secTitle,
+        rowKey: def.key,
+        rowLabel: rowDefLabel(def),
+        valueJoined: null,
+        numberValue: null,
+        scoreValue: null,
+        extra_text: null,
+        extra_currency: null,
+        extra_number: null,
+        note: null,
+      });
+      return;
+    }
+    if (v.kind === "options") {
+      out.push({
+        sectionKey: String(sectionKey),
+        sectionTitle: secTitle,
+        rowKey: def.key,
+        rowLabel: rowDefLabel(def),
+        valueJoined: v.value ?? null,
+        numberValue: null,
+        scoreValue: null,
+        extra_text: null,
+        extra_currency: null,
+        extra_number: null,
+        note: v.note ?? null,
+      });
+    } else if (v.kind === "number") {
+      out.push({
+        sectionKey: String(sectionKey),
+        sectionTitle: secTitle,
+        rowKey: def.key,
+        rowLabel: rowDefLabel(def),
+        valueJoined: null,
+        numberValue: v.value ?? null,
+        scoreValue: null,
+        extra_text: null,
+        extra_currency: null,
+        extra_number: null,
+        note: v.note ?? null,
+      });
+    } else if (v.kind === "score") {
+      out.push({
+        sectionKey: String(sectionKey),
+        sectionTitle: secTitle,
+        rowKey: def.key,
+        rowLabel: rowDefLabel(def),
+        valueJoined: null,
+        numberValue: null,
+        scoreValue: v.value ?? null,
+        extra_text: null,
+        extra_currency: null,
+        extra_number: null,
+        note: v.note ?? null,
+      });
+    } else if (v.kind === "compound") {
+      out.push({
+        sectionKey: String(sectionKey),
+        sectionTitle: secTitle,
+        rowKey: def.key,
+        rowLabel: rowDefLabel(def),
+        valueJoined: v.value ?? null,
+        numberValue: null,
+        scoreValue: null,
+        extra_text: v.extras?.text ?? null,
+        extra_currency: v.extras?.currency ?? null,
+        extra_number: v.extras?.number ?? null,
+        note: v.note ?? null,
+      });
+    }
+  });
+  return out;
+}
+
 // URL GAS
 const FALLBACK_GAS_URL: string =
   (typeof window !== "undefined" && (process.env.NEXT_PUBLIC_GAS_URL ?? "")) ||
@@ -339,7 +428,7 @@ export default function ChecklistArea({
   data,
   onChange,
   gasUrl, // optional
-  onSubmitGeneratePDF, // optional
+  onSubmitGeneratePDF, // optional (tidak dipakai di tombol baru, tapi tetap ada untuk kompatibilitas)
 }: {
   data: ChecklistState;
   onChange: (v: ChecklistState) => void;
@@ -1170,11 +1259,12 @@ export default function ChecklistArea({
     setSecActive(next);
   };
 
-  const submitChecklistAndSend = async () => {
+  // ======== NEW: Submit hanya section aktif + Next + ScrollTop ========
+  const submitCurrentSectionAndNext = async () => {
     try {
-      if (onSubmitGeneratePDF) await onSubmitGeneratePDF();
-      const rows = toTidyChecklistRows(
+      const rows = toTidyRowsForSection(
         data as ExtendedChecklistState,
+        secActive,
         FINAL_MAP as Record<string, { title: string; rows: RowDef[] }>
       );
       await postToGAS(gasUrl || FALLBACK_GAS_URL, {
@@ -1182,11 +1272,26 @@ export default function ChecklistArea({
         submittedAt: new Date().toISOString(),
         submittedBy: name || "Unknown",
         role: role || "unknown",
+        sectionSubmitted: String(secActive),
+        sectionTitle: section?.title || "",
         rows,
       });
-      alert("Checklist terkirim ke Spreadsheet ✅");
+
+      // Pindah ke section berikutnya
+      const idx = SECTION_TABS.findIndex((t) => t.key === secActive);
+      const nextKey = SECTION_TABS[(idx + 1) % SECTION_TABS.length].key;
+      setSecActive(nextKey);
+
+      // Scroll ke atas
+      if (typeof window !== "undefined") {
+        requestAnimationFrame(() => {
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        });
+      }
+
+      alert("Section ini terkirim ke Spreadsheet ✅");
     } catch (e) {
-      console.error("Gagal submit & kirim:", e);
+      console.error("Gagal mengirim section:", e);
       alert("Gagal mengirim ke Spreadsheet. Cek konsol/log.");
     }
   };
@@ -1282,8 +1387,12 @@ export default function ChecklistArea({
           </div>
           <p className="text-sm text-slate-700">
             <span className="font-medium">Instruksi:</span> Gunakan sub-tab di
-            bawah. Setelah TTD &amp; Submit, data akan dikirim ke Spreadsheet.
-            Untuk Superadmin: aktifkan{" "}
+            bawah. Klik <span className="font-semibold">Submit</span> untuk{" "}
+            <span className="font-semibold">
+              mengirim data section aktif ke Spreadsheet
+            </span>
+            , lalu akan otomatis pindah ke section berikutnya dan scroll ke
+            atas. Untuk Superadmin: aktifkan{" "}
             <span className="font-semibold">Mode Edit</span> untuk
             menambah/hapus/ubah pertanyaan atau menambah section custom.
           </p>
@@ -1312,6 +1421,11 @@ export default function ChecklistArea({
                 onClick={() => {
                   setSecActive(t.key);
                   setQuickAddOpen(false);
+                  if (typeof window !== "undefined") {
+                    requestAnimationFrame(() => {
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    });
+                  }
                 }}
                 className={
                   "px-3.5 py-2 rounded-lg text-sm transition whitespace-nowrap " +
@@ -1437,21 +1551,14 @@ export default function ChecklistArea({
           <AddRowPanel onAdd={(payload) => addRow(secActive, payload)} />
         )}
 
-        <div className="mt-4 flex items-center justify-between gap-3">
+        {/* ====== BOTTOM ACTIONS: 1 tombol Submit (kanan bawah) ====== */}
+        <div className="mt-4 flex items-center justify-end">
           <button
-            onClick={goNext}
-            className="px-4 py-2 rounded-lg bg-slate-100 text-slate-700 text-sm hover:bg-slate-200 border"
-            title="Ke section berikutnya"
-          >
-            Next →
-          </button>
-
-          <button
-            onClick={submitChecklistAndSend}
+            onClick={submitCurrentSectionAndNext}
             className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
-            title="TTD+Submit (jalankan generate PDF via prop), lalu kirim ke Spreadsheet"
+            title="Kirim section aktif ke Spreadsheet, lalu lanjut ke section berikutnya"
           >
-            Submit & Kirim
+            Submit
           </button>
         </div>
       </div>
