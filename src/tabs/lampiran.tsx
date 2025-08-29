@@ -337,11 +337,11 @@ const labelStatusChip = (filled: boolean) =>
    ========================= */
 type ScoreValue = string | number;
 type Evaluasi = {
-  theme?: string; // baru: bisa "kepatuhan", "sop", "attitude", "kompetensi", "prestasi"
+  theme?: string; // bisa "kepatuhan", "sop", "attitude", "kompetensi", "prestasi"
   tema?: string; // alias
-  hari?: 1 | 2 | 3 | 4 | 5 | 6;
+  hari?: 1 | 2 | 3 | 4 | 5 | 6 | string; // ▶︎ diizinkan string angka juga
   attitude?: {
-    hari?: 1 | 2 | 3 | 4 | 5 | 6;
+    hari?: 1 | 2 | 3 | 4 | 5 | 6 | string; // ▶︎ diizinkan string angka juga
     scores?: Record<string, ScoreValue>;
     notes?: Record<string, string>;
     [k: string]: unknown; // untuk kemungkinan attitude.laras/emi/novi
@@ -383,35 +383,79 @@ function normalizeThemeName(raw?: string | null): Theme | null {
   return null;
 }
 
-function getTheme(evaluasi: Evaluasi): Theme {
-  // 1) Tema eksplisit dari input (evaluasi.theme / evaluasi.tema)
+// ========= Pengganti getTheme: prioritas INPUT > PAYLOAD > JADWAL HARI > default =========
+function getTodayHari(): 1 | 2 | 3 | 4 | 5 | 6 {
+  const dow = new Date().getDay(); // 0..6, Minggu..Sabtu
+  const map: Record<number, 1 | 2 | 3 | 4 | 5 | 6> = {
+    0: 1,
+    1: 1,
+    2: 2,
+    3: 3,
+    4: 4,
+    5: 5,
+    6: 6,
+  };
+  return map[dow] ?? 1;
+}
+
+function hasThemePayload(evaluasi: Evaluasi, t: Theme): boolean {
+  const keys = THEME_KEY_ALIASES[t];
+  const exists = (val: unknown) => {
+    if (val == null) return false;
+    if (typeof val === "string") return val.trim() !== "";
+    if (typeof val === "number" || typeof val === "boolean") return true;
+    if (Array.isArray(val)) return val.some((x) => !!x);
+    if (typeof val === "object")
+      return Object.values(val as any).some((x) => !!x);
+    return !!val;
+  };
+
+  if (keys.some((k) => exists((evaluasi as any)[k]))) return true;
+  for (const k of keys)
+    for (const p of PERSONS)
+      if (exists((evaluasi as any)[`${k}_${p}`])) return true;
+  for (const k of keys)
+    for (const p of PERSONS)
+      if (
+        exists((evaluasi as any)[k]?.[p]) ||
+        exists((evaluasi as any)[p]?.[k])
+      )
+        return true;
+
+  return false;
+}
+
+function resolveTheme(evaluasi: Evaluasi): {
+  theme: Theme;
+  source: "explicit" | "payload" | "hari" | "default";
+} {
   const explicit =
     normalizeThemeName(evaluasi.theme) || normalizeThemeName(evaluasi.tema);
-  if (explicit) return explicit;
+  if (explicit) return { theme: explicit, source: "explicit" };
 
-  // 2) Tema berdasarkan jadwal hari (prioritas utama kalau ada)
-  //    pakai evaluasi.hari dulu, kalau tidak ada, coba attitude.hari, default 1
-  const hari =
-    (evaluasi as any).hari ??
-    evaluasi.attitude?.hari ??
-    (1 as 1 | 2 | 3 | 4 | 5 | 6);
-  const byDay = DAY_THEME[hari as 1 | 2 | 3 | 4 | 5 | 6] ?? "attitude";
-  // Jika jadwal hari menghasilkan tema selain "kosong", gunakan itu
-  if (byDay !== "kosong") return byDay;
-
-  // 3) Deteksi dari keberadaan blok data (fallback bila byDay = "kosong")
   for (const t of [
-    "kepatuhan",
-    "kompetensi",
     "prestasi",
+    "kompetensi",
+    "kepatuhan",
     "attitude",
-  ] as Theme[]) {
-    const keys = THEME_KEY_ALIASES[t];
-    if (keys.some((k) => (evaluasi as any)[k] != null)) return t;
-  }
+  ] as Theme[])
+    if (hasThemePayload(evaluasi, t)) return { theme: t, source: "payload" };
 
-  // 4) Default terakhir
-  return "attitude";
+  const rawHari = (evaluasi as any).hari ?? evaluasi.attitude?.hari;
+  const hariNum = typeof rawHari === "string" ? parseInt(rawHari, 10) : rawHari;
+  const safeHari = (Number.isFinite(hariNum) ? hariNum : getTodayHari()) as
+    | 1
+    | 2
+    | 3
+    | 4
+    | 5
+    | 6;
+  const byDay =
+    DAY_THEME[Math.max(1, Math.min(6, safeHari)) as 1 | 2 | 3 | 4 | 5 | 6] ??
+    "attitude";
+  if (byDay !== "kosong") return { theme: byDay, source: "hari" };
+
+  return { theme: "attitude", source: "default" };
 }
 
 /* =========================
@@ -635,7 +679,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   );
 
   const evalData = ((data as unknown as AppLike).evaluasi ?? {}) as Evaluasi;
-  const theme = getTheme(evalData);
+  const { theme } = resolveTheme(evalData);
   const themeLabel = THEME_LABEL[theme];
 
   const projectList = useMemo(
@@ -887,8 +931,10 @@ export default function Lampiran({ data }: { data: AppState }) {
                 page = makePage();
                 const nc = doc.createElement("div");
                 nc.className = el.className;
+                // @ts-ignore
                 newContainer.replaceWith(nc);
-                (newContainer as any) = nc;
+                // @ts-ignore
+                newContainer = nc;
               } else {
                 page.removeChild(newContainer);
                 i++;
