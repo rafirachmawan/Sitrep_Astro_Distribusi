@@ -22,7 +22,7 @@ type RowOverride = AddedRowMeta & {
   suffix?: string;
 };
 
-// >>> NEW: dukung section custom (key diawali x_)
+// >>> dukung section custom (key diawali x_)
 type AnySectionKey = SectionKey | `x_${string}`;
 type ExtraSectionMeta = { title: string; hidden?: boolean; order?: number };
 
@@ -83,7 +83,7 @@ function mergeSectionHidden(
   sections[sec] = { ...prev, hidden };
   return { ...src, sections };
 }
-// >>> NEW: manage section custom
+// manage section custom
 function mergeExtraSection(
   src: ChecklistOverrides,
   key: `x_${string}`,
@@ -313,7 +313,7 @@ function toTidyChecklistRows(
   return rows;
 }
 
-/* >>> NEW: serializer khusus section aktif */
+/* >>> serializer KHUSUS section aktif */
 function toTidyRowsForSection(
   data: ExtendedChecklistState,
   sectionKey: AnySectionKey,
@@ -428,7 +428,7 @@ export default function ChecklistArea({
   data,
   onChange,
   gasUrl, // optional
-  onSubmitGeneratePDF, // optional (tidak dipakai di tombol baru, tapi tetap ada untuk kompatibilitas)
+  onSubmitGeneratePDF, // optional (dibiarkan untuk kompatibilitas)
 }: {
   data: ChecklistState;
   onChange: (v: ChecklistState) => void;
@@ -443,10 +443,32 @@ export default function ChecklistArea({
   const [editMode, setEditMode] = useState(false);
   const [rev, setRev] = useState(0);
 
-  // NEW: inline quick add toggle state
+  // UI states
   const [quickAddOpen, setQuickAddOpen] = useState(false);
-  // NEW: add section inline
   const [showAddSection, setShowAddSection] = useState(false);
+  const [toast, setToast] = useState<{
+    msg: string;
+    kind?: "ok" | "err";
+  } | null>(null);
+
+  // Anchor untuk scroll (tepat di atas konten section)
+  const sectionAnchorRef = useRef<HTMLDivElement | null>(null);
+
+  // helper toast non-blocking (ganti alert)
+  const showToast = (msg: string, kind: "ok" | "err" = "ok") => {
+    setToast({ msg, kind });
+    window.setTimeout(() => setToast(null), 2200);
+  };
+
+  // helper scroll: jangan terlalu atas, tapi ke anchor konten section
+  const scrollToSectionAnchor = (offsetPx = 16) => {
+    if (typeof window === "undefined") return;
+    const el = sectionAnchorRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const top = window.scrollY + rect.top - offsetPx; // offset kecil supaya tidak terlalu mepet atas
+    window.scrollTo({ top, behavior: "smooth" });
+  };
 
   /* ===== BASE (fixed) ===== */
   const BASE_MAP: Record<SectionKey, { title: string; rows: RowDef[] }> =
@@ -1253,50 +1275,44 @@ export default function ChecklistArea({
     setRev((x) => x + 1);
   };
 
-  const goNext = () => {
+  // ======== Submit section AKTIF (tanpa delay): kirim → langsung next → scroll ke anchor ========
+  const submitCurrentSectionAndNext = () => {
+    // 1) siapkan payload untuk section aktif
+    const rows = toTidyRowsForSection(
+      data as ExtendedChecklistState,
+      secActive,
+      FINAL_MAP as Record<string, { title: string; rows: RowDef[] }>
+    );
+    const payload = {
+      module: "checklist-area",
+      submittedAt: new Date().toISOString(),
+      submittedBy: name || "Unknown",
+      role: role || "unknown",
+      sectionSubmitted: String(secActive),
+      sectionTitle: section?.title || "",
+      rows,
+    };
+
+    // 2) optimistik: NEXT section LANGSUNG (tanpa menunggu fetch)
     const idx = SECTION_TABS.findIndex((t) => t.key === secActive);
-    const next = SECTION_TABS[(idx + 1) % SECTION_TABS.length].key;
-    setSecActive(next);
-  };
+    const nextKey = SECTION_TABS[(idx + 1) % SECTION_TABS.length].key;
+    setSecActive(nextKey);
 
-  // ======== NEW: Submit hanya section aktif + Next + ScrollTop ========
-  const submitCurrentSectionAndNext = async () => {
-    try {
-      const rows = toTidyRowsForSection(
-        data as ExtendedChecklistState,
-        secActive,
-        FINAL_MAP as Record<string, { title: string; rows: RowDef[] }>
-      );
-      await postToGAS(gasUrl || FALLBACK_GAS_URL, {
-        module: "checklist-area",
-        submittedAt: new Date().toISOString(),
-        submittedBy: name || "Unknown",
-        role: role || "unknown",
-        sectionSubmitted: String(secActive),
-        sectionTitle: section?.title || "",
-        rows,
+    // pastikan DOM update, baru scroll ke anchor konten section (bukan paling atas halaman)
+    requestAnimationFrame(() => {
+      scrollToSectionAnchor(16); // offset kecil biar tidak terlalu atas
+    });
+
+    // 3) kirim ke Spreadsheet di belakang layar (non-blocking)
+    void postToGAS(gasUrl || FALLBACK_GAS_URL, payload)
+      .then(() => showToast("Terkirim ✅", "ok"))
+      .catch((e) => {
+        console.error("Gagal mengirim ke Spreadsheet:", e);
+        showToast("Gagal kirim. Cek koneksi/log.", "err");
       });
-
-      // Pindah ke section berikutnya
-      const idx = SECTION_TABS.findIndex((t) => t.key === secActive);
-      const nextKey = SECTION_TABS[(idx + 1) % SECTION_TABS.length].key;
-      setSecActive(nextKey);
-
-      // Scroll ke atas
-      if (typeof window !== "undefined") {
-        requestAnimationFrame(() => {
-          window.scrollTo({ top: 0, behavior: "smooth" });
-        });
-      }
-
-      alert("Section ini terkirim ke Spreadsheet ✅");
-    } catch (e) {
-      console.error("Gagal mengirim section:", e);
-      alert("Gagal mengirim ke Spreadsheet. Cek konsol/log.");
-    }
   };
 
-  // helper hidden status (base/custom)
+  // status hidden (base/custom)
   const isHiddenActive = useMemo(() => {
     if (String(secActive).startsWith("x_")) {
       return Boolean(
@@ -1306,7 +1322,7 @@ export default function ChecklistArea({
     return Boolean(overrides.sections?.[secActive as SectionKey]?.hidden);
   }, [overrides, secActive]);
 
-  // >>> NEW: toggle hidden untuk base/custom
+  // toggle hidden
   const toggleSectionHiddenAny = (sec: AnySectionKey, hidden: boolean) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
@@ -1329,7 +1345,21 @@ export default function ChecklistArea({
   };
 
   return (
-    <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
+    <div className="bg-white border rounded-2xl shadow-sm overflow-hidden relative">
+      {/* Toast kecil non-blocking */}
+      {toast && (
+        <div
+          className={
+            "fixed z-50 bottom-4 left-4 px-3 py-2 rounded-lg text-sm shadow " +
+            (toast.kind === "err"
+              ? "bg-rose-600 text-white"
+              : "bg-emerald-600 text-white")
+          }
+        >
+          {toast.msg}
+        </div>
+      )}
+
       <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <ClipboardList className="h-5 w-5 text-blue-600" />
@@ -1392,25 +1422,12 @@ export default function ChecklistArea({
               mengirim data section aktif ke Spreadsheet
             </span>
             , lalu akan otomatis pindah ke section berikutnya dan scroll ke
-            atas. Untuk Superadmin: aktifkan{" "}
+            kontennya. Untuk Superadmin: aktifkan{" "}
             <span className="font-semibold">Mode Edit</span> untuk
             menambah/hapus/ubah pertanyaan atau menambah section custom.
           </p>
         </div>
       </div>
-
-      {/* Add Section Inline */}
-      {isSuper && editMode && showAddSection && (
-        <div className="px-3 sm:px-6">
-          <AddSectionInline
-            onCancel={() => setShowAddSection(false)}
-            onAdd={(k, t) => {
-              addSection(k, t);
-              setShowAddSection(false);
-            }}
-          />
-        </div>
-      )}
 
       {/* Sub tabs */}
       <div className="px-3 sm:px-6 pb-3">
@@ -1421,11 +1438,9 @@ export default function ChecklistArea({
                 onClick={() => {
                   setSecActive(t.key);
                   setQuickAddOpen(false);
-                  if (typeof window !== "undefined") {
-                    requestAnimationFrame(() => {
-                      window.scrollTo({ top: 0, behavior: "smooth" });
-                    });
-                  }
+                  requestAnimationFrame(() => {
+                    scrollToSectionAnchor(16);
+                  });
                 }}
                 className={
                   "px-3.5 py-2 rounded-lg text-sm transition whitespace-nowrap " +
@@ -1449,6 +1464,9 @@ export default function ChecklistArea({
           ))}
         </div>
       </div>
+
+      {/* ANCHOR SCROLL: tepat sebelum konten section */}
+      <div ref={sectionAnchorRef} />
 
       {/* Section header & super controls */}
       <div className="px-3 sm:px-6 pb-4">
@@ -1556,12 +1574,26 @@ export default function ChecklistArea({
           <button
             onClick={submitCurrentSectionAndNext}
             className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
-            title="Kirim section aktif ke Spreadsheet, lalu lanjut ke section berikutnya"
+            title="Kirim section aktif ke Spreadsheet, lalu lanjut ke section berikutnya dan scroll ke kontennya"
           >
             Submit
           </button>
         </div>
       </div>
+
+      {/* Add Section Inline (ditempatkan paling bawah supaya tidak mengganggu anchor) */}
+      {isSuper && editMode && showAddSection && (
+        <div className="px-3 sm:px-6 pb-4">
+          <AddSectionInline
+            onCancel={() => setShowAddSection(false)}
+            onAdd={(k, t) => {
+              addSection(k, t);
+              setShowAddSection(false);
+              requestAnimationFrame(() => scrollToSectionAnchor(16));
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1660,7 +1692,7 @@ function ChecklistRow({
 
   useEffect(() => {
     if (value && value.note !== note) {
-      onChange({ ...value, note } as RowValue);
+      onChange({ ...(value as any), note } as RowValue);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note]);
@@ -1891,7 +1923,7 @@ function ChecklistRow({
   );
 }
 
-/* ===== NEW: Inline Add Row (Quick +) ===== */
+/* ===== Inline Add Row (Quick +) ===== */
 function InlineAddRow({
   sectionLabel,
   onAdd,
