@@ -83,7 +83,6 @@ function mergeSectionHidden(
   sections[sec] = { ...prev, hidden };
   return { ...src, sections };
 }
-// manage section custom
 function mergeExtraSection(
   src: ChecklistOverrides,
   key: `x_${string}`,
@@ -200,8 +199,7 @@ function CurrencyField({
   );
 }
 
-/* =============== SERIALIZER & SENDER ke GAS =============== */
-// >>> sectionKey jadi string agar muat custom section x_...
+/* =============== SERIALIZER utk SECTION AKTIF SAJA =============== */
 type TidyChecklistRow = {
   sectionKey: string;
   sectionTitle: string;
@@ -220,100 +218,10 @@ function rowDefLabel(def: RowDef): string {
   return def.label || "";
 }
 
-// >>> tipe state yang aman untuk section custom
 type SectionState = Record<string, RowValue>;
 type ExtendedChecklistState = ChecklistState &
   Record<AnySectionKey, SectionState>;
 
-function toTidyChecklistRows(
-  data: ExtendedChecklistState,
-  FINAL_MAP: Record<string, { title: string; rows: RowDef[] }>
-): TidyChecklistRow[] {
-  const rows: TidyChecklistRow[] = [];
-  Object.keys(FINAL_MAP).forEach((sec) => {
-    const secKey = sec as AnySectionKey;
-    const secTitle = FINAL_MAP[secKey].title;
-    FINAL_MAP[secKey].rows.forEach((def) => {
-      const v = data[secKey]?.[def.key];
-      if (!v) {
-        rows.push({
-          sectionKey: String(secKey),
-          sectionTitle: secTitle,
-          rowKey: def.key,
-          rowLabel: rowDefLabel(def),
-          valueJoined: null,
-          numberValue: null,
-          scoreValue: null,
-          extra_text: null,
-          extra_currency: null,
-          extra_number: null,
-          note: null,
-        });
-        return;
-      }
-      if (v.kind === "options") {
-        rows.push({
-          sectionKey: String(secKey),
-          sectionTitle: secTitle,
-          rowKey: def.key,
-          rowLabel: rowDefLabel(def),
-          valueJoined: v.value ?? null,
-          numberValue: null,
-          scoreValue: null,
-          extra_text: null,
-          extra_currency: null,
-          extra_number: null,
-          note: v.note ?? null,
-        });
-      } else if (v.kind === "number") {
-        rows.push({
-          sectionKey: String(secKey),
-          sectionTitle: secTitle,
-          rowKey: def.key,
-          rowLabel: rowDefLabel(def),
-          valueJoined: null,
-          numberValue: v.value ?? null,
-          scoreValue: null,
-          extra_text: null,
-          extra_currency: null,
-          extra_number: null,
-          note: v.note ?? null,
-        });
-      } else if (v.kind === "score") {
-        rows.push({
-          sectionKey: String(secKey),
-          sectionTitle: secTitle,
-          rowKey: def.key,
-          rowLabel: rowDefLabel(def),
-          valueJoined: null,
-          numberValue: null,
-          scoreValue: v.value ?? null,
-          extra_text: null,
-          extra_currency: null,
-          extra_number: null,
-          note: v.note ?? null,
-        });
-      } else if (v.kind === "compound") {
-        rows.push({
-          sectionKey: String(secKey),
-          sectionTitle: secTitle,
-          rowKey: def.key,
-          rowLabel: rowDefLabel(def),
-          valueJoined: v.value ?? null,
-          numberValue: null,
-          scoreValue: null,
-          extra_text: v.extras?.text ?? null,
-          extra_currency: v.extras?.currency ?? null,
-          extra_number: v.extras?.number ?? null,
-          note: v.note ?? null,
-        });
-      }
-    });
-  });
-  return rows;
-}
-
-/* >>> serializer KHUSUS section aktif */
 function toTidyRowsForSection(
   data: ExtendedChecklistState,
   sectionKey: AnySectionKey,
@@ -428,12 +336,10 @@ export default function ChecklistArea({
   data,
   onChange,
   gasUrl, // optional
-  onSubmitGeneratePDF, // optional (dibiarkan untuk kompatibilitas)
 }: {
   data: ChecklistState;
   onChange: (v: ChecklistState) => void;
   gasUrl?: string;
-  onSubmitGeneratePDF?: () => Promise<void> | void;
 }) {
   const { role, name } = useAuth() as { role?: string; name?: string };
   const isSuper = role === "superadmin";
@@ -454,7 +360,7 @@ export default function ChecklistArea({
   // Anchor untuk scroll (tepat di atas konten section)
   const sectionAnchorRef = useRef<HTMLDivElement | null>(null);
 
-  // helper toast non-blocking (ganti alert)
+  // helper toast non-blocking
   const showToast = (msg: string, kind: "ok" | "err" = "ok") => {
     setToast({ msg, kind });
     window.setTimeout(() => setToast(null), 2200);
@@ -466,7 +372,7 @@ export default function ChecklistArea({
     const el = sectionAnchorRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const top = window.scrollY + rect.top - offsetPx; // offset kecil supaya tidak terlalu mepet atas
+    const top = window.scrollY + rect.top - offsetPx;
     window.scrollTo({ top, behavior: "smooth" });
   };
 
@@ -966,7 +872,6 @@ export default function ChecklistArea({
 
   /* ===== FINAL MAP (base + custom) ===== */
   const FINAL_MAP = useMemo(() => {
-    // clone base
     const clone: Record<AnySectionKey, { title: string; rows: RowDef[] }> = (
       Object.keys(BASE_MAP) as SectionKey[]
     ).reduce((acc, k) => {
@@ -978,7 +883,6 @@ export default function ChecklistArea({
       return acc;
     }, {} as Record<AnySectionKey, { title: string; rows: RowDef[] }>);
 
-    // apply base title/hidden
     if (overrides.sections) {
       (Object.keys(overrides.sections) as SectionKey[]).forEach((sec) => {
         const patch = overrides.sections?.[sec];
@@ -987,7 +891,6 @@ export default function ChecklistArea({
       });
     }
 
-    // inject extra sections
     const extras = overrides.extraSections || {};
     (Object.keys(extras) as `x_${string}`[]).forEach((ek) => {
       const meta = extras[ek];
@@ -996,7 +899,6 @@ export default function ChecklistArea({
       if (meta.hidden) clone[ek].rows = [];
     });
 
-    // apply row-level overrides (base & custom)
     if (overrides.rows) {
       (Object.keys(overrides.rows) as AnySectionKey[]).forEach((sec) => {
         const rmap = overrides.rows?.[sec] || {};
@@ -1005,7 +907,6 @@ export default function ChecklistArea({
         );
         const curRows = (clone[sec]?.rows || []) as RowDef[];
 
-        // patch & delete
         const patched = curRows
           .filter((r) => !(rmap[r.key]?.__delete === true))
           .map((r) => {
@@ -1029,7 +930,6 @@ export default function ChecklistArea({
             return rn;
           });
 
-        // add baru
         Object.keys(rmap).forEach((rowKey) => {
           const p = rmap[rowKey]!;
           if (p.__delete) return;
@@ -1070,7 +970,6 @@ export default function ChecklistArea({
           }
         });
 
-        // reorder
         const withOrder = patched.map((r, idx) => {
           const ord = rmap[r.key]?.order;
           return { r, idx, ord: typeof ord === "number" ? ord : idx };
@@ -1275,9 +1174,8 @@ export default function ChecklistArea({
     setRev((x) => x + 1);
   };
 
-  // ======== Submit section AKTIF (tanpa delay): kirim → langsung next → scroll ke anchor ========
+  // ======== Submit section AKTIF (non-blocking) ========
   const submitCurrentSectionAndNext = () => {
-    // 1) siapkan payload untuk section aktif
     const rows = toTidyRowsForSection(
       data as ExtendedChecklistState,
       secActive,
@@ -1293,17 +1191,14 @@ export default function ChecklistArea({
       rows,
     };
 
-    // 2) optimistik: NEXT section LANGSUNG (tanpa menunggu fetch)
     const idx = SECTION_TABS.findIndex((t) => t.key === secActive);
     const nextKey = SECTION_TABS[(idx + 1) % SECTION_TABS.length].key;
     setSecActive(nextKey);
 
-    // pastikan DOM update, baru scroll ke anchor konten section (bukan paling atas halaman)
     requestAnimationFrame(() => {
-      scrollToSectionAnchor(16); // offset kecil biar tidak terlalu atas
+      scrollToSectionAnchor(16);
     });
 
-    // 3) kirim ke Spreadsheet di belakang layar (non-blocking)
     void postToGAS(gasUrl || FALLBACK_GAS_URL, payload)
       .then(() => showToast("Terkirim ✅", "ok"))
       .catch((e) => {
@@ -1312,7 +1207,6 @@ export default function ChecklistArea({
       });
   };
 
-  // status hidden (base/custom)
   const isHiddenActive = useMemo(() => {
     if (String(secActive).startsWith("x_")) {
       return Boolean(
@@ -1322,7 +1216,6 @@ export default function ChecklistArea({
     return Boolean(overrides.sections?.[secActive as SectionKey]?.hidden);
   }, [overrides, secActive]);
 
-  // toggle hidden
   const toggleSectionHiddenAny = (sec: AnySectionKey, hidden: boolean) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
@@ -1421,7 +1314,7 @@ export default function ChecklistArea({
             <span className="font-semibold">
               mengirim data section aktif ke Spreadsheet
             </span>
-            , lalu akan otomatis pindah ke section berikutnya dan scroll ke
+            , lalu otomatis pindah ke section berikutnya dan scroll ke
             kontennya. Untuk Superadmin: aktifkan{" "}
             <span className="font-semibold">Mode Edit</span> untuk
             menambah/hapus/ubah pertanyaan atau menambah section custom.
@@ -1465,7 +1358,7 @@ export default function ChecklistArea({
         </div>
       </div>
 
-      {/* ANCHOR SCROLL: tepat sebelum konten section */}
+      {/* ANCHOR SCROLL */}
       <div ref={sectionAnchorRef} />
 
       {/* Section header & super controls */}
@@ -1486,7 +1379,6 @@ export default function ChecklistArea({
             )}
           </div>
 
-          {/* Quick Add (+) & Hide */}
           {isSuper && editMode && (
             <>
               <button
@@ -1512,7 +1404,6 @@ export default function ChecklistArea({
           )}
         </div>
 
-        {/* Inline Add Row Form */}
         {isSuper && editMode && quickAddOpen && (
           <InlineAddRow
             sectionLabel={section?.title || ""}
@@ -1564,12 +1455,11 @@ export default function ChecklistArea({
           </div>
         )}
 
-        {/* Panel besar */}
         {isSuper && editMode && (
           <AddRowPanel onAdd={(payload) => addRow(secActive, payload)} />
         )}
 
-        {/* ====== BOTTOM ACTIONS: 1 tombol Submit (kanan bawah) ====== */}
+        {/* Bottom actions: 1 tombol Submit */}
         <div className="mt-4 flex items-center justify-end">
           <button
             onClick={submitCurrentSectionAndNext}
@@ -1581,7 +1471,7 @@ export default function ChecklistArea({
         </div>
       </div>
 
-      {/* Add Section Inline (ditempatkan paling bawah supaya tidak mengganggu anchor) */}
+      {/* Add Section Inline */}
       {isSuper && editMode && showAddSection && (
         <div className="px-3 sm:px-6 pb-4">
           <AddSectionInline
@@ -1691,8 +1581,18 @@ function ChecklistRow({
   };
 
   useEffect(() => {
-    if (value && value.note !== note) {
-      onChange({ ...(value as any), note } as RowValue);
+    if (!value) return;
+    if (value.note === note) return;
+
+    // Update note dengan tipe yang tepat (tanpa `any`)
+    if (value.kind === "options") {
+      onChange({ ...value, note });
+    } else if (value.kind === "number") {
+      onChange({ ...value, note });
+    } else if (value.kind === "score") {
+      onChange({ ...value, note });
+    } else if (value.kind === "compound") {
+      onChange({ ...value, note });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [note]);
