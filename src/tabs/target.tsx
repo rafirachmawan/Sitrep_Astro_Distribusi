@@ -25,6 +25,14 @@ const OV_KEY = "sitrep-target-copy-v2";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
 const SHARED_DEADLINES_KEY = "sitrep:target:shared-deadlines";
 
+/* — helper keyboard untuk aksesibilitas (Enter/Space) — */
+function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
+  if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    fn();
+  }
+}
+
 function readOverrides(role: Role): TargetOverrides {
   if (typeof window === "undefined") return {};
   try {
@@ -209,7 +217,7 @@ export default function TargetAchievement({
     // data state dibiarkan (histori)
   };
 
-  /* ===== toggle helpers (klik sekali, no double) ===== */
+  /* ===== toggle helpers (klik sekali) ===== */
   const toggleKlaim = (p: string) => {
     const cur = {
       ...(data.klaimSelesai as unknown as Record<string, boolean>),
@@ -358,7 +366,6 @@ export default function TargetAchievement({
               <button
                 onClick={resetOverrides}
                 className="text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
-                title="Reset override role ini"
               >
                 Reset
               </button>
@@ -411,13 +418,11 @@ export default function TargetAchievement({
                               }
                               className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                               placeholder={`Nama principal untuk ${p}`}
-                              title="Ubah nama tampilan principal lalu klik di luar untuk menyimpan"
                             />
                             {overrides.extraPrincipals?.[p] && isSuper && (
                               <button
                                 onClick={() => removePrincipal(p)}
                                 className="px-2 py-1 rounded-md bg-rose-600 text-white"
-                                title="Hapus principal custom ini"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </button>
@@ -428,14 +433,18 @@ export default function TargetAchievement({
                         )}
                       </td>
 
-                      {/* Klik sekali: gunakan button wrapper, checkbox readOnly */}
-                      <td className="py-3 px-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleKlaim(p)}
-                          className="inline-flex items-center gap-3 px-2 py-1 rounded-md hover:bg-slate-100 focus:outline-none"
-                          title="Klik untuk centang/hapus centang"
-                        >
+                      {/* Seluruh sel bisa diklik + keyboardable */}
+                      <td
+                        className="py-3 px-2 select-none"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleKlaim(p)}
+                        onKeyDown={(e) =>
+                          handleKeyActivate(e, () => toggleKlaim(p))
+                        }
+                        aria-label={`Toggle selesai ${principalLabel(p)}`}
+                      >
+                        <div className="inline-flex items-center gap-3 px-2 py-2 rounded-md hover:bg-slate-100 focus:outline-none">
                           <input
                             type="checkbox"
                             className="h-5 w-5 accent-blue-600 pointer-events-none"
@@ -443,10 +452,10 @@ export default function TargetAchievement({
                             readOnly
                             aria-hidden
                           />
-                          <span className="text-sm text-slate-700 select-none">
+                          <span className="text-sm text-slate-700">
                             Selesai
                           </span>
-                        </button>
+                        </div>
                       </td>
 
                       <td className="py-3 px-2">
@@ -461,11 +470,6 @@ export default function TargetAchievement({
                           value={getDeadline("klaim", p)}
                           onChange={(e) =>
                             setDeadline("klaim", e.target.value, p)
-                          }
-                          title={
-                            !isSuper
-                              ? "Hanya superadmin yang dapat mengubah deadline"
-                              : ""
                           }
                         />
                       </td>
@@ -524,7 +528,6 @@ export default function TargetAchievement({
                           onBlur={(e) => savePrincipalLabel(p, e.target.value)}
                           className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                           placeholder={`Nama principal untuk ${p}`}
-                          title="Ubah nama tampilan principal lalu klik di luar untuk menyimpan"
                         />
                       ) : (
                         principalLabel(p)
@@ -532,13 +535,20 @@ export default function TargetAchievement({
                     </td>
 
                     {[0, 1, 2, 3].map((w) => (
-                      <td key={w} className="py-3 px-2">
-                        <button
-                          type="button"
-                          onClick={() => toggleWeekly(p, w)}
-                          className="inline-flex items-center justify-center w-9 h-9 rounded-md hover:bg-slate-100 focus:outline-none"
-                          title="Klik untuk centang/hapus centang"
-                        >
+                      <td
+                        key={w}
+                        className="py-3 px-2 select-none"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleWeekly(p, w)}
+                        onKeyDown={(e) =>
+                          handleKeyActivate(e, () => toggleWeekly(p, w))
+                        }
+                        aria-label={`Toggle minggu ${
+                          w + 1
+                        } untuk ${principalLabel(p)}`}
+                      >
+                        <div className="inline-flex items-center justify-center w-10 h-10 rounded-md hover:bg-slate-100 focus:outline-none">
                           <input
                             type="checkbox"
                             className="h-5 w-5 accent-blue-600 pointer-events-none"
@@ -546,7 +556,7 @@ export default function TargetAchievement({
                             readOnly
                             aria-hidden
                           />
-                        </button>
+                        </div>
                       </td>
                     ))}
 
@@ -563,11 +573,6 @@ export default function TargetAchievement({
                         onChange={(e) =>
                           setDeadline("weekly", e.target.value, p)
                         }
-                        title={
-                          !isSuper
-                            ? "Hanya superadmin yang dapat mengubah deadline"
-                            : ""
-                        }
                       />
                     </td>
 
@@ -577,7 +582,6 @@ export default function TargetAchievement({
                           <button
                             onClick={() => removePrincipal(p)}
                             className="px-2 py-1 rounded-md bg-rose-600 text-white"
-                            title="Hapus principal custom ini"
                           >
                             <Trash2 className="h-4 w-4" />
                           </button>
@@ -647,9 +651,6 @@ export default function TargetAchievement({
               className={`${INPUT_BASE} ${!isSuper ? INPUT_DISABLED : ""}`}
               value={getDeadline("fodks")}
               onChange={(e) => setDeadline("fodks", e.target.value)}
-              title={
-                !isSuper ? "Hanya superadmin yang dapat mengubah deadline" : ""
-              }
             />
           </div>
         </div>
