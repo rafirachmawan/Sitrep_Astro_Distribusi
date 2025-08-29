@@ -335,6 +335,7 @@ type Evaluasi = {
     hari?: 1 | 2 | 3 | 4 | 5 | 6;
     scores?: Record<string, ScoreValue>;
     notes?: Record<string, string>;
+    [k: string]: unknown; // untuk kemungkinan attitude.laras/emi/novi
   };
   [key: string]: unknown;
 };
@@ -577,10 +578,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       ),
     [data, (user as AnyUser | undefined)?.role]
   );
-  const targetView = useMemo(
-    () => extractTarget((data as unknown as AppLike).target),
-    [data]
-  );
 
   async function refreshRiwayatFromSupabase() {
     try {
@@ -690,8 +687,15 @@ export default function Lampiran({ data }: { data: AppState }) {
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;}
   .chip{display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;font-size:11px;font-weight:700;line-height:1;}
   .chip.ok{background:#ecfdf5;border-color:#86efac;color:#065f46;}
-  .chip.due{background:var(--due-bg);border-color:var(--due-bd);color:var(--due-fg);} /* <= warna biru untuk 'Kurang N hari' */
+  .chip.due{background:var(--due-bg);border-color:var(--due-bd);color:var(--due-fg);}
   .chip.over{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
+
+  /* ===== status badge utk checklist ringkas ===== */
+  .status-badge{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #e5e7eb;font-size:11px;font-weight:700}
+  .status-badge.good{background:#ecfdf5;border-color:#86efac;color:#065f46}
+  .status-badge.warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+  .status-badge.bad{background:#fef2f2;border-color:#fecaca;color:#7f1d1d}
+  .status-badge.neutral{background:#f1f5f9;border-color:#e2e8f0;color:#475569}
 
   .sigwrap{page-break-inside:avoid;margin-top:18px;}
   .sigtitle{text-align:right;margin:0 0 6px 0;}
@@ -710,15 +714,20 @@ export default function Lampiran({ data }: { data: AppState }) {
   .progress>div{height:100%;background:#2563eb;transition:width .2s ease}
   .chk{list-style:none;margin:0;padding:0}
   .step{display:flex;gap:8px;align-items:center;margin:6px 0}
-  .icon{display:inline-block;width:14px;height:14px;border-radius:999px;border:2px solid #cbd5e1;background:#fff;box-sizing:border-box} /* <= lingkaran polos */
-  .done .icon{background:#2563eb;border-color:#2563eb} /* <= jika done jadi biru solid */
+  .icon{display:inline-block;width:14px;height:14px;border-radius:999px;border:2px solid #cbd5e1;background:#fff;box-sizing:border-box}
+  .done .icon{background:#2563eb;border-color:#2563eb}
   .label{line-height:1.35}
   .done .label{text-decoration:line-through;color:#6b7280}
+
+  /* ===== indikator on/off utk Target (klaim & mingguan) ===== */
+  .cbx{display:inline-block;width:14px;height:14px;border-radius:999px;border:2px solid #cbd5e1;background:#fff;vertical-align:middle}
+  .cbx.on{background:#2563eb;border-color:#2563eb}
+
   .ul-kv{margin:0;padding-left:18px}
 `;
     root.appendChild(st);
 
-    // mount root dulu
+    // mount root
     doc.body.appendChild(root);
 
     const PAGE_MAX_PX = 1123;
@@ -730,7 +739,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     };
     let page = makePage();
 
-    function splitTableSection(sectionEl: HTMLElement, suffix = "") {
+    function splitTableSection(sectionEl: HTMLElement) {
       const titleEl = sectionEl.querySelector(".subhead");
       const titleText = titleEl?.textContent || "";
       const table = sectionEl.querySelector("table");
@@ -876,6 +885,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       head.innerHTML = `<div class="title">Rangkuman Checklist</div>`;
       appendBlock(head);
 
+      const checklistBlocks = renderChecklist((data as any).checklist || {});
       checklistBlocks.forEach((sec) => {
         const secEl = doc.createElement("div");
         secEl.className = "section page-break-avoid";
@@ -917,64 +927,105 @@ export default function Lampiran({ data }: { data: AppState }) {
       head.innerHTML = `<div class="title">${titleMap[theme]}</div>`;
       appendBlock(head);
 
-      if (theme === "attitude") {
-        const rawScores = (evalData?.attitude?.scores ?? {}) as Record<
-          string,
-          unknown
-        >;
-        const rawNotes = (evalData?.attitude?.notes ?? {}) as Record<
-          string,
-          string
-        >;
-        const makeTable = (
-          scoreOf: (c: string) => unknown,
-          noteOf: (c: string) => string | undefined
-        ) => {
-          const wrap = doc.createElement("div");
-          wrap.className = "section page-break-avoid";
-          const tbl = doc.createElement("table");
-          tbl.className = "table striped";
-          tbl.innerHTML = `<colgroup><col style="width:50%"><col style="width:14%"><col style="width:36%"></colgroup>
-            <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
-          const tb = doc.createElement("tbody");
-          HEBAT_ITEMS.forEach((i) =>
-            tb.insertAdjacentHTML(
-              "beforeend",
-              `<tr><td>[${i.code}] ${i.title}</td><td><b>${
-                scoreOf(i.code) ?? ""
-              }</b></td><td>${noteOf(i.code) || ""}</td></tr>`
-            )
-          );
-          tbl.appendChild(tb);
-          wrap.appendChild(tbl);
-          return wrap;
+      // ------ helper baca per-orang beragam skema ------
+      const readPersonPayload = (t: Theme, p: Person) =>
+        ((evalData as any)[`${t}_${p}`] ??
+          (evalData as any)[t]?.[p] ??
+          (evalData as any)[p]?.[t] ??
+          {}) as {
+          scores?: Record<string, unknown>;
+          notes?: Record<string, string>;
         };
-        const hasPerPerson = PERSONS.some((p) =>
-          HEBAT_ITEMS.some(
-            (i) =>
-              rawScores[`${p}::${i.code}`] !== undefined ||
-              (rawNotes[`${p}::${i.code}`] || "").trim() !== ""
-          )
+
+      if (theme === "attitude") {
+        const raw = (evalData?.attitude ?? {}) as any;
+
+        const useNestedPerPerson = PERSONS.some(
+          (p) => raw?.[p]?.scores || raw?.[p]?.notes
         );
-        if (hasPerPerson) {
+
+        if (useNestedPerPerson) {
+          // evaluasi.attitude.laras/emi/novi.{scores,notes}
           PERSONS.forEach((p) => {
+            const scores = (raw?.[p]?.scores ?? {}) as Record<string, unknown>;
+            const notes = (raw?.[p]?.notes ?? {}) as Record<string, string>;
             const block = doc.createElement("div");
             block.className = "section";
             block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
-            const tblWrap = makeTable(
-              (code) => (rawScores as any)[`${p}::${code}`],
-              (code) => (rawNotes as any)[`${p}::${code}`]
+            const tbl = doc.createElement("table");
+            tbl.className = "table striped";
+            tbl.innerHTML = `<colgroup><col style="width:50%"><col style="width:14%"><col style="width:36%"></colgroup>
+              <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
+            const tb = doc.createElement("tbody");
+            HEBAT_ITEMS.forEach((i) =>
+              tb.insertAdjacentHTML(
+                "beforeend",
+                `<tr><td>[${i.code}] ${i.title}</td><td><b>${
+                  (scores as any)[i.code] ?? ""
+                }</b></td><td>${(notes as any)[i.code] || ""}</td></tr>`
+              )
             );
-            block.appendChild(tblWrap.firstChild as HTMLElement);
+            tbl.appendChild(tb);
+            block.appendChild(tbl);
             appendBlock(block);
           });
         } else {
-          appendBlock(
-            makeTable(
-              (c) => (rawScores as any)[c],
-              (c) => (rawNotes as any)[c]
+          // skema 1) attitude.scores / attitude.notes
+          const rawScores = (raw?.scores ?? {}) as Record<string, unknown>;
+          const rawNotes = (raw?.notes ?? {}) as Record<string, string>;
+
+          // atau skema 2) "laras::H"
+          const hasPerPersonInline = PERSONS.some((p) =>
+            HEBAT_ITEMS.some(
+              (i) =>
+                rawScores[`${p}::${i.code}`] !== undefined ||
+                (rawNotes[`${p}::${i.code}`] || "").trim() !== ""
             )
           );
+          if (hasPerPersonInline) {
+            PERSONS.forEach((p) => {
+              const block = doc.createElement("div");
+              block.className = "section";
+              block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
+              const tbl = doc.createElement("table");
+              tbl.className = "table striped";
+              tbl.innerHTML = `<colgroup><col style="width:50%"><col style="width:14%"><col style="width:36%"></colgroup>
+                <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
+              const tb = doc.createElement("tbody");
+              HEBAT_ITEMS.forEach((i) =>
+                tb.insertAdjacentHTML(
+                  "beforeend",
+                  `<tr><td>[${i.code}] ${i.title}</td><td><b>${
+                    (rawScores as any)[`${p}::${i.code}`] ?? ""
+                  }</b></td><td>${
+                    (rawNotes as any)[`${p}::${i.code}`] || ""
+                  }</td></tr>`
+                )
+              );
+              tbl.appendChild(tb);
+              block.appendChild(tbl);
+              appendBlock(block);
+            });
+          } else {
+            const wrap = doc.createElement("div");
+            wrap.className = "section page-break-avoid";
+            const tbl = doc.createElement("table");
+            tbl.className = "table striped";
+            tbl.innerHTML = `<colgroup><col style="width:50%"><col style="width:14%"><col style="width:36%"></colgroup>
+              <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
+            const tb = doc.createElement("tbody");
+            HEBAT_ITEMS.forEach((i) =>
+              tb.insertAdjacentHTML(
+                "beforeend",
+                `<tr><td>[${i.code}] ${i.title}</td><td><b>${
+                  (rawScores as any)[i.code] ?? ""
+                }</b></td><td>${(rawNotes as any)[i.code] || ""}</td></tr>`
+              )
+            );
+            tbl.appendChild(tb);
+            wrap.appendChild(tbl);
+            appendBlock(wrap);
+          }
         }
       } else {
         const ITEMS =
@@ -984,10 +1035,7 @@ export default function Lampiran({ data }: { data: AppState }) {
             ? PRESTASI_ITEMS
             : SOP_ITEMS;
         PERSONS.forEach((p) => {
-          const payload = ((evalData as any)[`${theme}_${p}`] ?? {}) as {
-            scores?: Record<string, unknown>;
-            notes?: Record<string, string>;
-          };
+          const payload = readPersonPayload(theme, p);
           const scores = payload.scores ?? {};
           const notes = payload.notes ?? {};
           const block = doc.createElement("div");
@@ -1020,7 +1068,15 @@ export default function Lampiran({ data }: { data: AppState }) {
       head.innerHTML = `<div class="title">Target & Achievement</div>`;
       appendBlock(head);
 
-      const rawTarget = (data as unknown as AppLike).target as any;
+      // Ambil apapun yang tersedia
+      const rawTarget =
+        ((data as any).target ??
+          (data as any).targets ??
+          (data as any).kpi ??
+          (data as any).achievement ??
+          (data as any).achievements) ||
+        {};
+
       const pick = (obj: any, keys: string[]) => {
         if (!obj) return undefined;
         for (const k of keys) {
@@ -1121,11 +1177,11 @@ export default function Lampiran({ data }: { data: AppState }) {
             (isRecord(row) &&
               (["deadline", "due", "tanggal"] as const)
                 .map((k) => (row as any)[k])
-                .find((v) => v !== undefined)) ??
+                .find((v) => v !== undefined)) ||
             (isRecord(deadlinesSrc) &&
               isRecord((deadlinesSrc as any).klaim) &&
               ((deadlinesSrc as any).klaim[p] ??
-                (deadlinesSrc as any).klaim[p.toLowerCase()])) ??
+                (deadlinesSrc as any).klaim[p.toLowerCase()])) ||
             (isRecord(deadlinesSrc) && (deadlinesSrc as any).klaim);
           const deadline = fmtDate(rowDeadline);
           kbody.insertAdjacentHTML(
@@ -1154,8 +1210,8 @@ export default function Lampiran({ data }: { data: AppState }) {
           (isRecord(tgtBulananSrc) &&
             (["deadline", "due"] as const)
               .map((k) => (tgtBulananSrc as any)[k])
-              .find((v) => v !== undefined)) ??
-            (isRecord(deadlinesSrc) && (deadlinesSrc as any).targetSelesai) ??
+              .find((v) => v !== undefined)) ||
+            (isRecord(deadlinesSrc) && (deadlinesSrc as any).targetSelesai) ||
             rawTarget?.deadline
         );
         const targetTblWrap = doc.createElement("div");
@@ -1197,6 +1253,9 @@ export default function Lampiran({ data }: { data: AppState }) {
         reportBlock.appendChild(repTbl);
         appendBlock(reportBlock);
       } else {
+        // ---- Fallback generic (pakai extractor any-shape) ----
+        const tv = extractTarget(rawTarget);
+
         const valueToHTML = (v: unknown): string => {
           if (v == null || v === "") return "";
           if (typeof v === "boolean") return v ? "Ya" : "–";
@@ -1238,7 +1297,7 @@ export default function Lampiran({ data }: { data: AppState }) {
           return escapeHtml(String(v));
         };
 
-        if (targetView.type === "empty") {
+        if (tv.type === "empty") {
           const tblWrap = doc.createElement("div");
           tblWrap.className = "section page-break-avoid";
           const tbl = doc.createElement("table");
@@ -1248,14 +1307,14 @@ export default function Lampiran({ data }: { data: AppState }) {
           )}</td></tr></tbody>`;
           tblWrap.appendChild(tbl);
           appendBlock(tblWrap);
-        } else if (targetView.type === "kpi") {
+        } else if (tv.type === "kpi") {
           const tblWrap = doc.createElement("div");
           tblWrap.className = "section page-break-avoid";
           const tbl = doc.createElement("table");
           tbl.className = "table striped";
           tbl.innerHTML = `<thead><tr><th>KPI</th><th>Target</th><th>Realisasi</th><th>%</th><th>Catatan</th><th>Status</th></tr></thead>`;
           const tb = doc.createElement("tbody");
-          targetView.rows.forEach((r) => {
+          tv.rows.forEach((r) => {
             const filled =
               hasAnyTruthy(r["target"]) ||
               hasAnyTruthy(r["plan"]) ||
@@ -1285,8 +1344,8 @@ export default function Lampiran({ data }: { data: AppState }) {
           tbl.appendChild(tb);
           tblWrap.appendChild(tbl);
           appendBlock(tblWrap);
-        } else if (targetView.type === "table") {
-          const cols = targetView.cols;
+        } else if (tv.type === "table") {
+          const cols = tv.cols;
           const tblWrap = doc.createElement("div");
           tblWrap.className = "section page-break-avoid";
           const tbl = doc.createElement("table");
@@ -1297,7 +1356,7 @@ export default function Lampiran({ data }: { data: AppState }) {
             .join("")}<th>Status</th></tr>`;
           tbl.appendChild(thead);
           const tb = doc.createElement("tbody");
-          targetView.rows.forEach((row) => {
+          tv.rows.forEach((row) => {
             const filled = hasAnyTruthy(row);
             tb.insertAdjacentHTML(
               "beforeend",
@@ -1309,8 +1368,8 @@ export default function Lampiran({ data }: { data: AppState }) {
           tbl.appendChild(tb);
           tblWrap.appendChild(tbl);
           appendBlock(tblWrap);
-        } else if (targetView.type === "kv") {
-          const kv = targetView.kv;
+        } else if (tv.type === "kv") {
+          const kv = tv.kv;
           const tblWrap = doc.createElement("div");
           tblWrap.className = "section page-break-avoid";
           const tbl = doc.createElement("table");
@@ -1348,6 +1407,11 @@ export default function Lampiran({ data }: { data: AppState }) {
       head.innerHTML = `<div class="title">Project Tracking (SPARTA)</div>`;
       appendBlock(head);
 
+      const projectList = extractProjectsFromSparta(
+        (data as any).sparta,
+        (user as AnyUser | undefined)?.role
+      );
+
       const renderCard = (
         p: {
           name: string;
@@ -1365,7 +1429,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         card.className = "pro-card page-break-avoid";
         let chip = "";
         if (p.daysLeft !== null && p.deadline) {
-          const cls = p.daysLeft < 0 ? "over" : p.daysLeft <= 3 ? "due" : "ok"; // <= biru untuk <=3 hari
+          const cls = p.daysLeft < 0 ? "over" : p.daysLeft <= 3 ? "due" : "ok";
           const text =
             p.daysLeft < 0
               ? `Lewat ${Math.abs(p.daysLeft)} hari`
@@ -1459,7 +1523,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       head.innerHTML = `<div class="title">Agenda & Jadwal</div>`;
       appendBlock(head);
 
-      const agenda = ((data as unknown as AppLike).agenda?.entries ??
+      const agenda = (((data as unknown as AppLike).agenda?.entries ?? []) ||
         []) as AppLike["agenda"]["entries"];
       if (agenda.length) {
         const sorted = [...agenda].sort((a, b) =>
@@ -1645,7 +1709,9 @@ export default function Lampiran({ data }: { data: AppState }) {
       if (entry.storage === "remote" && entry.key) {
         const res = await fetch(
           `/api/lampiran/delete?key=${encodeURIComponent(entry.key)}`,
-          { method: "POST" }
+          {
+            method: "POST",
+          }
         );
         if (!res.ok) {
           const msg = await res.json().catch(() => ({} as { error?: string }));
