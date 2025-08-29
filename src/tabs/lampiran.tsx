@@ -24,7 +24,6 @@ type PdfEntry = {
   key?: string;
 };
 
-/** Helper longgar untuk akses id/email/name/role tanpa error tipe */
 type AnyUser = Partial<{
   id: string;
   email: string;
@@ -96,8 +95,7 @@ function uuid() {
 function loadHistory(): PdfEntry[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = localStorage.getItem(STORE_KEY);
-    return raw ? (JSON.parse(raw) as unknown as PdfEntry[]) : [];
+    return JSON.parse(localStorage.getItem(STORE_KEY) || "[]");
   } catch {
     return [];
   }
@@ -107,23 +105,20 @@ function saveHistory(items: PdfEntry[]) {
 }
 
 /* =========================
-   Loader aman untuk html2canvas & jsPDF (ESM)
+   Loader pdf libs
    ========================= */
 async function loadPdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
   const h2cMod = await import("html2canvas");
   const html2canvas = (h2cMod as any).default ?? (h2cMod as any);
-
   const m = await import("jspdf");
   const jsPDF = (m as any).jsPDF ?? (m as any).default ?? (m as any);
-
   if (!html2canvas) throw new Error("html2canvas tidak ter-load");
   if (!jsPDF) throw new Error("jsPDF tidak ter-load");
-
   return { html2canvas, jsPDF };
 }
 
 /* =========================
-   Signature Pad (fixed)
+   Signature Pad
    ========================= */
 function SignaturePad({
   onChange,
@@ -135,7 +130,6 @@ function SignaturePad({
   const ratioRef = useRef(1);
   const widthRef = useRef(560);
   const [empty, setEmpty] = useState(true);
-
   const SIG_HEIGHT = 140;
 
   useEffect(() => {
@@ -146,12 +140,10 @@ function SignaturePad({
     const ratio = Math.max(window.devicePixelRatio || 1, 1);
     ratioRef.current = ratio;
     widthRef.current = parentW;
-
     canvas.width = Math.round(parentW * ratio);
     canvas.height = Math.round(SIG_HEIGHT * ratio);
     canvas.style.width = "100%";
     canvas.style.height = `${SIG_HEIGHT}px`;
-
     const ctx = canvas.getContext("2d")!;
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.lineCap = "round";
@@ -167,18 +159,18 @@ function SignaturePad({
   const getPos = (
     e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
   ) => {
-    const canvas = canvasRef.current!;
-    const rect = canvas.getBoundingClientRect();
+    const canvas = canvasRef.current!,
+      rect = canvas.getBoundingClientRect();
     if ("touches" in e) {
       const t = e.touches[0];
       return { x: t.clientX - rect.left, y: t.clientY - rect.top };
     }
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    return {
+      x: (e as any).clientX - rect.left,
+      y: (e as any).clientY - rect.top,
+    };
   };
-
-  const start = (
-    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
-  ) => {
+  const start = (e: any) => {
     drawingRef.current = true;
     const ctx = canvasRef.current!.getContext("2d")!;
     const p = getPos(e);
@@ -186,9 +178,7 @@ function SignaturePad({
     ctx.moveTo(p.x, p.y);
     e.preventDefault();
   };
-  const move = (
-    e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
-  ) => {
+  const move = (e: any) => {
     if (!drawingRef.current) return;
     const ctx = canvasRef.current!.getContext("2d")!;
     const p = getPos(e);
@@ -202,10 +192,9 @@ function SignaturePad({
     const dataUrl = canvasRef.current!.toDataURL("image/png");
     onChange(empty ? null : dataUrl);
   };
-
   const clear = () => {
-    const c = canvasRef.current!;
-    const ctx = c.getContext("2d")!;
+    const c = canvasRef.current!,
+      ctx = c.getContext("2d")!;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, c.width, c.height);
     ctx.setTransform(ratioRef.current, 0, 0, ratioRef.current, 0, 0);
@@ -214,10 +203,9 @@ function SignaturePad({
     ctx.lineWidth = 2;
     ctx.strokeStyle = "#111827";
     ctx.beginPath();
-    ctx.moveTo(0, 140 - 22);
-    ctx.lineTo(widthRef.current, 140 - 22);
+    ctx.moveTo(0, SIG_HEIGHT - 22);
+    ctx.lineTo(widthRef.current, SIG_HEIGHT - 22);
     ctx.stroke();
-
     setEmpty(true);
     onChange(null);
   };
@@ -285,22 +273,20 @@ function renderChecklist(checklist: ChecklistState) {
       }
       lineItems.push({ label: key.replace(/[-_]/g, " "), value, note: v.note });
     }
-    if (lineItems.length === 0) {
+    if (lineItems.length === 0)
       lineItems.push({ label: "", value: "", note: "" });
-    }
     out.push({ section: String(sec), rows: lineItems });
   }
-  if (out.length === 0) {
+  if (out.length === 0)
     out.push({
       section: "Checklist",
       rows: [{ label: "", value: "", note: "" }],
     });
-  }
   return out;
 }
 
 /* =========================
-   Helpers (type-safe)
+   Helpers
    ========================= */
 const isPrimitive = (v: unknown): v is string | number | boolean =>
   ["string", "number", "boolean"].includes(typeof v);
@@ -343,11 +329,6 @@ const labelStatusChip = (filled: boolean) =>
    Evaluasi types
    ========================= */
 type ScoreValue = string | number;
-type PersonEval = {
-  scores?: Record<string, ScoreValue>;
-  notes?: Record<string, string>;
-};
-
 type Evaluasi = {
   hari?: 1 | 2 | 3 | 4 | 5 | 6;
   attitude?: {
@@ -357,7 +338,6 @@ type Evaluasi = {
   };
   [key: string]: unknown;
 };
-
 function getTheme(evaluasi: Evaluasi): Theme {
   const hari =
     evaluasi.attitude?.hari ??
@@ -367,7 +347,7 @@ function getTheme(evaluasi: Evaluasi): Theme {
 }
 
 /* =========================
-   SPARTA: Catalog v3 + progress per-user
+   SPARTA katalog & progress
    ========================= */
 const SPARTA_CATALOG_KEY = "sitrep-sparta-catalog-v3";
 type SpartaCatalogItem = {
@@ -397,11 +377,8 @@ function readSpartaCatalog(): SpartaCatalogItem[] {
   if (typeof window === "undefined") return defaultSpartaCatalog();
   try {
     const raw = localStorage.getItem(SPARTA_CATALOG_KEY);
-    if (raw) {
-      const arr = JSON.parse(raw) as unknown as Array<
-        Partial<SpartaCatalogItem>
-      >;
-      return arr.map((p) => ({
+    if (raw)
+      return (JSON.parse(raw) as any[]).map((p) => ({
         targetRole: "admin",
         steps: [],
         deadline: "",
@@ -409,31 +386,22 @@ function readSpartaCatalog(): SpartaCatalogItem[] {
         title: "",
         ...p,
       })) as SpartaCatalogItem[];
-    }
     const rawV2 = localStorage.getItem("sitrep-sparta-catalog-v2");
-    if (rawV2) {
-      const arr = JSON.parse(rawV2) as unknown as Array<
-        Partial<SpartaCatalogItem>
-      >;
-      return arr.map((p) => ({
-        targetRole: (p.targetRole ?? "admin") as "admin" | "sales" | "gudang",
+    if (rawV2)
+      return (JSON.parse(rawV2) as any[]).map((p) => ({
+        targetRole: (p.targetRole ?? "admin") as any,
         steps: [],
         deadline: "",
         id: "",
         title: "",
         ...p,
       })) as SpartaCatalogItem[];
-    }
     const rawV1 = localStorage.getItem("sitrep-sparta-catalog-v1");
-    if (rawV1) {
-      const arr = JSON.parse(rawV1) as unknown as Array<
-        Omit<SpartaCatalogItem, "targetRole">
-      >;
-      return arr.map((p) => ({
+    if (rawV1)
+      return (JSON.parse(rawV1) as any[]).map((p) => ({
         ...p,
         targetRole: "admin",
       })) as SpartaCatalogItem[];
-    }
     return defaultSpartaCatalog();
   } catch {
     return defaultSpartaCatalog();
@@ -456,7 +424,6 @@ function daysLeftFromStr(deadline?: string) {
   ).getTime();
   return Math.ceil((d.getTime() - base) / 86400000);
 }
-
 type SpartaProgress = {
   steps: boolean[];
   progressText: string;
@@ -464,7 +431,6 @@ type SpartaProgress = {
   kendala: string;
 };
 type SpartaStateLike = { projectsProgress?: Record<string, SpartaProgress> };
-
 function extractProjectsFromSparta(
   sparta: SpartaStateLike | undefined,
   userRole: string | undefined
@@ -479,12 +445,10 @@ function extractProjectsFromSparta(
     role === "superadmin"
       ? catalog
       : catalog.filter((p) => p.targetRole === role);
-
   const progressMap = (sparta?.projectsProgress || {}) as Record<
     string,
     SpartaProgress
   >;
-
   return visible.map((p) => {
     const prog = progressMap[p.id] || {
       steps: [],
@@ -506,7 +470,6 @@ function extractProjectsFromSparta(
       daysLeft: daysLeftFromStr(p.deadline || undefined),
       steps,
       percent,
-      progressText: prog.progressText || "",
       nextAction: prog.nextAction || "",
       kendala: prog.kendala || "",
     };
@@ -514,29 +477,24 @@ function extractProjectsFromSparta(
 }
 
 /* =========================
-   Target & Achievement – extractor
+   Target extractor
    ========================= */
 type TargetView =
   | { type: "empty" }
   | { type: "kpi"; rows: Array<Record<string, unknown>> }
   | { type: "table"; cols: string[]; rows: Array<Record<string, unknown>> }
   | { type: "kv"; kv: Record<string, unknown> };
-
 function extractTarget(target: unknown): TargetView {
   if (!target || !isRecord(target)) return { type: "empty" };
-
   const list =
-    (target as Record<string, unknown>)["goals"] ??
-    (target as Record<string, unknown>)["items"] ??
-    (target as Record<string, unknown>)["rows"] ??
-    (target as Record<string, unknown>)["list"];
-
+    (target as any)["goals"] ??
+    (target as any)["items"] ??
+    (target as any)["rows"] ??
+    (target as any)["list"];
   if (Array.isArray(list) && list.length) {
     const rows = list.filter(isRecord) as Array<Record<string, unknown>>;
-
     const pick = (r: Record<string, unknown>, keys: string[]) =>
       keys.map((k) => r[k]).find((v) => v !== undefined);
-
     const looksLikeKPI =
       rows.some((r) => {
         const hasName = !!(pick(r, ["title", "name", "kpi"]) as
@@ -549,28 +507,22 @@ function extractTarget(target: unknown): TargetView {
           pick(r, ["percent", "persen", "achievement"]) !== undefined;
         return hasName || hasTgt || hasAct || hasPct;
       }) || false;
-
     if (looksLikeKPI) return { type: "kpi", rows };
-
     const cols = Array.from(
       rows.reduce<Set<string>>((s, r) => {
         Object.keys(r || {}).forEach((k) => s.add(k));
         return s;
       }, new Set())
     );
-
     return { type: "table", cols, rows };
   }
-
-  if (Object.keys(target).length) {
+  if (Object.keys(target).length)
     return { type: "kv", kv: target as Record<string, unknown> };
-  }
-
   return { type: "empty" };
 }
 
 /* =========================
-   Komponen Utama
+   Komponen
    ========================= */
 type AppLike = AppState &
   Partial<{
@@ -595,11 +547,8 @@ export default function Lampiran({ data }: { data: AppState }) {
   const [history, setHistory] = useState<PdfEntry[]>([]);
   const [searchDate, setSearchDate] = useState<string>("");
   const [working, setWorking] = useState(false);
-
-  // tidak lagi dipakai untuk render (kita pakai iframe), tapi biarkan ada
   const printRef = useRef<HTMLDivElement | null>(null);
 
-  // Ambil dari Supabase; kalau gagal, fallback local
   useEffect(() => {
     (async () => {
       const ok = await refreshRiwayatFromSupabase();
@@ -612,17 +561,14 @@ export default function Lampiran({ data }: { data: AppState }) {
       searchDate ? history.filter((h) => h.dateISO === searchDate) : history,
     [history, searchDate]
   );
-
   const checklistBlocks = useMemo(
     () => renderChecklist((data as AppLike).checklist as ChecklistState),
     [data]
   );
 
-  // Evaluasi
   const theme = getTheme((data as unknown as AppLike).evaluasi ?? {});
   const evalData = ((data as unknown as AppLike).evaluasi ?? {}) as Evaluasi;
 
-  // Project & Target
   const projectList = useMemo(
     () =>
       extractProjectsFromSparta(
@@ -636,13 +582,11 @@ export default function Lampiran({ data }: { data: AppState }) {
     [data]
   );
 
-  // ------- Helper: refresh riwayat dari API list -------
   async function refreshRiwayatFromSupabase() {
     try {
       const u = (user ?? {}) as AnyUser;
       const userId = u.id || u.email || u.name || "unknown";
       const role = u.role || "admin";
-
       const res = await fetch(
         `/api/lampiran/list?userId=${encodeURIComponent(
           userId
@@ -678,7 +622,6 @@ export default function Lampiran({ data }: { data: AppState }) {
   }
 
   /* --------- ISOLATED IFRAME + Layout PDF --------- */
-
   function createIsolatedIframe() {
     const iframe = document.createElement("iframe");
     iframe.style.position = "fixed";
@@ -696,24 +639,14 @@ export default function Lampiran({ data }: { data: AppState }) {
     );
     doc.close();
 
-    // Hard reset & base style (tanpa oklch)
     const base = doc.createElement("style");
-    base.textContent = `
-      *,*::before,*::after{box-sizing:border-box}
-      html,body{margin:0;padding:0;background:#fff;color:#0f172a}
-      body{font-family:Inter, Arial, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;font-size:12px;line-height:1.5}
-    `;
+    base.textContent = `*,*::before,*::after{box-sizing:border-box} html,body{margin:0;padding:0;background:#fff;color:#0f172a}
+      body{font-family:Inter, Arial, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;font-size:12px;line-height:1.5}`;
     doc.head.appendChild(base);
 
-    // return util
-    return {
-      doc,
-      iframe,
-      cleanup: () => iframe.remove(),
-    };
+    return { doc, iframe, cleanup: () => iframe.remove() };
   }
 
-  // now build layout but in a specific Document
   const buildPrintLayout = (doc: Document) => {
     const root = doc.createElement("div");
     root.id = "pdf-print-root";
@@ -734,45 +667,25 @@ export default function Lampiran({ data }: { data: AppState }) {
   .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;}
   .muted{color:#64748b;}
   .page-break-avoid{break-inside:avoid;page-break-inside:avoid;}
-  /* cegah pecah tabel/baris */
   .table, .table *, thead, tbody, tr, th, td { break-inside: avoid; page-break-inside: avoid; }
 
-  :root{
-    --brand-bg:#eef2ff; --brand-bg2:#e9efff; --brand-border:#c7d2fe; --brand-fg:#0f172a;
-    --good-bg:#ecfdf5; --good-fg:#065f46;
-    --warn-bg:#fffbeb; --warn-fg:#92400e;
-    --bad-bg:#fef2f2;  --bad-fg:#7f1d1d;
-    --neu-bg:#f1f5f9;  --neu-fg:#475569;
-  }
+  :root{--brand-bg:#eef2ff; --brand-bg2:#e9efff; --brand-border:#c7d2fe; --brand-fg:#0f172a;
+        --good-bg:#ecfdf5; --good-fg:#065f46; --warn-bg:#fffbeb; --warn-fg:#92400e; --bad-bg:#fef2f2; --bad-fg:#7f1d1d; --neu-bg:#f1f5f9; --neu-fg:#475569;}
 
-  .banner{
-    background: linear-gradient(180deg, var(--brand-bg) 0%, var(--brand-bg2) 100%);
-    color: var(--brand-fg);
-    border: 1px solid var(--brand-border);
-    padding: 16px 18px;
-    border-radius: 16px;
-    box-shadow: 0 1px 0 rgba(16,24,40,.03);
-  }
-  .banner .muted{ color:#64748b !important; }
-
+  .banner{background:linear-gradient(180deg,var(--brand-bg) 0%,var(--brand-bg2) 100%);color:var(--brand-fg);border:1px solid var(--brand-border);
+    padding:16px 18px;border-radius:16px;box-shadow:0 1px 0 rgba(16,24,40,.03);}
   .info-grid{display:flex;gap:12px;margin-top:12px;}
   .card{border:1px solid #e6e8f0;border-radius:12px;padding:10px 12px;flex:1;background:#fff;}
   .card .label{color:#6b7280;font-size:12px;}
 
   .table{width:100%;border-collapse:separate;border-spacing:0;}
   .table th,.table td{border:1px solid #e9edf3;padding:8px 10px;vertical-align:middle;}
-  .table th{
-    background:#f8fafc;color:#475569;text-align:left;font-weight:700;
-    border-top:none;border-bottom:2px solid #cbd5e1;
-  }
+  .table th{background:#f8fafc;color:#475569;text-align:left;font-weight:700;border-top:none;border-bottom:2px solid #cbd5e1;}
   .table.striped tbody tr:nth-child(even){background:#fbfdff;}
-
   .table.checklist{border:2px solid #cbd5e1;border-radius:12px;overflow:hidden;box-shadow:0 1px 0 rgba(16,24,40,.03);background:#fff;}
   .table.checklist td:first-child{font-weight:700;color:#0f172a;}
 
   .subhead{font-weight:800;margin:6px 0 8px;color:#0f172a;text-transform:uppercase;letter-spacing:.2px;border-left:5px solid #0f172a;padding-left:10px;}
-  .mb8{margin-bottom:8px;}
-
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;}
   .chip{display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;font-size:11px;font-weight:700;line-height:1;}
   .chip.ok{background:#ecfdf5;border-color:#86efac;color:#065f46;}
@@ -800,36 +713,14 @@ export default function Lampiran({ data }: { data: AppState }) {
   .done .icon{background:#10b981;border-color:#10b981;color:#fff}
   .label{line-height:1.35}
   .done .label{text-decoration:line-through;color:#6b7280}
-  .kpi th:nth-child(1){width:28%}
-  .kpi th:nth-child(2),.kpi th:nth-child(3),.kpi th:nth-child(4){width:16%}
-  .kpi th:nth-child(5){width:24%}
   .ul-kv{margin:0;padding-left:18px}
-
-  .checkline{display:inline-flex;align-items:center;gap:8px}
-  .cbx{display:inline-block;width:14px;height:14px;border:1px solid #cbd5e1;border-radius:50%;background:#fff;vertical-align:middle;box-shadow: inset 0 1px 0 rgba(0,0,0,.02);}
-  .table td > .cbx:only-child{ display:block; margin:0 auto; }
-  .cbx.on{border-color:#22c55e;}
-  .cbx.on::after{content:"";display:block;width:8px;height:8px;margin:2px;border-radius:50%;background:#22c55e;}
-  .cbx-label{font-size:11px;font-weight:600;color:#475569;}
-
-  .small{font-size:11px}
-  .hint{color:#94a3b8;font-size:11px;margin-left:6px}
-
-  body { color:#0f172a; -webkit-font-smoothing:antialiased; }
-  .table th, .table td { color:#0f172a; font-weight:500; }
-  .table th { font-weight:700; }
-  b, strong { font-weight:700; color:#0f172a; }
-
-  .status-badge{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;padding:4px 10px;border-radius:9999px;background:var(--neu-bg); color:var(--neu-fg);font-weight:600;font-size:12px;line-height:1.2;font-family:inherit;margin:2px 0 0 2px;border:none; box-shadow:none;}
-  .status-badge.good{background:var(--good-bg);color:var(--good-fg);}
-  .status-badge.warn{background:var(--warn-bg);color:var(--warn-fg);}
-  .status-badge.bad{background:var(--bad-bg);color:var(--bad-fg);}
-  .status-badge.neutral{background:var(--neu-bg);color:var(--neu-fg);}
 `;
     root.appendChild(st);
 
-    // ---- Pagination helpers ----
-    const PAGE_MAX_PX = 1123; // sesuai .page min-height
+    // ⬇️ PENTING: mount root SEBELUM bangun konten, agar scrollHeight valid
+    doc.body.appendChild(root);
+
+    const PAGE_MAX_PX = 1123;
     const makePage = () => {
       const p = doc.createElement("div");
       p.className = "page";
@@ -838,16 +729,108 @@ export default function Lampiran({ data }: { data: AppState }) {
     };
     let page = makePage();
 
+    // Smart splitter untuk section berisi tabel panjang
+    function splitTableSection(sectionEl: HTMLElement, suffix = "") {
+      const titleEl = sectionEl.querySelector(".subhead");
+      const titleText = titleEl?.textContent || "";
+      const table = sectionEl.querySelector("table");
+      if (!table) {
+        appendBlock(sectionEl);
+        return;
+      }
+
+      const thead = table
+        .querySelector("thead")
+        ?.cloneNode(true) as HTMLElement | null;
+      const rows = Array.from(table.querySelectorAll("tbody > tr"));
+      let idx = 0;
+      let first = true;
+
+      while (idx < rows.length) {
+        // buat container section baru
+        const sec = doc.createElement("div");
+        sec.className = "section page-break-avoid";
+        if (titleText) {
+          const h = doc.createElement("div");
+          h.className = "subhead";
+          h.textContent = first ? titleText : `${titleText} (lanjutan)`;
+          sec.appendChild(h);
+        }
+        const t = doc.createElement("table");
+        t.className = table.className;
+        if (thead) t.appendChild(thead.cloneNode(true));
+        const tb = doc.createElement("tbody");
+        t.appendChild(tb);
+        sec.appendChild(t);
+
+        // isi baris satu per satu sampai halaman penuh
+        while (idx < rows.length) {
+          tb.appendChild(rows[idx].cloneNode(true));
+          page.appendChild(sec);
+          if (page.scrollHeight > PAGE_MAX_PX) {
+            // overflow → cabut baris terakhir & pindah ke halaman baru
+            tb.removeChild(tb.lastElementChild!);
+            page.removeChild(sec);
+            page = makePage();
+            break;
+          } else {
+            page.removeChild(sec); // tes dulu, nanti appendBlock yg final
+            idx++;
+          }
+        }
+
+        appendBlock(sec);
+        first = false;
+      }
+    }
+
     const appendBlock = (el: HTMLElement) => {
       page.appendChild(el);
       if (page.scrollHeight > PAGE_MAX_PX) {
+        // coba pindahkan seluruh block ke halaman baru
         page.removeChild(el);
         page = makePage();
         page.appendChild(el);
+        if (page.scrollHeight > PAGE_MAX_PX) {
+          // el sendirian tetap overflow → kalau ada tabel, split per baris
+          page.removeChild(el);
+          if (el.querySelector("table")) splitTableSection(el);
+          else {
+            // fallback: bungkus jadi beberapa chunk berdasarkan child
+            const children = Array.from(el.children) as HTMLElement[];
+            if (!children.length) {
+              appendBlock(doc.createElement("div"));
+              return;
+            }
+            const newContainer = doc.createElement("div");
+            newContainer.className = el.className;
+            let i = 0;
+            while (i < children.length) {
+              const part = children[i].cloneNode(true) as HTMLElement;
+              newContainer.appendChild(part);
+              page.appendChild(newContainer);
+              if (page.scrollHeight > PAGE_MAX_PX) {
+                newContainer.removeChild(part);
+                page.removeChild(newContainer);
+                if (newContainer.childElementCount) appendBlock(newContainer);
+                page = makePage();
+                // mulai container baru
+                const nc = doc.createElement("div");
+                nc.className = el.className;
+                newContainer.replaceWith(nc);
+                (newContainer as any) = nc;
+              } else {
+                page.removeChild(newContainer);
+                i++;
+              }
+            }
+            if (newContainer.childElementCount) appendBlock(newContainer);
+          }
+        }
       }
     };
 
-    // ---- Header (halaman pertama) ----
+    // ==== Header
     const header = doc.createElement("div");
     header.className = "banner";
     header.innerHTML = `
@@ -861,31 +844,27 @@ export default function Lampiran({ data }: { data: AppState }) {
       raw: unknown
     ): "good" | "warn" | "bad" | "neutral" => {
       if (raw == null) return "neutral";
-      const str = String(raw).trim().toLowerCase();
-      if (!str) return "neutral";
-      if (
-        ["ya", "yes", "y", "true", "ok", "oke", "on", "selesai"].includes(str)
-      )
+      const s = String(raw).trim().toLowerCase();
+      if (!s) return "neutral";
+      if (["ya", "yes", "y", "true", "ok", "oke", "on", "selesai"].includes(s))
         return "good";
-      if (["tidak", "no", "n", "false", "off"].includes(str)) return "bad";
-      if (/\d+(\.\d+)?\s*%$/.test(str)) {
-        const v = parseFloat(str);
+      if (["tidak", "no", "n", "false", "off"].includes(s)) return "bad";
+      if (/\d+(\.\d+)?\s*%$/.test(s)) {
+        const v = parseFloat(s);
         if (v >= 80) return "good";
         if (v >= 50) return "warn";
         return "bad";
       }
-      const n = Number(str);
+      const n = Number(s);
       if (!Number.isNaN(n)) return n >= 4 ? "good" : n >= 3 ? "warn" : "bad";
-      if (["pending", "proses", "kurang"].some((w) => str.includes(w)))
+      if (["pending", "proses", "kurang"].some((w) => s.includes(w)))
         return "warn";
-      if (["gagal", "lewat", "rusak"].some((w) => str.includes(w)))
-        return "bad";
-      if (["baik", "aman", "sesuai"].some((w) => str.includes(w)))
-        return "good";
+      if (["gagal", "lewat", "rusak"].some((w) => s.includes(w))) return "bad";
+      if (["baik", "aman", "sesuai"].some((w) => s.includes(w))) return "good";
       return "neutral";
     };
 
-    // ---- Identitas ----
+    // Identitas
     const info = doc.createElement("div");
     info.className = "info-grid";
     info.innerHTML = `
@@ -898,9 +877,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       <div class="card"><div class="label">Depo</div><div style="font-weight:700">TULUNGAGUNG</div></div>`;
     appendBlock(info);
 
-    /* =========================
-       RANGKUMAN CHECKLIST
-       ========================= */
+    /* ========= Rangkuman Checklist ========= */
     {
       const head = doc.createElement("div");
       head.className = "section";
@@ -913,12 +890,8 @@ export default function Lampiran({ data }: { data: AppState }) {
         secEl.innerHTML = `<div class="subhead">${sec.section.toUpperCase()}</div>`;
         const tbl = doc.createElement("table");
         tbl.className = "table striped checklist";
-        tbl.innerHTML = `<colgroup>
-          <col style="width:26%">
-          <col style="width:18%">
-          <col style="width:56%">
-        </colgroup>
-        <thead><tr><th>Area</th><th>Status</th><th>Catatan</th></tr></thead>`;
+        tbl.innerHTML = `<colgroup><col style="width:26%"><col style="width:18%"><col style="width:56%"></colgroup>
+          <thead><tr><th>Area</th><th>Status</th><th>Catatan</th></tr></thead>`;
         const tb = doc.createElement("tbody");
         sec.rows.forEach((r) => {
           const cls = classifyStatus(r.value);
@@ -927,11 +900,9 @@ export default function Lampiran({ data }: { data: AppState }) {
           )}</span>`;
           tb.insertAdjacentHTML(
             "beforeend",
-            `<tr>
-               <td>${r.label || ""}</td>
-               <td>${valueHtml}</td>
-               <td>${r.note || ""}</td>
-             </tr>`
+            `<tr><td>${r.label || ""}</td><td>${valueHtml}</td><td>${
+              r.note || ""
+            }</td></tr>`
           );
         });
         tbl.appendChild(tb);
@@ -940,9 +911,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       });
     }
 
-    /* =========================
-       EVALUASI TIM
-       ========================= */
+    /* ========= Evaluasi ========= */
     {
       const titleMap: Record<Theme, string> = {
         attitude: "Evaluasi Tim · Attitude (HEBAT)",
@@ -965,39 +934,29 @@ export default function Lampiran({ data }: { data: AppState }) {
           string,
           string
         >;
-
         const makeTable = (
-          scoreOf: (code: string) => unknown,
-          noteOf: (code: string) => string | undefined
+          scoreOf: (c: string) => unknown,
+          noteOf: (c: string) => string | undefined
         ) => {
           const wrap = doc.createElement("div");
           wrap.className = "section page-break-avoid";
           const tbl = doc.createElement("table");
           tbl.className = "table striped";
-          tbl.innerHTML = `<colgroup>
-            <col style="width:50%">
-            <col style="width:14%">
-            <col style="width:36%">
-          </colgroup>
-          <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
+          tbl.innerHTML = `<colgroup><col style="width:50%"><col style="width:14%"><col style="width:36%"></colgroup>
+            <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
           const tb = doc.createElement("tbody");
-          HEBAT_ITEMS.forEach((i) => {
-            const val = scoreOf(i.code);
-            const note = noteOf(i.code) || "";
+          HEBAT_ITEMS.forEach((i) =>
             tb.insertAdjacentHTML(
               "beforeend",
-              `<tr>
-                 <td>[${i.code}] ${i.title}</td>
-                 <td><b>${val ?? ""}</b></td>
-                 <td>${note}</td>
-               </tr>`
-            );
-          });
+              `<tr><td>[${i.code}] ${i.title}</td><td><b>${
+                scoreOf(i.code) ?? ""
+              }</b></td><td>${noteOf(i.code) || ""}</td></tr>`
+            )
+          );
           tbl.appendChild(tb);
           wrap.appendChild(tbl);
           return wrap;
         };
-
         const hasPerPerson = PERSONS.some((p) =>
           HEBAT_ITEMS.some(
             (i) =>
@@ -1005,25 +964,25 @@ export default function Lampiran({ data }: { data: AppState }) {
               (rawNotes[`${p}::${i.code}`] || "").trim() !== ""
           )
         );
-
         if (hasPerPerson) {
           PERSONS.forEach((p) => {
             const block = doc.createElement("div");
             block.className = "section";
             block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
             const tblWrap = makeTable(
-              (code) => (rawScores as Record<string, unknown>)[`${p}::${code}`],
-              (code) => (rawNotes as Record<string, string>)[`${p}::${code}`]
+              (code) => (rawScores as any)[`${p}::${code}`],
+              (code) => (rawNotes as any)[`${p}::${code}`]
             );
             block.appendChild(tblWrap.firstChild as HTMLElement);
             appendBlock(block);
           });
         } else {
-          const tblWrap = makeTable(
-            (code) => (rawScores as Record<string, unknown>)[code],
-            (code) => (rawNotes as Record<string, string>)[code]
+          appendBlock(
+            makeTable(
+              (c) => (rawScores as any)[c],
+              (c) => (rawNotes as any)[c]
+            )
           );
-          appendBlock(tblWrap);
         }
       } else {
         const ITEMS =
@@ -1032,43 +991,29 @@ export default function Lampiran({ data }: { data: AppState }) {
             : theme === "prestasi"
             ? PRESTASI_ITEMS
             : SOP_ITEMS;
-
         PERSONS.forEach((p) => {
-          const perKey = `${theme}_${p}` as const;
-          const payload = ((evalData as any)[perKey] ?? {}) as {
+          const payload = ((evalData as any)[`${theme}_${p}`] ?? {}) as {
             scores?: Record<string, unknown>;
             notes?: Record<string, string>;
           };
           const scores = payload.scores ?? {};
           const notes = payload.notes ?? {};
-
           const block = doc.createElement("div");
           block.className = "section page-break-avoid";
           block.innerHTML = `<div class="subhead">${PERSON_LABEL[p]}</div>`;
-
           const tbl = doc.createElement("table");
           tbl.className = "table striped";
-          tbl.innerHTML = `<colgroup>
-            <col style="width:50%">
-            <col style="width:14%">
-            <col style="width:36%">
-          </colgroup>
-          <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
+          tbl.innerHTML = `<colgroup><col style="width:50%"><col style="width:14%"><col style="width:36%"></colgroup>
+            <thead><tr><th>Aspek</th><th>Skor</th><th>Catatan</th></tr></thead>`;
           const tb = doc.createElement("tbody");
-
-          ITEMS.forEach((i) => {
-            const val = (scores as Record<string, unknown>)[i.key];
-            const note = (notes as Record<string, string>)[i.key] || "";
+          ITEMS.forEach((i) =>
             tb.insertAdjacentHTML(
               "beforeend",
-              `<tr>
-                 <td>${i.title}</td>
-                 <td><b>${val ?? ""}</b></td>
-                 <td>${note}</td>
-               </tr>`
-            );
-          });
-
+              `<tr><td>${i.title}</td><td><b>${
+                (scores as any)[i.key] ?? ""
+              }</b></td><td>${(notes as any)[i.key] || ""}</td></tr>`
+            )
+          );
           tbl.appendChild(tb);
           block.appendChild(tbl);
           appendBlock(block);
@@ -1076,9 +1021,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
     }
 
-    /* =========================
-       TARGET & ACHIEVEMENT — UI style
-       ========================= */
+    /* ========= Target & Achievement (UI-aware) ========= */
     {
       const head = doc.createElement("div");
       head.className = "section";
@@ -1086,7 +1029,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       appendBlock(head);
 
       const rawTarget = (data as unknown as AppLike).target as any;
-
       const pick = (obj: any, keys: string[]) => {
         if (!obj) return undefined;
         for (const k of keys) {
@@ -1098,15 +1040,16 @@ export default function Lampiran({ data }: { data: AppState }) {
         }
         return undefined;
       };
-      const toBool = (v: any) => {
-        if (typeof v === "boolean") return v;
-        if (typeof v === "number") return v !== 0;
-        if (typeof v === "string")
-          return ["true", "1", "ya", "yes", "y", "selesai"].includes(
-            v.trim().toLowerCase()
-          );
-        return !!v;
-      };
+      const toBool = (v: any) =>
+        typeof v === "boolean"
+          ? v
+          : typeof v === "number"
+          ? v !== 0
+          : typeof v === "string"
+          ? ["true", "1", "ya", "yes", "y", "selesai"].includes(
+              v.trim().toLowerCase()
+            )
+          : !!v;
       const toWeeks = (v: any): boolean[] => {
         if (Array.isArray(v)) return clampBools(v.map(toBool), 4);
         if (isRecord(v)) {
@@ -1163,10 +1106,10 @@ export default function Lampiran({ data }: { data: AppState }) {
         rawTarget?.deadline !== undefined;
 
       if (looksLikeUI) {
-        // 1) Penyelesaian Klaim Bulan Ini
+        // Klaim bulanan
         const klaimBlock = doc.createElement("div");
         klaimBlock.className = "section page-break-avoid";
-        klaimBlock.innerHTML = `<div class="subhead">Penyelesaian Klaim Bulan Ini <span class="hint">(reset setiap awal bulan)</span></div>`;
+        klaimBlock.innerHTML = `<div class="subhead">Penyelesaian Klaim Bulan Ini <span class="muted" style="font-weight:600;font-size:11px">(reset setiap awal bulan)</span></div>`;
         const klaimTable = doc.createElement("table");
         klaimTable.className = "table striped";
         klaimTable.innerHTML = `<thead><tr><th>Jenis</th><th style="width:18%">Selesai</th><th style="width:30%">Deadline</th></tr></thead>`;
@@ -1193,23 +1136,20 @@ export default function Lampiran({ data }: { data: AppState }) {
                 (deadlinesSrc as any).klaim[p.toLowerCase()])) ??
             (isRecord(deadlinesSrc) && (deadlinesSrc as any).klaim);
           const deadline = fmtDate(rowDeadline);
-
           kbody.insertAdjacentHTML(
             "beforeend",
-            `<tr>
-               <td>${p}</td>
-               <td><span class="cbx ${
-                 selesai ? "on" : ""
-               }"></span> <span class="small">Selesai</span></td>
-               <td>${escapeHtml(deadline)}</td>
-             </tr>`
+            `<tr><td>${p}</td><td><span class="cbx ${
+              selesai ? "on" : ""
+            }"></span> <span class="muted" style="font-weight:600;font-size:11px">Selesai</span></td><td>${escapeHtml(
+              deadline
+            )}</td></tr>`
           );
         });
         klaimTable.appendChild(kbody);
         klaimBlock.appendChild(klaimTable);
         appendBlock(klaimBlock);
 
-        // 2) Target Selesai (bulan ini)
+        // Target selesai
         const targetCount =
           (isRecord(tgtBulananSrc)
             ? (["targetCount", "jumlah", "count", "value"] as const)
@@ -1231,16 +1171,16 @@ export default function Lampiran({ data }: { data: AppState }) {
         const targetTbl = doc.createElement("table");
         targetTbl.className = "table";
         targetTbl.innerHTML = `<colgroup><col style="width:40%"><col style="width:60%"></colgroup>
-          <tbody>
-            <tr><th>Target Selesai (bulan ini)</th><td>${escapeHtml(
-              String(targetCount ?? "")
-            )} <span class="hint">mis. 10</span></td></tr>
-            <tr><th>Deadline</th><td>${escapeHtml(targetDeadline)}</td></tr>
-          </tbody>`;
+          <tbody><tr><th>Target Selesai (bulan ini)</th><td>${escapeHtml(
+            String(targetCount ?? "")
+          )} <span class="muted" style="font-size:11px">mis. 10</span></td></tr>
+                 <tr><th>Deadline</th><td>${escapeHtml(
+                   targetDeadline
+                 )}</td></tr></tbody>`;
         targetTblWrap.appendChild(targetTbl);
         appendBlock(targetTblWrap);
 
-        // 3) Laporan Mingguan
+        // Laporan mingguan
         const reportBlock = doc.createElement("div");
         reportBlock.className = "section page-break-avoid";
         reportBlock.innerHTML = `<div class="subhead">Laporan Penjualan ke Prinsipal Mingguan</div>`;
@@ -1256,21 +1196,16 @@ export default function Lampiran({ data }: { data: AppState }) {
           const weeks = toWeeks(row);
           rbody.insertAdjacentHTML(
             "beforeend",
-            `<tr>
-               <td>${p}</td>
-               ${weeks
-                 .map(
-                   (w) => `<td><span class="cbx ${w ? "on" : ""}"></span></td>`
-                 )
-                 .join("")}
-             </tr>`
+            `<tr><td>${p}</td>${weeks
+              .map((w) => `<td><span class="cbx ${w ? "on" : ""}"></span></td>`)
+              .join("")}</tr>`
           );
         });
         repTbl.appendChild(rbody);
         reportBlock.appendChild(repTbl);
         appendBlock(reportBlock);
       } else {
-        // fallback generic renderer (dipertahankan)
+        // Fallback generic (tetap ada tapi jarang dipakai)
         const valueToHTML = (v: unknown): string => {
           if (v == null || v === "") return "";
           if (typeof v === "boolean") return v ? "Ya" : "–";
@@ -1316,21 +1251,17 @@ export default function Lampiran({ data }: { data: AppState }) {
           const tblWrap = doc.createElement("div");
           tblWrap.className = "section page-break-avoid";
           const tbl = doc.createElement("table");
-          tbl.className = "table striped kpi";
-          tbl.innerHTML = `<thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead>`;
-          tbl.insertAdjacentHTML(
-            "beforeend",
-            `<tbody><tr><td></td><td></td><td>${labelStatusChip(
-              false
-            )}</td></tr></tbody>`
-          );
+          tbl.className = "table striped";
+          tbl.innerHTML = `<thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead><tbody><tr><td></td><td></td><td>${labelStatusChip(
+            false
+          )}</td></tr></tbody>`;
           tblWrap.appendChild(tbl);
           appendBlock(tblWrap);
         } else if (targetView.type === "kpi") {
           const tblWrap = doc.createElement("div");
           tblWrap.className = "section page-break-avoid";
           const tbl = doc.createElement("table");
-          tbl.className = "table striped kpi";
+          tbl.className = "table striped";
           tbl.innerHTML = `<thead><tr><th>KPI</th><th>Target</th><th>Realisasi</th><th>%</th><th>Catatan</th><th>Status</th></tr></thead>`;
           const tb = doc.createElement("tbody");
           targetView.rows.forEach((r) => {
@@ -1344,20 +1275,20 @@ export default function Lampiran({ data }: { data: AppState }) {
               hasAnyTruthy(r["notes"] ?? r["catatan"]);
             tb.insertAdjacentHTML(
               "beforeend",
-              `<tr>
-                <td>${escapeHtml(
-                  String(r["title"] ?? r["name"] ?? r["kpi"] ?? "")
-                )}</td>
-                <td>${valueToHTML(r["target"] ?? r["plan"])}</td>
-                <td>${valueToHTML(
-                  r["actual"] ?? r["real"] ?? r["realisasi"] ?? r["achieved"]
-                )}</td>
-                <td>${valueToHTML(
-                  r["percent"] ?? r["persen"] ?? r["achievement"]
-                )}</td>
-                <td>${escapeHtml(String(r["notes"] ?? r["catatan"] ?? ""))}</td>
-                <td>${labelStatusChip(filled)}</td>
-              </tr>`
+              `<tr><td>${escapeHtml(
+                String(r["title"] ?? r["name"] ?? r["kpi"] ?? "")
+              )}</td>
+                   <td>${valueToHTML(r["target"] ?? r["plan"])}</td>
+                   <td>${valueToHTML(
+                     r["actual"] ?? r["real"] ?? r["realisasi"] ?? r["achieved"]
+                   )}</td>
+                   <td>${valueToHTML(
+                     r["percent"] ?? r["persen"] ?? r["achievement"]
+                   )}</td>
+                   <td>${escapeHtml(
+                     String(r["notes"] ?? r["catatan"] ?? "")
+                   )}</td>
+                   <td>${labelStatusChip(filled)}</td></tr>`
             );
           });
           tbl.appendChild(tb);
@@ -1380,7 +1311,7 @@ export default function Lampiran({ data }: { data: AppState }) {
             tb.insertAdjacentHTML(
               "beforeend",
               `<tr>${cols
-                .map((c) => `<td>${valueToHTML(row[c])}</td>`)
+                .map((c) => `<td>${valueToHTML((row as any)[c])}</td>`)
                 .join("")}<td>${labelStatusChip(filled)}</td></tr>`
             );
           });
@@ -1402,7 +1333,7 @@ export default function Lampiran({ data }: { data: AppState }) {
               "beforeend",
               `<tr><td></td><td></td><td>${labelStatusChip(false)}</td></tr>`
             );
-          } else {
+          } else
             entries.forEach(([k, v]) => {
               const filled = hasAnyTruthy(v);
               tb.insertAdjacentHTML(
@@ -1412,7 +1343,6 @@ export default function Lampiran({ data }: { data: AppState }) {
                 )}</td><td>${labelStatusChip(filled)}</td></tr>`
               );
             });
-          }
           tbl.appendChild(tb);
           tblWrap.appendChild(tbl);
           appendBlock(tblWrap);
@@ -1420,9 +1350,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
     }
 
-    /* =========================
-       PROJECT TRACKING (SPARTA)
-       ========================= */
+    /* ========= Project Tracking ========= */
     {
       const head = doc.createElement("div");
       head.className = "section";
@@ -1452,40 +1380,34 @@ export default function Lampiran({ data }: { data: AppState }) {
               ? `Lewat ${Math.abs(p.daysLeft)} hari`
               : `Kurang ${p.daysLeft} hari`;
           chip = `<span class="chip ${cls}">${text}</span>`;
-        } else if (p.deadline) {
-          chip = `<span class="chip">${p.deadline}</span>`;
-        }
+        } else if (p.deadline) chip = `<span class="chip">${p.deadline}</span>`;
         card.insertAdjacentHTML(
           "beforeend",
-          `<div class="pro-head">
-             <div class="pro-title">${idx + 1}. ${p.name || ""}</div>
-             <div>${chip}</div>
-           </div>`
+          `<div class="pro-head"><div class="pro-title">${idx + 1}. ${
+            p.name || ""
+          }</div><div>${chip}</div></div>`
         );
         const grid = doc.createElement("div");
         grid.className = "grid";
         const left = doc.createElement("div");
         left.innerHTML = `
-          <table class="table" style="border-radius:12px;overflow:hidden">
-            <tbody>
-              <tr><th style="width:30%">Owner/Role</th><td>${
-                p.ownerRole || ""
-              }</td></tr>
-              <tr><th>Deadline</th><td>${p.deadline || ""}</td></tr>
-              <tr><th>Progress</th><td>
-                <div class="progress"><div style="width:${Math.max(
-                  0,
-                  Math.min(100, p.percent || 0)
-                )}%"></div></div>
-                <div class="muted" style="margin-top:4px;font-weight:700">${
-                  p.percent ?? 0
-                }%</div>
-              </td></tr>
-              <tr><th>Next Action</th><td>${p.nextAction || ""}</td></tr>
-              <tr><th>Kendala</th><td>${p.kendala || ""}</td></tr>
-            </tbody>
-          </table>
-        `;
+          <table class="table" style="border-radius:12px;overflow:hidden"><tbody>
+            <tr><th style="width:30%">Owner/Role</th><td>${
+              p.ownerRole || ""
+            }</td></tr>
+            <tr><th>Deadline</th><td>${p.deadline || ""}</td></tr>
+            <tr><th>Progress</th><td>
+              <div class="progress"><div style="width:${Math.max(
+                0,
+                Math.min(100, p.percent || 0)
+              )}%"></div></div>
+              <div class="muted" style="margin-top:4px;font-weight:700">${
+                p.percent ?? 0
+              }%</div>
+            </td></tr>
+            <tr><th>Next Action</th><td>${p.nextAction || ""}</td></tr>
+            <tr><th>Kendala</th><td>${p.kendala || ""}</td></tr>
+          </tbody></table>`;
         const right = doc.createElement("div");
         const box = doc.createElement("div");
         box.className = "steps-panel";
@@ -1494,15 +1416,14 @@ export default function Lampiran({ data }: { data: AppState }) {
           p.steps && p.steps.length ? p.steps : [{ label: "" }, { label: "" }];
         const ul = doc.createElement("ul");
         ul.className = "chk";
-        steps.forEach((s) => {
+        steps.forEach((s) =>
           ul.insertAdjacentHTML(
             "beforeend",
-            `<li class="step ${s.done ? "done" : ""}">
-               <span class="icon">${s.done ? "✓" : ""}</span>
-               <span class="label">${s.label || ""}</span>
-             </li>`
-          );
-        });
+            `<li class="step ${s.done ? "done" : ""}"><span class="icon">${
+              s.done ? "✓" : ""
+            }</span><span class="label">${s.label || ""}</span></li>`
+          )
+        );
         box.appendChild(ul);
         right.appendChild(box);
         grid.appendChild(left);
@@ -1538,9 +1459,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
     }
 
-    /* =========================
-       AGENDA & JADWAL
-       ========================= */
+    /* ========= Agenda ========= */
     {
       const head = doc.createElement("div");
       head.className = "section";
@@ -1549,7 +1468,6 @@ export default function Lampiran({ data }: { data: AppState }) {
 
       const agenda = ((data as unknown as AppLike).agenda?.entries ??
         []) as AppLike["agenda"]["entries"];
-
       if (agenda.length) {
         const sorted = [...agenda].sort((a, b) =>
           a.date === b.date
@@ -1562,18 +1480,15 @@ export default function Lampiran({ data }: { data: AppState }) {
             ? 1
             : -1
         );
-
         type AgendaEntry = NonNullable<AppLike["agenda"]>["entries"][number];
         const groups: Record<string, AgendaEntry[]> = {};
-        for (const e of sorted as AgendaEntry[]) {
+        for (const e of sorted as AgendaEntry[])
           (groups[e.date] ||= []).push(e);
-        }
 
         Object.entries(groups).forEach(([tgl, items]) => {
           const block = doc.createElement("div");
           block.className = "section page-break-avoid";
           block.innerHTML = `<div class="subhead">${tgl}</div>`;
-
           items.forEach((e, i) => {
             const tbl = doc.createElement("table");
             tbl.className = "table striped";
@@ -1583,43 +1498,34 @@ export default function Lampiran({ data }: { data: AppState }) {
             const realHtml = (e.realisasi ?? [])
               .map((x) => `<li>${escapeHtml(x)}</li>`)
               .join("");
-
             tbl.innerHTML = `<colgroup><col style="width:20%"><col style="width:80%"></colgroup>
-          <tbody>
-            <tr><th>Plan ${i + 1}</th><td>${
+              <tbody>
+                <tr><th>Plan ${i + 1}</th><td>${
               planHtml ? `<ul class="ul-kv">${planHtml}</ul>` : ""
             }</td></tr>
-            <tr><th>Realisasi ${i + 1}</th><td>${
+                <tr><th>Realisasi ${i + 1}</th><td>${
               realHtml ? `<ul class="ul-kv">${realHtml}</ul>` : ""
             }</td></tr>
-            <tr><th>Status</th><td>
-              <span class="pill">${
-                e.planSubmitted ? "Plan terkunci" : "Plan draft"
-              }</span>
-              &nbsp;
-              <span class="pill">${
-                e.realSubmitted ? "Realisasi terkunci" : "Realisasi draft"
-              }</span>
-            </td></tr>
-          </tbody>`;
+                <tr><th>Status</th><td><span class="pill">${
+                  e.planSubmitted ? "Plan terkunci" : "Plan draft"
+                }</span>&nbsp;<span class="pill">${
+              e.realSubmitted ? "Realisasi terkunci" : "Realisasi draft"
+            }</span></td></tr>
+              </tbody>`;
             block.appendChild(tbl);
           });
-
           appendBlock(block);
         });
       }
     }
 
-    // =========================
-    // Tanda Tangan
-    // =========================
+    // ========= Tanda Tangan =========
     {
       const sigWrap = doc.createElement("div");
       sigWrap.className = "section sigwrap page-break-avoid";
       const sigTitle = doc.createElement("div");
       sigTitle.className = "title sigtitle";
       sigTitle.textContent = "Tanda Tangan";
-      sigWrap.appendChild(sigTitle);
       const sigRow = doc.createElement("div");
       sigRow.className = "sigrow";
       const sigBox = doc.createElement("div");
@@ -1628,13 +1534,12 @@ export default function Lampiran({ data }: { data: AppState }) {
         const img = doc.createElement("img");
         img.src = sigDataUrl;
         sigBox.appendChild(img);
-      } else {
-        sigBox.appendChild(doc.createTextNode(" "));
-      }
+      } else sigBox.appendChild(doc.createTextNode(" "));
       const line = doc.createElement("div");
       line.className = "sigline";
       sigBox.appendChild(line);
       sigRow.appendChild(sigBox);
+      sigWrap.appendChild(sigTitle);
       sigWrap.appendChild(sigRow);
       const foot = doc.createElement("div");
       foot.className = "foot";
@@ -1647,11 +1552,10 @@ export default function Lampiran({ data }: { data: AppState }) {
       appendBlock(sigWrap);
     }
 
-    doc.body.appendChild(root);
     return root;
   };
 
-  /* -------- Export PDF + Upload ke Supabase (RENDER PER HALAMAN) -------- */
+  /* -------- Export PDF + Upload -------- */
   const submitAndGenerate = async () => {
     if (!sigDataUrl) {
       alert("Mohon tanda tangan terlebih dahulu.");
@@ -1660,16 +1564,10 @@ export default function Lampiran({ data }: { data: AppState }) {
     setWorking(true);
     try {
       const { html2canvas, jsPDF } = await loadPdfLibs();
-
-      // 1) buat iframe isolasi
       const { doc: isoDoc, cleanup } = createIsolatedIframe();
-
-      // 2) build layout di dokumen isolasi (auto-paginate)
       buildPrintLayout(isoDoc);
 
-      // 3) render setiap .page menjadi 1 halaman PDF (full-bleed, tanpa shrink)
       const pages = Array.from(isoDoc.querySelectorAll<HTMLElement>(".page"));
-
       const pdf = new jsPDF({ unit: "pt", format: "a4" });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
@@ -1687,21 +1585,17 @@ export default function Lampiran({ data }: { data: AppState }) {
           windowWidth: el.scrollWidth,
           windowHeight: el.scrollHeight,
         });
-
         const imgData = canvas.toDataURL("image/jpeg", 0.92);
-
         if (i > 0) pdf.addPage();
-        // Isi penuh halaman: tidak diperkecil, 1:1 ratio A4
+        // Full-bleed: isi satu halaman A4 tanpa shrink
         pdf.addImage(imgData, "JPEG", 0, 0, pageW, pageH, undefined, "FAST");
       }
 
-      // 4) bersihkan iframe
       cleanup();
 
       const date = todayISO();
       const filename = `${date}.pdf`;
 
-      // 5) upload ke API
       try {
         const arrayBuffer = pdf.output("arraybuffer") as ArrayBuffer;
         const u = (user ?? {}) as AnyUser;
@@ -1722,7 +1616,6 @@ export default function Lampiran({ data }: { data: AppState }) {
         console.warn("Upload error:", e);
       }
 
-      // 6) simpan lokal + download
       const pdfDataUrl = pdf.output("datauristring") as string;
       const entry: PdfEntry = {
         id: uuid(),
@@ -1737,7 +1630,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       const next = [entry, ...history];
       setHistory(next);
       saveHistory(next);
-
       pdf.save(filename);
     } catch (e) {
       console.error("PDF error:", e);
@@ -1747,7 +1639,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     }
   };
 
-  // Hapus riwayat (local / cloud)
+  // Hapus riwayat
   const removeEntry = async (id: string) => {
     const entry = history.find((h) => h.id === id);
     if (!entry) return;
@@ -1757,14 +1649,11 @@ export default function Lampiran({ data }: { data: AppState }) {
         : "Hapus item dari riwayat lokal (browser)?"
     );
     if (!yes) return;
-
     try {
       if (entry.storage === "remote" && entry.key) {
         const res = await fetch(
           `/api/lampiran/delete?key=${encodeURIComponent(entry.key)}`,
-          {
-            method: "POST",
-          }
+          { method: "POST" }
         );
         if (!res.ok) {
           const msg = await res.json().catch(() => ({} as { error?: string }));
@@ -1784,7 +1673,6 @@ export default function Lampiran({ data }: { data: AppState }) {
 
   return (
     <div className="space-y-6">
-      {/* container lama (tidak dipakai), biarkan exist */}
       <div
         ref={printRef}
         style={{
@@ -1796,8 +1684,6 @@ export default function Lampiran({ data }: { data: AppState }) {
           zIndex: -1,
         }}
       />
-
-      {/* Header UI */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
         <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center gap-2">
           <FileText className="h-5 w-5 text-blue-600" />
@@ -1813,7 +1699,7 @@ export default function Lampiran({ data }: { data: AppState }) {
                 Project Tracking (SPARTA), dan Agenda & Jadwal.
               </div>
               <div className="mt-3 text-xs text-slate-500">
-                *Auto pagination, tidak kepotong & tidak mengecil.
+                *Auto pagination: tidak kepotong, tidak mengecil.
               </div>
             </div>
           </div>
