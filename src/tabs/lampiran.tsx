@@ -832,6 +832,9 @@ export default function Lampiran({ data }: { data: AppState }) {
     background:#fff;vertical-align:middle;
     box-shadow: inset 0 1px 0 rgba(0,0,0,.02);
   }
+  /* jika menjadi satu-satunya isi sel, center otomatis */
+  .table td > .cbx:only-child{ display:block; margin:0 auto; }
+
   .cbx.on{border-color:#22c55e;}
   .cbx.on::after{
     content:"";display:block;width:8px;height:8px;margin:2px;
@@ -966,7 +969,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       secEl.className = "mb8";
       secEl.innerHTML = `<div class="subhead">${sec.section.toUpperCase()}</div>`;
       const tbl = doc.createElement("table");
-      tbl.className = "table striped";
+      tbl.className = "table striped checklist";
       tbl.innerHTML = `<colgroup>
         <col style="width:26%">
         <col style="width:18%">
@@ -1239,9 +1242,9 @@ export default function Lampiran({ data }: { data: AppState }) {
           "beforeend",
           `<tr>
              <td>${p}</td>
-             <td><span class="cbx ${selesai ? "on" : ""}">${
-            selesai ? "✓" : ""
-          }</span> <span class="small">Selesai</span></td>
+             <td><span class="cbx ${
+               selesai ? "on" : ""
+             }"></span> <span class="small">Selesai</span></td>
              <td>${escapeHtml(deadline)}</td>
            </tr>`
         );
@@ -1291,10 +1294,7 @@ export default function Lampiran({ data }: { data: AppState }) {
              <td>${p}</td>
              ${weeks
                .map(
-                 (w) =>
-                   `<td><span class="cbx ${w ? "on" : ""}">${
-                     w ? "✓" : ""
-                   }</span></td>`
+                 (w) => `<td><span class="cbx ${w ? "on" : ""}"></span></td>`
                )
                .join("")}
            </tr>`
