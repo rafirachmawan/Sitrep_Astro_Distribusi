@@ -396,8 +396,9 @@ export default function TargetAchievement({
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="text-left py-2 px-2">Jenis</th>
-                  <th className="text-left py-2 px-2">Selesai</th>
+                  {/* === urutan baru: Deadline dulu, lalu Selesai === */}
                   <th className="text-left py-2 px-2">{copy.deadlineLabel}</th>
+                  <th className="text-left py-2 px-2">Selesai</th>
                 </tr>
               </thead>
               <tbody className="divide-y border rounded-xl bg-white">
@@ -433,7 +434,24 @@ export default function TargetAchievement({
                         )}
                       </td>
 
-                      {/* Seluruh sel bisa diklik + keyboardable */}
+                      {/* === kolom Deadline (dipindah ke depan) === */}
+                      <td className="py-3 px-2">
+                        <input
+                          type="date"
+                          disabled={!isSuper}
+                          className={`w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
+                            !isSuper
+                              ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
+                              : ""
+                          }`}
+                          value={getDeadline("klaim", p)}
+                          onChange={(e) =>
+                            setDeadline("klaim", e.target.value, p)
+                          }
+                        />
+                      </td>
+
+                      {/* === kolom Selesai (dipindah ke belakang) === */}
                       <td
                         className="py-3 px-2 select-none"
                         role="button"
@@ -456,22 +474,6 @@ export default function TargetAchievement({
                             Selesai
                           </span>
                         </div>
-                      </td>
-
-                      <td className="py-3 px-2">
-                        <input
-                          type="date"
-                          disabled={!isSuper}
-                          className={`w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
-                            !isSuper
-                              ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
-                              : ""
-                          }`}
-                          value={getDeadline("klaim", p)}
-                          onChange={(e) =>
-                            setDeadline("klaim", e.target.value, p)
-                          }
-                        />
                       </td>
                     </tr>
                   );
@@ -500,7 +502,7 @@ export default function TargetAchievement({
           )}
         </div>
         <div className="p-3 sm:p-6 overflow-x-auto">
-          <table className="w-full min-w-[820px] text-sm">
+          <table className="w-full min-w-[700px] text-sm">
             <thead className="bg-slate-50 text-slate-600">
               <tr>
                 <th className="text-left py-2 px-2">Prinsipal</th>
@@ -508,7 +510,7 @@ export default function TargetAchievement({
                 <th className="text-left py-2 px-2">Minggu 2</th>
                 <th className="text-left py-2 px-2">Minggu 3</th>
                 <th className="text-left py-2 px-2">Minggu 4</th>
-                <th className="text-left py-2 px-2">{copy.deadlineLabel}</th>
+                {/* === kolom Deadline DIHAPUS sesuai permintaan === */}
                 {isSuper && editMode ? (
                   <th className="text-left py-2 px-2">Aksi</th>
                 ) : null}
@@ -560,21 +562,7 @@ export default function TargetAchievement({
                       </td>
                     ))}
 
-                    <td className="py-3 px-2">
-                      <input
-                        type="date"
-                        disabled={!isSuper}
-                        className={`w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
-                          !isSuper
-                            ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
-                            : ""
-                        }`}
-                        value={getDeadline("weekly", p)}
-                        onChange={(e) =>
-                          setDeadline("weekly", e.target.value, p)
-                        }
-                      />
-                    </td>
+                    {/* === kolom Deadline DIHAPUS === */}
 
                     {isSuper && editMode ? (
                       <td className="py-3 px-2">
