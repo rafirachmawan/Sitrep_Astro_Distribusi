@@ -1,9 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Users2, Plus, Trash2 } from "lucide-react";
 import type { AppState, EvaluasiAttitude } from "@/lib/types";
-import { ScoreSelectNullable } from "./common"; // ⬅️ pakai yang nullable
+import { ScoreSelectNullable } from "./common";
 import { useAuth } from "@/components/AuthProvider";
 
 /* =========================
@@ -222,7 +223,7 @@ export default function EvaluasiTim({
   const evalKey = `evaluasi_${who}`;
   const evaluasiText = getDyn<string>(data as unknown, evalKey, "");
 
-  // attitude global sesuai tipe
+  // attitude global
   const attitude: EvaluasiAttitude = data.attitude || {
     scores: {},
     notes: {},
@@ -230,6 +231,26 @@ export default function EvaluasiTim({
   };
   const setAttitude = (next: EvaluasiAttitude) =>
     onChange({ ...data, attitude: next });
+
+  /* ========= Sinkronisasi tema UI → attitude.hari (dibaca oleh PDF) ========= */
+  useEffect(() => {
+    const HARI_BY_THEME: Partial<Record<Theme, 1 | 2 | 3 | 4 | 5 | 6>> = {
+      attitude: 1,
+      kompetensi: 2,
+      prestasi: 4,
+      kepatuhan: 6,
+    };
+    const targetHari =
+      (HARI_BY_THEME[theme] as 1 | 2 | 3 | 4 | 5 | 6 | undefined) ??
+      defaultHari;
+
+    if (data?.attitude?.hari !== targetHari) {
+      onChange({
+        ...data,
+        attitude: { ...(data.attitude ?? {}), hari: targetHari },
+      });
+    }
+  }, [theme, defaultHari, data, onChange]);
 
   return (
     <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
@@ -397,7 +418,7 @@ export default function EvaluasiTim({
 
         {theme === "kompetensi" && (
           <SimpleForm
-            key={`kompetensi-${who}`} // ⬅️ remount saat ganti orang
+            key={`kompetensi-${who}`}
             who={who}
             title={TITLES.kompetensi}
             setTitle={(t) =>
@@ -441,7 +462,7 @@ export default function EvaluasiTim({
 
         {theme === "prestasi" && (
           <SimpleForm
-            key={`prestasi-${who}`} // ⬅️ remount saat ganti orang
+            key={`prestasi-${who}`}
             who={who}
             title={TITLES.prestasi}
             setTitle={(t) =>
@@ -479,7 +500,7 @@ export default function EvaluasiTim({
 
         {theme === "kepatuhan" && (
           <SimpleForm
-            key={`kepatuhan-${who}`} // ⬅️ remount saat ganti orang
+            key={`kepatuhan-${who}`}
             who={who}
             title={TITLES.kepatuhan}
             setTitle={(t) =>
@@ -554,9 +575,7 @@ export default function EvaluasiTim({
 }
 
 /* ============================================================
-   Attitude Form — langsung commit ke AppState (tanpa state lokal)
-   Skor/Note disimpan per orang: key = "{person}::{code}"
-   Nilai awal kosong ⇒ tampil “–”
+   Attitude Form
    ============================================================ */
 function AttitudeForm({
   who,
@@ -777,9 +796,6 @@ function AttitudeForm({
 
 /* ============================================================
    Simple Form (Kompetensi / Prestasi / Kepatuhan)
-   — per orang dengan key dinamis `tema_${who}`
-   — default skor 0 (render “–” lewat ScoreSelectNullable)
-   — TANPA efek reset dari parent; parent diupdate tapi form tidak “rollback”
    ============================================================ */
 function SimpleForm({
   who,
