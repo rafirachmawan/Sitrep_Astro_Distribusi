@@ -51,8 +51,8 @@ const DAY_THEME: Record<1 | 2 | 3 | 4 | 5 | 6, Theme> = {
   2: "kompetensi",
   3: "kosong",
   4: "prestasi",
-  5: "kepatuhan", // ⬅️ Jumat = Kepatuhan
-  6: "prestasi", // ⬅️ Sabtu = Prestasi
+  5: "kepatuhan", // Jumat = Kepatuhan
+  6: "prestasi", // Sabtu = Prestasi
 };
 const THEME_LABEL: Record<Theme, string> = {
   attitude: "Attitude (HEBAT)",
@@ -377,7 +377,7 @@ function normalizeThemeName(raw?: string | null): Theme | null {
   if (!raw) return null;
   const s = raw.trim().toLowerCase();
   if (["attitude", "hebat"].includes(s)) return "attitude";
-  if (["kompetensi, skill", "kemampuan"].includes(s)) return "kompetensi";
+  if (["kompetensi", "skill", "kemampuan"].includes(s)) return "kompetensi";
   if (["prestasi", "achievement"].includes(s)) return "prestasi";
   if (
     [
@@ -408,14 +408,14 @@ function resolveTheme(evaluasi: Evaluasi): {
   theme: Theme;
   hari: (1 | 2 | 3 | 4 | 5 | 6) | null;
 } {
-  // ⬅️ 1) Jika hari ada, itu yang dipakai duluan
+  // 1) Jika hari ada, itu yang dipakai duluan
   const hari = parseHari(evaluasi.hari ?? evaluasi.attitude?.hari);
   if (hari) {
     const byDay = DAY_THEME[hari];
     if (byDay !== "kosong") return { theme: byDay, hari };
   }
 
-  // 2) Tema eksplisit (fallback kedua)
+  // 2) Tema eksplisit
   const explicit =
     normalizeThemeName(evaluasi.theme) || normalizeThemeName(evaluasi.tema);
   if (explicit) return { theme: explicit, hari };
@@ -430,7 +430,7 @@ function resolveTheme(evaluasi: Evaluasi): {
     if (hasThemePayload(evaluasi, t)) return { theme: t, hari };
   }
 
-  // 4) Default terakhir
+  // 4) Default
   return { theme: "attitude", hari };
 }
 
@@ -766,12 +766,9 @@ export default function Lampiran({ data }: { data: AppState }) {
   .chip.due{background:var(--due-bg);border-color:var(--due-bd);color:var(--due-fg);}
   .chip.over{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
 
-  /* ===== status badge utk checklist ringkas ===== */
-  .status-badge{display:inline-block;padding:2px 8px;border-radius:999px;border:1px solid #e5e7eb;font-size:11px;font-weight:700}
-  .status-badge.good{background:#ecfdf5;border-color:#86efac;color:#065f46}
-  .status-badge.warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
-  .status-badge.bad{background:#fef2f2;border-color:#fecaca;color:#7f1d1d}
-  .status-badge.neutral{background:#f1f5f9;border-color:#e2e8f0;color:#475569}
+  /* ===== status badge utk checklist (FLAT: tanpa border & semua teks hitam) ===== */
+  .status-badge{display:inline-block;padding:2px 0;border-radius:0;border:none;background:transparent;color:#0f172a;font-size:12px;font-weight:600}
+  .status-badge.good,.status-badge.warn,.status-badge.bad,.status-badge.neutral{border:none;background:transparent;color:#0f172a}
 
   .sigwrap{page-break-inside:avoid;margin-top:18px;}
   .sigtitle{text-align:right;margin:0 0 6px 0;}
@@ -800,37 +797,6 @@ export default function Lampiran({ data }: { data: AppState }) {
   .cbx.on{background:#2563eb;border-color:#2563eb}
 
   .ul-kv{margin:0;padding-left:18px}
-
-  /* =========================================================
-     ⬇⬇ MODIFIKASI SESUAI PERMINTAAN: Checklist tanpa border,
-         dan semua teks hitam (termasuk status) ⬇⬇
-     ========================================================= */
-  /* Hilangkan border container checklist */
-  .table.checklist{border:none; box-shadow:none; border-radius:0;}
-  /* Hilangkan border di header & sel, dan pastikan warna teks hitam */
-  .table.checklist th,
-  .table.checklist td{
-    border:none !important;
-    color:#0f172a !important;
-    background:transparent !important;
-  }
-  /* Matikan striping agar lebih rapi */
-  .table.checklist.striped tbody tr:nth-child(even){
-    background:transparent !important;
-  }
-  /* Status badge di area checklist jadi teks biasa (tanpa border & warna) */
-  .table.checklist .status-badge{
-    border:none !important;
-    background:transparent !important;
-    color:#0f172a !important;
-    padding:0 !important;
-  }
-  .table.checklist .status-badge.good,
-  .table.checklist .status-badge.warn,
-  .table.checklist .status-badge.bad,
-  .table.checklist .status-badge.neutral{
-    color:#0f172a !important;
-  }
 `;
     root.appendChild(st);
 
@@ -1064,7 +1030,6 @@ export default function Lampiran({ data }: { data: AppState }) {
         );
 
         if (useNestedPerPerson) {
-          // evaluasi.attitude.laras/emi/novi.{scores,notes}
           PERSONS.forEach((p) => {
             const scores = (raw?.[p]?.scores ?? {}) as Record<string, unknown>;
             const notes = (raw?.[p]?.notes ?? {}) as Record<string, string>;
@@ -1154,7 +1119,6 @@ export default function Lampiran({ data }: { data: AppState }) {
             ? PRESTASI_ITEMS
             : SOP_ITEMS;
 
-        // Untuk setiap orang, ambil payload dari alias kunci tema (termasuk "sop")
         PERSONS.forEach((p) => {
           const payload = readPersonPayload(theme, p);
           const scores = (payload?.scores ?? {}) as Record<string, unknown>;
@@ -1374,7 +1338,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         reportBlock.appendChild(repTbl);
         appendBlock(reportBlock);
       } else {
-        // ---- Fallback generic (pakai extractor any-shape) ----
+        // ---- Fallback generic
         const tv = extractTarget(rawTarget);
 
         const valueToHTML = (v: unknown): string => {
