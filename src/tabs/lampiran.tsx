@@ -279,7 +279,7 @@ function renderChecklist(checklist: ChecklistState) {
         value = [
           v.value ?? "",
           v.extras?.text ? `(${v.extras.text})` : "",
-          v.extras?.currency ? `Rp ${v.extras.currency}` : "",
+          v.extras?.currency ? `Rp ${fmtIDR(v.extras.currency)}` : "",
         ]
           .filter(Boolean)
           .join(" ");
@@ -322,6 +322,15 @@ const escapeHtml = (s: string) =>
         } as const
       )[c]!)
   );
+
+// === NEW: Formatter Rupiah (separator ribuan) ===
+const fmtIDR = (v: unknown): string => {
+  if (v == null || v === "") return "";
+  const n =
+    typeof v === "number" ? v : Number(String(v).replace(/[^\d-]/g, ""));
+  if (!Number.isFinite(n)) return String(v);
+  return new Intl.NumberFormat("id-ID").format(n);
+};
 
 const hasAnyTruthy = (v: unknown): boolean => {
   if (v == null) return false;
@@ -893,6 +902,7 @@ export default function Lampiran({ data }: { data: AppState }) {
                 const nc = doc.createElement("div");
                 nc.className = el.className;
                 newContainer.replaceWith(nc);
+                // mutate reference intentionally
                 (newContainer as unknown as { ref?: HTMLElement }).ref = nc;
               } else {
                 page.removeChild(newContainer);
