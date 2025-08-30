@@ -351,18 +351,17 @@ const labelStatusChip = (filled: boolean) =>
    Evaluasi types
    ========================= */
 type ScoreValue = string | number;
-// izinkan hari sebagai string angka juga ("4")
 type DayLike = 1 | 2 | 3 | 4 | 5 | 6 | "1" | "2" | "3" | "4" | "5" | "6";
 
 type Evaluasi = {
-  theme?: string; // bisa "kepatuhan", "sop", "attitude", "kompetensi", "prestasi"
-  tema?: string; // alias
+  theme?: string;
+  tema?: string;
   hari?: DayLike;
   attitude?: {
     hari?: DayLike;
     scores?: Record<string, ScoreValue>;
     notes?: Record<string, string>;
-    [k: string]: unknown; // kemungkinan attitude.laras/emi/novi
+    [k: string]: unknown;
   };
   [key: string]: unknown;
 };
@@ -417,29 +416,21 @@ function resolveTheme(evaluasi: Evaluasi): {
   theme: Theme;
   hari: (1 | 2 | 3 | 4 | 5 | 6) | null;
 } {
-  // 1) Jika hari ada, itu yang dipakai duluan
   const hari = parseHari(evaluasi.hari ?? evaluasi.attitude?.hari);
   if (hari) {
     const byDay = DAY_THEME[hari];
     if (byDay !== "kosong") return { theme: byDay, hari };
   }
-
-  // 2) Tema eksplisit
   const explicit =
     normalizeThemeName(evaluasi.theme) || normalizeThemeName(evaluasi.tema);
   if (explicit) return { theme: explicit, hari };
-
-  // 3) Deteksi dari payload yang ada
   for (const t of [
     "prestasi",
     "kompetensi",
     "kepatuhan",
     "attitude",
-  ] as Theme[]) {
+  ] as Theme[])
     if (hasThemePayload(evaluasi, t)) return { theme: t, hari };
-  }
-
-  // 4) Default
   return { theme: "attitude", hari };
 }
 
@@ -775,7 +766,6 @@ export default function Lampiran({ data }: { data: AppState }) {
   .chip.due{background:var(--due-bg);border-color:var(--due-bd);color:var(--due-fg);}
   .chip.over{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
 
-  /* ===== status badge utk checklist (FLAT: tanpa border & semua teks hitam) ===== */
   .status-badge{display:inline-block;padding:2px 0;border-radius:0;border:none;background:transparent;color:#0f172a;font-size:12px;font-weight:600}
   .status-badge.good,.status-badge.warn,.status-badge.bad,.status-badge.neutral{border:none;background:transparent;color:#0f172a}
 
@@ -801,7 +791,6 @@ export default function Lampiran({ data }: { data: AppState }) {
   .label{line-height:1.35}
   .done .label{text-decoration:line-through;color:#6b7280}
 
-  /* ===== indikator on/off utk Target (klaim & mingguan) ===== */
   .cbx{display:inline-block;width:14px;height:14px;border-radius:999px;border:2px solid #cbd5e1;background:#fff;vertical-align:middle}
   .cbx.on{background:#2563eb;border-color:#2563eb}
 
@@ -809,7 +798,6 @@ export default function Lampiran({ data }: { data: AppState }) {
 `;
     root.appendChild(st);
 
-    // mount root
     doc.body.appendChild(root);
 
     const PAGE_MAX_PX = 1123;
@@ -902,7 +890,6 @@ export default function Lampiran({ data }: { data: AppState }) {
                 const nc = doc.createElement("div");
                 nc.className = el.className;
                 newContainer.replaceWith(nc);
-                // mutate reference intentionally
                 (newContainer as unknown as { ref?: HTMLElement }).ref = nc;
               } else {
                 page.removeChild(newContainer);
@@ -1010,7 +997,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       head.innerHTML = `<div class="title">${titleMap[theme]}</div>`;
       appendBlock(head);
 
-      // helper baca per-orang (dengan alias kunci tema)
       const readPersonPayload = (t: Theme, p: Person) => {
         const keys = THEME_KEY_ALIASES[t];
         for (const key of keys) {
@@ -1064,11 +1050,9 @@ export default function Lampiran({ data }: { data: AppState }) {
             appendBlock(block);
           });
         } else {
-          // skema 1) attitude.scores / attitude.notes
           const rawScores = (raw?.scores ?? {}) as Record<string, unknown>;
           const rawNotes = (raw?.notes ?? {}) as Record<string, string>;
 
-          // atau skema 2) "laras::H"
           const hasPerPersonInline = PERSONS.some((p) =>
             HEBAT_ITEMS.some(
               (i) =>
@@ -1163,7 +1147,6 @@ export default function Lampiran({ data }: { data: AppState }) {
       head.innerHTML = `<div class="title">Target & Achievement</div>`;
       appendBlock(head);
 
-      // Ambil apapun yang tersedia
       const rawTarget =
         ((data as any).target ??
           (data as any).targets ??
@@ -1249,13 +1232,13 @@ export default function Lampiran({ data }: { data: AppState }) {
         (rawTarget as any)?.deadline !== undefined;
 
       if (looksLikeUI) {
-        // Klaim bulanan
+        // ===== Klaim bulanan (Deadline → Selesai) =====
         const klaimBlock = doc.createElement("div");
         klaimBlock.className = "section page-break-avoid";
         klaimBlock.innerHTML = `<div class="subhead">Penyelesaian Klaim Bulan Ini <span class="muted" style="font-weight:600;font-size:11px">(reset setiap awal bulan)</span></div>`;
         const klaimTable = doc.createElement("table");
         klaimTable.className = "table striped";
-        klaimTable.innerHTML = `<thead><tr><th>Jenis</th><th style="width:18%">Selesai</th><th style="width:30%">Deadline</th></tr></thead>`;
+        klaimTable.innerHTML = `<thead><tr><th>Jenis</th><th style="width:30%">Deadline</th><th style="width:18%">Selesai</th></tr></thead>`;
         const kbody = doc.createElement("tbody");
         (["FRI", "SPJ", "APA", "WPL"] as const).forEach((p) => {
           const row =
@@ -1281,18 +1264,18 @@ export default function Lampiran({ data }: { data: AppState }) {
           const deadline = fmtDate(rowDeadline);
           kbody.insertAdjacentHTML(
             "beforeend",
-            `<tr><td>${p}</td><td><span class="cbx ${
-              selesai ? "on" : ""
-            }"></span> <span class="muted" style="font-weight:600;font-size:11px">Selesai</span></td><td>${escapeHtml(
+            `<tr><td>${p}</td><td>${escapeHtml(
               deadline
-            )}</td></tr>`
+            )}</td><td><span class="cbx ${
+              selesai ? "on" : ""
+            }"></span> <span class="muted" style="font-weight:600;font-size:11px">Selesai</span></td></tr>`
           );
         });
         klaimTable.appendChild(kbody);
         klaimBlock.appendChild(klaimTable);
         appendBlock(klaimBlock);
 
-        // Target selesai
+        // Target selesai (tetap)
         const targetCount =
           (isRecord(tgtBulananSrc)
             ? (["targetCount", "jumlah", "count", "value"] as const)
@@ -1323,7 +1306,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         targetTblWrap.appendChild(targetTbl);
         appendBlock(targetTblWrap);
 
-        // Laporan mingguan
+        // ===== Laporan mingguan (tanpa kolom deadline) =====
         const reportBlock = doc.createElement("div");
         reportBlock.className = "section page-break-avoid";
         reportBlock.innerHTML = `<div class="subhead">Laporan Penjualan ke Prinsipal Mingguan</div>`;
