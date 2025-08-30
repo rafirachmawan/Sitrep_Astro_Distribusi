@@ -377,7 +377,7 @@ function normalizeThemeName(raw?: string | null): Theme | null {
   if (!raw) return null;
   const s = raw.trim().toLowerCase();
   if (["attitude", "hebat"].includes(s)) return "attitude";
-  if (["kompetensi", "skill", "kemampuan"].includes(s)) return "kompetensi";
+  if (["kompetensi, skill", "kemampuan"].includes(s)) return "kompetensi";
   if (["prestasi", "achievement"].includes(s)) return "prestasi";
   if (
     [
@@ -800,6 +800,37 @@ export default function Lampiran({ data }: { data: AppState }) {
   .cbx.on{background:#2563eb;border-color:#2563eb}
 
   .ul-kv{margin:0;padding-left:18px}
+
+  /* =========================================================
+     ⬇⬇ MODIFIKASI SESUAI PERMINTAAN: Checklist tanpa border,
+         dan semua teks hitam (termasuk status) ⬇⬇
+     ========================================================= */
+  /* Hilangkan border container checklist */
+  .table.checklist{border:none; box-shadow:none; border-radius:0;}
+  /* Hilangkan border di header & sel, dan pastikan warna teks hitam */
+  .table.checklist th,
+  .table.checklist td{
+    border:none !important;
+    color:#0f172a !important;
+    background:transparent !important;
+  }
+  /* Matikan striping agar lebih rapi */
+  .table.checklist.striped tbody tr:nth-child(even){
+    background:transparent !important;
+  }
+  /* Status badge di area checklist jadi teks biasa (tanpa border & warna) */
+  .table.checklist .status-badge{
+    border:none !important;
+    background:transparent !important;
+    color:#0f172a !important;
+    padding:0 !important;
+  }
+  .table.checklist .status-badge.good,
+  .table.checklist .status-badge.warn,
+  .table.checklist .status-badge.bad,
+  .table.checklist .status-badge.neutral{
+    color:#0f172a !important;
+  }
 `;
     root.appendChild(st);
 
@@ -896,7 +927,6 @@ export default function Lampiran({ data }: { data: AppState }) {
                 const nc = doc.createElement("div");
                 nc.className = el.className;
                 newContainer.replaceWith(nc);
-                // mutate reference intentionally
                 (newContainer as unknown as { ref?: HTMLElement }).ref = nc;
               } else {
                 page.removeChild(newContainer);
