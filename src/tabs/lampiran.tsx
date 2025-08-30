@@ -117,6 +117,37 @@ function saveHistory(items: PdfEntry[]) {
   localStorage.setItem(STORE_KEY, JSON.stringify(items));
 }
 
+/* === MERGE HELPERS (gabungan cloud + lokal) === */
+function keyOf(e: PdfEntry) {
+  if (e.storage === "remote" && e.key) return `remote:${e.key}`;
+  if (e.id) return `local:${e.id}`;
+  return `file:${e.filename}:${e.dateISO}:${e.name}:${e.role}`;
+}
+function mergeHistoryLists(...lists: PdfEntry[][]): PdfEntry[] {
+  const map = new Map<string, PdfEntry>();
+  for (const list of lists) {
+    for (const it of list) {
+      const k = keyOf(it);
+      const cur = map.get(k);
+      if (!cur) {
+        map.set(k, it);
+      } else {
+        const pick =
+          (cur.storage === "local" && it.storage === "remote") ||
+          (it.submittedAt || "") > (cur.submittedAt || "")
+            ? it
+            : cur;
+        map.set(k, pick);
+      }
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => {
+    const byDate = (b.dateISO || "").localeCompare(a.dateISO || "");
+    if (byDate !== 0) return byDate;
+    return (b.submittedAt || "").localeCompare(a.submittedAt || "");
+  });
+}
+
 /* =========================
    Loader pdf libs
    ========================= */
@@ -670,7 +701,11 @@ export default function Lampiran({ data }: { data: AppState }) {
         storage: "remote",
         key: it.key,
       }));
-      setHistory(mapped);
+      // MERGE dengan lokal + simpan
+      const local = loadHistory();
+      const merged = mergeHistoryLists(mapped, local);
+      setHistory(merged);
+      saveHistory(merged);
       return true;
     } catch {
       return false;
@@ -1763,7 +1798,8 @@ export default function Lampiran({ data }: { data: AppState }) {
         pdfDataUrl,
         storage: "local",
       };
-      const next = [entry, ...history];
+      // MERGE entry baru dengan state + localStorage (dedupe + urut)
+      const next = mergeHistoryLists([entry], history, loadHistory());
       setHistory(next);
       saveHistory(next);
       pdf.save(filename);
@@ -1794,6 +1830,13 @@ export default function Lampiran({ data }: { data: AppState }) {
         if (!res.ok) {
           const msg = await res.json().catch(() => ({} as { error?: string }));
           alert(`Gagal hapus cloud: ${msg.error || res.statusText}`);
+        } else {
+          // Bersihkan salinan remote dari localStorage juga
+          const cur = loadHistory();
+          const pruned = cur.filter(
+            (e) => !(e.storage === "remote" && e.key === entry.key)
+          );
+          saveHistory(pruned);
         }
         await refreshRiwayatFromSupabase();
       } else {
