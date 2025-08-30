@@ -51,8 +51,8 @@ const DAY_THEME: Record<1 | 2 | 3 | 4 | 5 | 6, Theme> = {
   2: "kompetensi",
   3: "kosong",
   4: "prestasi",
-  5: "kosong",
-  6: "kepatuhan",
+  5: "kepatuhan", // ⬅️ Jumat = Kepatuhan
+  6: "prestasi", // ⬅️ Sabtu = Prestasi
 };
 const THEME_LABEL: Record<Theme, string> = {
   attitude: "Attitude (HEBAT)",
@@ -408,37 +408,29 @@ function resolveTheme(evaluasi: Evaluasi): {
   theme: Theme;
   hari: (1 | 2 | 3 | 4 | 5 | 6) | null;
 } {
-  // 1) Tema eksplisit
-  const explicit =
-    normalizeThemeName(evaluasi.theme) || normalizeThemeName(evaluasi.tema);
-  if (explicit)
-    return {
-      theme: explicit,
-      hari: parseHari(evaluasi.hari ?? evaluasi.attitude?.hari),
-    };
-
-  // 2) Jika ada payload tema tertentu, gunakan itu dulu (prestasi > kompetensi > kepatuhan > attitude)
-  for (const t of [
-    "prestasi",
-    "kompetensi",
-    "kepatuhan",
-    "attitude",
-  ] as Theme[]) {
-    if (hasThemePayload(evaluasi, t))
-      return {
-        theme: t,
-        hari: parseHari(evaluasi.hari ?? evaluasi.attitude?.hari),
-      };
-  }
-
-  // 3) Baru pakai jadwal hari
+  // ⬅️ 1) Jika hari ada, itu yang dipakai duluan
   const hari = parseHari(evaluasi.hari ?? evaluasi.attitude?.hari);
   if (hari) {
     const byDay = DAY_THEME[hari];
     if (byDay !== "kosong") return { theme: byDay, hari };
   }
 
-  // 4) Default
+  // 2) Tema eksplisit (fallback kedua)
+  const explicit =
+    normalizeThemeName(evaluasi.theme) || normalizeThemeName(evaluasi.tema);
+  if (explicit) return { theme: explicit, hari };
+
+  // 3) Deteksi dari payload yang ada
+  for (const t of [
+    "prestasi",
+    "kompetensi",
+    "kepatuhan",
+    "attitude",
+  ] as Theme[]) {
+    if (hasThemePayload(evaluasi, t)) return { theme: t, hari };
+  }
+
+  // 4) Default terakhir
   return { theme: "attitude", hari };
 }
 
