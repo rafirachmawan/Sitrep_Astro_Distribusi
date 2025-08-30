@@ -2,7 +2,13 @@
 
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { FileText, Download, Search, Trash2, PenLine } from "lucide-react";
 import { useAuth } from "@/components/AuthProvider";
 import type { AppState, ChecklistState, RowValue } from "@/lib/types";
@@ -166,8 +172,8 @@ function SignaturePad({
   const getPos = (
     e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>
   ) => {
-    const canvas = canvasRef.current!,
-      rect = canvas.getBoundingClientRect();
+    const canvas = canvasRef.current!;
+    const rect = canvas.getBoundingClientRect();
     if ("touches" in e) {
       const t = e.touches[0];
       return { x: t.clientX - rect.left, y: t.clientY - rect.top };
@@ -200,8 +206,8 @@ function SignaturePad({
     onChange(empty ? null : dataUrl);
   };
   const clear = () => {
-    const c = canvasRef.current!,
-      ctx = c.getContext("2d")!;
+    const c = canvasRef.current!;
+    const ctx = c.getContext("2d")!;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, c.width, c.height);
     ctx.setTransform(ratioRef.current, 0, 0, ratioRef.current, 0, 0);
@@ -336,15 +342,18 @@ const labelStatusChip = (filled: boolean) =>
    Evaluasi types
    ========================= */
 type ScoreValue = string | number;
+// izinkan hari sebagai string angka juga ("4")
+type DayLike = 1 | 2 | 3 | 4 | 5 | 6 | "1" | "2" | "3" | "4" | "5" | "6";
+
 type Evaluasi = {
   theme?: string; // bisa "kepatuhan", "sop", "attitude", "kompetensi", "prestasi"
   tema?: string; // alias
-  hari?: 1 | 2 | 3 | 4 | 5 | 6 | string; // ▶︎ diizinkan string angka juga
+  hari?: DayLike;
   attitude?: {
-    hari?: 1 | 2 | 3 | 4 | 5 | 6 | string; // ▶︎ diizinkan string angka juga
+    hari?: DayLike;
     scores?: Record<string, ScoreValue>;
     notes?: Record<string, string>;
-    [k: string]: unknown; // untuk kemungkinan attitude.laras/emi/novi
+    [k: string]: unknown; // kemungkinan attitude.laras/emi/novi
   };
   [key: string]: unknown;
 };
@@ -383,79 +392,54 @@ function normalizeThemeName(raw?: string | null): Theme | null {
   return null;
 }
 
-// ========= Pengganti getTheme: prioritas INPUT > PAYLOAD > JADWAL HARI > default =========
-function getTodayHari(): 1 | 2 | 3 | 4 | 5 | 6 {
-  const dow = new Date().getDay(); // 0..6, Minggu..Sabtu
-  const map: Record<number, 1 | 2 | 3 | 4 | 5 | 6> = {
-    0: 1,
-    1: 1,
-    2: 2,
-    3: 3,
-    4: 4,
-    5: 5,
-    6: 6,
-  };
-  return map[dow] ?? 1;
-}
+const parseHari = (v: DayLike | undefined): (1 | 2 | 3 | 4 | 5 | 6) | null => {
+  if (v == null) return null;
+  const n = typeof v === "string" ? parseInt(v, 10) : (v as number);
+  if ([1, 2, 3, 4, 5, 6].includes(n)) return n as 1 | 2 | 3 | 4 | 5 | 6;
+  return null;
+};
 
-function hasThemePayload(evaluasi: Evaluasi, t: Theme): boolean {
+const hasThemePayload = (evaluasi: Evaluasi, t: Theme): boolean => {
   const keys = THEME_KEY_ALIASES[t];
-  const exists = (val: unknown) => {
-    if (val == null) return false;
-    if (typeof val === "string") return val.trim() !== "";
-    if (typeof val === "number" || typeof val === "boolean") return true;
-    if (Array.isArray(val)) return val.some((x) => !!x);
-    if (typeof val === "object")
-      return Object.values(val as any).some((x) => !!x);
-    return !!val;
-  };
-
-  if (keys.some((k) => exists((evaluasi as any)[k]))) return true;
-  for (const k of keys)
-    for (const p of PERSONS)
-      if (exists((evaluasi as any)[`${k}_${p}`])) return true;
-  for (const k of keys)
-    for (const p of PERSONS)
-      if (
-        exists((evaluasi as any)[k]?.[p]) ||
-        exists((evaluasi as any)[p]?.[k])
-      )
-        return true;
-
-  return false;
-}
+  return keys.some((k) => (evaluasi as any)[k] != null);
+};
 
 function resolveTheme(evaluasi: Evaluasi): {
   theme: Theme;
-  source: "explicit" | "payload" | "hari" | "default";
+  hari: (1 | 2 | 3 | 4 | 5 | 6) | null;
 } {
+  // 1) Tema eksplisit
   const explicit =
     normalizeThemeName(evaluasi.theme) || normalizeThemeName(evaluasi.tema);
-  if (explicit) return { theme: explicit, source: "explicit" };
+  if (explicit)
+    return {
+      theme: explicit,
+      hari: parseHari(evaluasi.hari ?? evaluasi.attitude?.hari),
+    };
 
+  // 2) Jika ada payload tema tertentu, gunakan itu dulu (prestasi > kompetensi > kepatuhan > attitude)
   for (const t of [
     "prestasi",
     "kompetensi",
     "kepatuhan",
     "attitude",
-  ] as Theme[])
-    if (hasThemePayload(evaluasi, t)) return { theme: t, source: "payload" };
+  ] as Theme[]) {
+    if (hasThemePayload(evaluasi, t))
+      return {
+        theme: t,
+        hari: parseHari(evaluasi.hari ?? evaluasi.attitude?.hari),
+      };
+  }
 
-  const rawHari = (evaluasi as any).hari ?? evaluasi.attitude?.hari;
-  const hariNum = typeof rawHari === "string" ? parseInt(rawHari, 10) : rawHari;
-  const safeHari = (Number.isFinite(hariNum) ? hariNum : getTodayHari()) as
-    | 1
-    | 2
-    | 3
-    | 4
-    | 5
-    | 6;
-  const byDay =
-    DAY_THEME[Math.max(1, Math.min(6, safeHari)) as 1 | 2 | 3 | 4 | 5 | 6] ??
-    "attitude";
-  if (byDay !== "kosong") return { theme: byDay, source: "hari" };
+  // 3) Baru pakai jadwal hari
+  const hari = parseHari(evaluasi.hari ?? evaluasi.attitude?.hari);
+  if (hari) {
+    const byDay = DAY_THEME[hari];
+    if (byDay !== "kosong") return { theme: byDay, hari };
+  }
 
-  return { theme: "attitude", source: "default" };
+  // 4) Default
+  return { theme: "attitude", hari };
 }
 
 /* =========================
@@ -536,6 +520,7 @@ function daysLeftFromStr(deadline?: string) {
   ).getTime();
   return Math.ceil((d.getTime() - base) / 86400000);
 }
+
 type SpartaProgress = {
   steps: boolean[];
   progressText: string;
@@ -661,37 +646,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   const [working, setWorking] = useState(false);
   const printRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      const ok = await refreshRiwayatFromSupabase();
-      if (!ok) setHistory(loadHistory());
-    })();
-  }, []);
-
-  const filtered = useMemo(
-    () =>
-      searchDate ? history.filter((h) => h.dateISO === searchDate) : history,
-    [history, searchDate]
-  );
-  const checklistBlocks = useMemo(
-    () => renderChecklist((data as AppLike).checklist as ChecklistState),
-    [data]
-  );
-
-  const evalData = ((data as unknown as AppLike).evaluasi ?? {}) as Evaluasi;
-  const { theme } = resolveTheme(evalData);
-  const themeLabel = THEME_LABEL[theme];
-
-  const projectList = useMemo(
-    () =>
-      extractProjectsFromSparta(
-        (data as unknown as AppLike).sparta,
-        (user as AnyUser | undefined)?.role
-      ),
-    [data, (user as AnyUser | undefined)?.role]
-  );
-
-  async function refreshRiwayatFromSupabase() {
+  const refreshRiwayatFromSupabase = useCallback(async () => {
     try {
       const u = (user ?? {}) as AnyUser;
       const userId = u.id || u.email || u.name || "unknown";
@@ -728,7 +683,24 @@ export default function Lampiran({ data }: { data: AppState }) {
     } catch {
       return false;
     }
-  }
+  }, [user]);
+
+  useEffect(() => {
+    (async () => {
+      const ok = await refreshRiwayatFromSupabase();
+      if (!ok) setHistory(loadHistory());
+    })();
+  }, [refreshRiwayatFromSupabase]);
+
+  const filtered = useMemo(
+    () =>
+      searchDate ? history.filter((h) => h.dateISO === searchDate) : history,
+    [history, searchDate]
+  );
+
+  const evalData = ((data as unknown as AppLike).evaluasi ?? {}) as Evaluasi;
+  const { theme } = resolveTheme(evalData);
+  const themeLabel = THEME_LABEL[theme];
 
   /* --------- ISOLATED IFRAME + Layout PDF --------- */
   function createIsolatedIframe() {
@@ -931,10 +903,9 @@ export default function Lampiran({ data }: { data: AppState }) {
                 page = makePage();
                 const nc = doc.createElement("div");
                 nc.className = el.className;
-                // @ts-ignore
                 newContainer.replaceWith(nc);
-                // @ts-ignore
-                newContainer = nc;
+                // mutate reference intentionally
+                (newContainer as unknown as { ref?: HTMLElement }).ref = nc;
               } else {
                 page.removeChild(newContainer);
                 i++;
@@ -1788,7 +1759,9 @@ export default function Lampiran({ data }: { data: AppState }) {
         const res = await fetch(
           `/api/lampiran/upload?userId=${encodeURIComponent(
             userId
-          )}&role=${encodeURIComponent(role)}&date=${encodeURIComponent(date)}`,
+          )}&role=${encodeURIComponent(role)}&date=${encodeURIComponent(
+            date
+          )}` as string,
           {
             method: "POST",
             headers: { "content-type": "application/pdf" },
@@ -1837,9 +1810,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       if (entry.storage === "remote" && entry.key) {
         const res = await fetch(
           `/api/lampiran/delete?key=${encodeURIComponent(entry.key)}`,
-          {
-            method: "POST",
-          }
+          { method: "POST" }
         );
         if (!res.ok) {
           const msg = await res.json().catch(() => ({} as { error?: string }));
