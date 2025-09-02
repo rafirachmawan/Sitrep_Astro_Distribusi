@@ -173,7 +173,6 @@ export default function TargetAchievement({
     }
     const cur = readOverrides(viewRole);
     writeOverrides(viewRole, addExtraPrincipal(cur, k, lbl));
-
     setRev((x) => x + 1);
 
     // siapkan slot data di state jika belum ada
@@ -218,7 +217,7 @@ export default function TargetAchievement({
     // data state dibiarkan (histori)
   };
 
-  /* ===== toggle helpers (klik sekali) ===== */
+  /* ===== toggle helpers (sekali klik, UI sama) ===== */
   const toggleKlaim = (p: string) => {
     const cur = {
       ...(data.klaimSelesai as unknown as Record<string, boolean>),
@@ -434,7 +433,7 @@ export default function TargetAchievement({
                         )}
                       </td>
 
-                      {/* === kolom Deadline === */}
+                      {/* === kolom Deadline (tetap) === */}
                       <td className="py-3 px-2">
                         <input
                           type="date"
@@ -451,18 +450,22 @@ export default function TargetAchievement({
                         />
                       </td>
 
-                      {/* === kolom Selesai: tombol besar + checkbox readOnly === */}
-                      <td className="py-3 px-2">
-                        <button
-                          type="button"
-                          className="w-full sm:w-auto inline-flex items-center gap-3 px-3 py-2 rounded-md border border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 cursor-pointer select-none"
-                          onClick={() => toggleKlaim(p)}
-                          onKeyDown={(e) =>
-                            handleKeyActivate(e, () => toggleKlaim(p))
-                          }
-                          aria-pressed={checked}
-                          aria-label={`Toggle selesai ${principalLabel(p)}`}
-                        >
+                      {/* === kolom Selesai (UI sama, event digeser ke PointerDown) === */}
+                      <td
+                        className="py-3 px-2 select-none"
+                        role="button"
+                        tabIndex={0}
+                        onPointerDown={(e) => {
+                          // Pastikan TIDAK perlu double-click: toggle saat pointer down
+                          e.preventDefault();
+                          toggleKlaim(p);
+                        }}
+                        onKeyDown={(e) =>
+                          handleKeyActivate(e, () => toggleKlaim(p))
+                        }
+                        aria-label={`Toggle selesai ${principalLabel(p)}`}
+                      >
+                        <div className="inline-flex items-center gap-3 px-2 py-2 rounded-md hover:bg-slate-100 focus:outline-none">
                           <input
                             type="checkbox"
                             className="h-5 w-5 accent-blue-600 pointer-events-none"
@@ -473,7 +476,7 @@ export default function TargetAchievement({
                           <span className="text-sm text-slate-700">
                             Selesai
                           </span>
-                        </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -536,19 +539,23 @@ export default function TargetAchievement({
                     </td>
 
                     {[0, 1, 2, 3].map((w) => (
-                      <td key={w} className="py-3 px-2">
-                        <button
-                          type="button"
-                          className="inline-flex items-center justify-center w-10 h-10 rounded-md border border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 cursor-pointer select-none"
-                          onClick={() => toggleWeekly(p, w)}
-                          onKeyDown={(e) =>
-                            handleKeyActivate(e, () => toggleWeekly(p, w))
-                          }
-                          aria-pressed={weeklyRow[w]}
-                          aria-label={`Toggle minggu ${
-                            w + 1
-                          } untuk ${principalLabel(p)}`}
-                        >
+                      <td
+                        key={w}
+                        className="py-3 px-2 select-none"
+                        role="button"
+                        tabIndex={0}
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          toggleWeekly(p, w);
+                        }}
+                        onKeyDown={(e) =>
+                          handleKeyActivate(e, () => toggleWeekly(p, w))
+                        }
+                        aria-label={`Toggle minggu ${
+                          w + 1
+                        } untuk ${principalLabel(p)}`}
+                      >
+                        <div className="inline-flex items-center justify-center w-10 h-10 rounded-md hover:bg-slate-100 focus:outline-none">
                           <input
                             type="checkbox"
                             className="h-5 w-5 accent-blue-600 pointer-events-none"
@@ -556,7 +563,7 @@ export default function TargetAchievement({
                             readOnly
                             aria-hidden
                           />
-                        </button>
+                        </div>
                       </td>
                     ))}
 
