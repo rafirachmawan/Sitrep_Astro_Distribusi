@@ -217,7 +217,7 @@ export default function TargetAchievement({
     // data state dibiarkan (histori)
   };
 
-  /* ===== toggle helpers (pakai checkbox langsung seperti Project Tracking) ===== */
+  /* ===== toggle helpers ===== */
   const toggleKlaim = (p: string) => {
     const cur = {
       ...(data.klaimSelesai as unknown as Record<string, boolean>),
@@ -450,22 +450,33 @@ export default function TargetAchievement({
                         />
                       </td>
 
-                      {/* === kolom Selesai (gunakan <label> + checkbox seperti Project Tracking) === */}
-                      <td className="py-3 px-2">
-                        <label
-                          className="inline-flex items-center gap-3 px-2 py-2 rounded-md hover:bg-slate-100 cursor-pointer select-none"
-                          aria-label={`Toggle selesai ${principalLabel(p)}`}
-                        >
+                      {/* === kolom Selesai: klik di mana saja dalam sel (desktop-friendly) === */}
+                      <td
+                        className="py-3 px-2 select-none"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleKlaim(p)}
+                        onKeyDown={(e) =>
+                          handleKeyActivate(e, () => toggleKlaim(p))
+                        }
+                        aria-label={`Toggle selesai ${principalLabel(p)}`}
+                      >
+                        <div className="inline-flex items-center gap-3 px-2 py-2 rounded-md hover:bg-slate-100 focus:outline-none">
                           <input
                             type="checkbox"
                             className="h-5 w-5 accent-blue-600"
                             checked={checked}
-                            onChange={() => toggleKlaim(p)}
+                            readOnly
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleKlaim(p);
+                            }}
+                            aria-hidden={false}
                           />
                           <span className="text-sm text-slate-700">
                             Selesai
                           </span>
-                        </label>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -528,20 +539,32 @@ export default function TargetAchievement({
                     </td>
 
                     {[0, 1, 2, 3].map((w) => (
-                      <td key={w} className="py-3 px-2">
-                        <label
-                          className="inline-flex items-center justify-center w-10 h-10 rounded-md hover:bg-slate-100 cursor-pointer select-none"
-                          aria-label={`Toggle minggu ${
-                            w + 1
-                          } untuk ${principalLabel(p)}`}
-                        >
+                      <td
+                        key={w}
+                        className="py-3 px-2 select-none"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleWeekly(p, w)}
+                        onKeyDown={(e) =>
+                          handleKeyActivate(e, () => toggleWeekly(p, w))
+                        }
+                        aria-label={`Toggle minggu ${
+                          w + 1
+                        } untuk ${principalLabel(p)}`}
+                      >
+                        <div className="inline-flex items-center justify-center w-10 h-10 rounded-md hover:bg-slate-100 focus:outline-none">
                           <input
                             type="checkbox"
                             className="h-5 w-5 accent-blue-600"
                             checked={weeklyRow[w]}
-                            onChange={() => toggleWeekly(p, w)}
+                            readOnly
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleWeekly(p, w);
+                            }}
+                            aria-hidden={false}
                           />
-                        </label>
+                        </div>
                       </td>
                     ))}
 
