@@ -217,7 +217,7 @@ export default function TargetAchievement({
     // data state dibiarkan (histori)
   };
 
-  /* ===== toggle helpers (sekali klik, UI sama) ===== */
+  /* ===== toggle helpers (pakai checkbox langsung seperti Project Tracking) ===== */
   const toggleKlaim = (p: string) => {
     const cur = {
       ...(data.klaimSelesai as unknown as Record<string, boolean>),
@@ -450,33 +450,22 @@ export default function TargetAchievement({
                         />
                       </td>
 
-                      {/* === kolom Selesai (UI sama, event digeser ke PointerDown) === */}
-                      <td
-                        className="py-3 px-2 select-none"
-                        role="button"
-                        tabIndex={0}
-                        onPointerDown={(e) => {
-                          // Pastikan TIDAK perlu double-click: toggle saat pointer down
-                          e.preventDefault();
-                          toggleKlaim(p);
-                        }}
-                        onKeyDown={(e) =>
-                          handleKeyActivate(e, () => toggleKlaim(p))
-                        }
-                        aria-label={`Toggle selesai ${principalLabel(p)}`}
-                      >
-                        <div className="inline-flex items-center gap-3 px-2 py-2 rounded-md hover:bg-slate-100 focus:outline-none">
+                      {/* === kolom Selesai (gunakan <label> + checkbox seperti Project Tracking) === */}
+                      <td className="py-3 px-2">
+                        <label
+                          className="inline-flex items-center gap-3 px-2 py-2 rounded-md hover:bg-slate-100 cursor-pointer select-none"
+                          aria-label={`Toggle selesai ${principalLabel(p)}`}
+                        >
                           <input
                             type="checkbox"
-                            className="h-5 w-5 accent-blue-600 pointer-events-none"
+                            className="h-5 w-5 accent-blue-600"
                             checked={checked}
-                            readOnly
-                            aria-hidden
+                            onChange={() => toggleKlaim(p)}
                           />
                           <span className="text-sm text-slate-700">
                             Selesai
                           </span>
-                        </div>
+                        </label>
                       </td>
                     </tr>
                   );
@@ -539,31 +528,20 @@ export default function TargetAchievement({
                     </td>
 
                     {[0, 1, 2, 3].map((w) => (
-                      <td
-                        key={w}
-                        className="py-3 px-2 select-none"
-                        role="button"
-                        tabIndex={0}
-                        onPointerDown={(e) => {
-                          e.preventDefault();
-                          toggleWeekly(p, w);
-                        }}
-                        onKeyDown={(e) =>
-                          handleKeyActivate(e, () => toggleWeekly(p, w))
-                        }
-                        aria-label={`Toggle minggu ${
-                          w + 1
-                        } untuk ${principalLabel(p)}`}
-                      >
-                        <div className="inline-flex items-center justify-center w-10 h-10 rounded-md hover:bg-slate-100 focus:outline-none">
+                      <td key={w} className="py-3 px-2">
+                        <label
+                          className="inline-flex items-center justify-center w-10 h-10 rounded-md hover:bg-slate-100 cursor-pointer select-none"
+                          aria-label={`Toggle minggu ${
+                            w + 1
+                          } untuk ${principalLabel(p)}`}
+                        >
                           <input
                             type="checkbox"
-                            className="h-5 w-5 accent-blue-600 pointer-events-none"
+                            className="h-5 w-5 accent-blue-600"
                             checked={weeklyRow[w]}
-                            readOnly
-                            aria-hidden
+                            onChange={() => toggleWeekly(p, w)}
                           />
-                        </div>
+                        </label>
                       </td>
                     ))}
 
@@ -608,7 +586,7 @@ export default function TargetAchievement({
           )}
         </div>
         <div className="p-3 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
-          <label className="inline-flex items-center gap-3">
+          <label className="inline-flex items-center gap-3 cursor-pointer select-none">
             <input
               type="checkbox"
               className="h-5 w-5 accent-blue-600"
