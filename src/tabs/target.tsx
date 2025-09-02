@@ -1,15 +1,11 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Target as TargetIcon, Plus, Trash2 } from "lucide-react";
 import type { TargetState, TargetDeadlines } from "@/lib/types";
 import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
-
-// Optional cross-browser sync via Supabase (set env to enable)
-// npm i @supabase/supabase-js
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /* ================= OVERRIDES ================= */
 type TargetOverrides = {
@@ -28,18 +24,6 @@ type TargetOverrides = {
 const OV_KEY = "sitrep-target-copy-v2";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
 const SHARED_DEADLINES_KEY = "sitrep:target:shared-deadlines";
-
-// ===== Supabase config (optional; fallback ke localStorage kalau tidak di-set) =====
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "";
-const SUPA_ENABLED =
-  typeof window !== "undefined" && !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
-let supabase: SupabaseClient | null = null;
-if (SUPA_ENABLED) {
-  supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-}
-const SUPA_TABLE = "sitrep_target_deadlines"; // schema publik
-const SUPA_ROW_ID = "global"; // single row penyimpanan global
 
 /* — helper keyboard untuk aksesibilitas (Enter/Space) — */
 function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
@@ -296,11 +280,7 @@ export default function TargetAchievement({
     return "";
   };
 
-  /* ================= Cross-browser sync ================= */
-  // NOTE: localStorage hanya sinkron antar-tab di browser yang sama.
-  // Untuk sinkron lintas browser/device, gunakan Supabase (opsional) atau backend Anda sendiri.
-
-  // --- 1) Superadmin push ke localStorage (fallback) ---
+  /* ================= Sinkronisasi DEADLINES via localStorage ================= */
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!isSuper) return;
@@ -312,7 +292,6 @@ export default function TargetAchievement({
     } catch {}
   }, [isSuper, data.deadlines]);
 
-  // --- 2) Non-super (atau semua klien) pull dari localStorage saat mount + listen storage (same browser saja) ---
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -321,7 +300,6 @@ export default function TargetAchievement({
         const raw = localStorage.getItem(SHARED_DEADLINES_KEY);
         if (!raw) return;
         const dl = JSON.parse(raw) as TargetDeadlines;
-        if (JSON.stringify(dl) === JSON.stringify(data.deadlines)) return;
         onChange({
           ...data,
           deadlines: {
@@ -341,104 +319,15 @@ export default function TargetAchievement({
       } catch {}
     };
 
-    pull();
+    if (!isSuper) pull();
     const handler = (e: StorageEvent) => {
-      if (e.key === SHARED_DEADLINES_KEY) pull();
+      if (e.key === SHARED_DEADLINES_KEY && !isSuper) pull();
     };
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isSuper, data, onChange]);
+  /* =================== akhir sinkronisasi =================== */
 
-  // --- 3) Supabase: load on mount (semua klien) + save (hanya superadmin) + realtime subscribe ---
-  const saveDebounceRef = useRef<number | null>(null);
-  const lastPushedRef = useRef<string>("");
-
-  // Load sekali saat mount
-  useEffect(() => {
-    if (!supabase) return;
-    let cancelled = false;
-    (async () => {
-      const { data: row, error } = await supabase!
-        .from(SUPA_TABLE)
-        .select("payload")
-        .eq("id", SUPA_ROW_ID)
-        .single();
-      if (error) {
-        // jika tabel belum ada, biarkan silent
-        return;
-      }
-      const dl = (row as { payload?: TargetDeadlines } | null)?.payload;
-      if (!dl || cancelled) return;
-      // merge kalau beda
-      const cur = JSON.stringify(data.deadlines);
-      const incoming = JSON.stringify(dl);
-      lastPushedRef.current = incoming;
-      if (cur !== incoming) {
-        onChange({ ...data, deadlines: { ...data.deadlines, ...dl } });
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase]);
-
-  // Save setiap ada perubahan dari superadmin (debounced)
-  useEffect(() => {
-    if (!supabase) return;
-    if (!isSuper) return;
-    const payload = data.deadlines;
-    const serialized = JSON.stringify(payload);
-    if (serialized === lastPushedRef.current) return;
-
-    if (saveDebounceRef.current) {
-      window.clearTimeout(saveDebounceRef.current);
-    }
-    saveDebounceRef.current = window.setTimeout(async () => {
-      try {
-        await supabase!
-          .from(SUPA_TABLE)
-          .upsert({ id: SUPA_ROW_ID, payload }, { onConflict: "id" });
-        lastPushedRef.current = serialized;
-      } catch {}
-    }, 400);
-
-    return () => {
-      if (saveDebounceRef.current) window.clearTimeout(saveDebounceRef.current);
-    };
-  }, [supabase, isSuper, data.deadlines]);
-
-  // Realtime subscribe (semua klien)
-  useEffect(() => {
-    if (!supabase) return;
-    const channel = supabase
-      .channel("sitrep_target_deadlines_rt")
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: SUPA_TABLE,
-          filter: `id=eq.${SUPA_ROW_ID}`,
-        },
-        (payload: any) => {
-          const dl = (payload.new?.payload || {}) as TargetDeadlines;
-          const cur = JSON.stringify(data.deadlines);
-          const incoming = JSON.stringify(dl);
-          if (incoming === cur) return;
-          lastPushedRef.current = incoming;
-          onChange({ ...data, deadlines: { ...data.deadlines, ...dl } });
-        }
-      )
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, data]);
-
-  /* =================== UI =================== */
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -544,7 +433,7 @@ export default function TargetAchievement({
                         )}
                       </td>
 
-                      {/* === kolom Deadline === */}
+                      {/* === kolom Deadline (tetap) === */}
                       <td className="py-3 px-2">
                         <input
                           type="date"
@@ -561,7 +450,7 @@ export default function TargetAchievement({
                         />
                       </td>
 
-                      {/* === kolom Selesai === */}
+                      {/* === kolom Selesai: input checkbox controlled, readOnly + onClick (desktop-proof) === */}
                       <td className="py-3 px-2">
                         <label
                           className="inline-flex items-center gap-3 px-2 py-2 rounded-md hover:bg-slate-100 cursor-pointer select-none"
@@ -573,6 +462,7 @@ export default function TargetAchievement({
                             checked={checked}
                             readOnly
                             onClick={(e) => {
+                              // gunakan onClick + readOnly agar React tidak menunggu event onChange (desktop Safari/Chrome kadang ngaco di tabel)
                               e.stopPropagation();
                               toggleKlaim(p);
                             }}
