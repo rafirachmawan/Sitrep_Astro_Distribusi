@@ -173,6 +173,7 @@ export default function TargetAchievement({
     }
     const cur = readOverrides(viewRole);
     writeOverrides(viewRole, addExtraPrincipal(cur, k, lbl));
+
     setRev((x) => x + 1);
 
     // siapkan slot data di state jika belum ada
@@ -396,7 +397,6 @@ export default function TargetAchievement({
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="text-left py-2 px-2">Jenis</th>
-                  {/* === urutan baru: Deadline dulu, lalu Selesai === */}
                   <th className="text-left py-2 px-2">{copy.deadlineLabel}</th>
                   <th className="text-left py-2 px-2">Selesai</th>
                 </tr>
@@ -434,7 +434,7 @@ export default function TargetAchievement({
                         )}
                       </td>
 
-                      {/* === kolom Deadline (dipindah ke depan) === */}
+                      {/* === kolom Deadline === */}
                       <td className="py-3 px-2">
                         <input
                           type="date"
@@ -451,18 +451,18 @@ export default function TargetAchievement({
                         />
                       </td>
 
-                      {/* === kolom Selesai (dipindah ke belakang) === */}
-                      <td
-                        className="py-3 px-2 select-none"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => toggleKlaim(p)}
-                        onKeyDown={(e) =>
-                          handleKeyActivate(e, () => toggleKlaim(p))
-                        }
-                        aria-label={`Toggle selesai ${principalLabel(p)}`}
-                      >
-                        <div className="inline-flex items-center gap-3 px-2 py-2 rounded-md hover:bg-slate-100 focus:outline-none">
+                      {/* === kolom Selesai: tombol besar + checkbox readOnly === */}
+                      <td className="py-3 px-2">
+                        <button
+                          type="button"
+                          className="w-full sm:w-auto inline-flex items-center gap-3 px-3 py-2 rounded-md border border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 cursor-pointer select-none"
+                          onClick={() => toggleKlaim(p)}
+                          onKeyDown={(e) =>
+                            handleKeyActivate(e, () => toggleKlaim(p))
+                          }
+                          aria-pressed={checked}
+                          aria-label={`Toggle selesai ${principalLabel(p)}`}
+                        >
                           <input
                             type="checkbox"
                             className="h-5 w-5 accent-blue-600 pointer-events-none"
@@ -473,7 +473,7 @@ export default function TargetAchievement({
                           <span className="text-sm text-slate-700">
                             Selesai
                           </span>
-                        </div>
+                        </button>
                       </td>
                     </tr>
                   );
@@ -510,7 +510,6 @@ export default function TargetAchievement({
                 <th className="text-left py-2 px-2">Minggu 2</th>
                 <th className="text-left py-2 px-2">Minggu 3</th>
                 <th className="text-left py-2 px-2">Minggu 4</th>
-                {/* === kolom Deadline DIHAPUS sesuai permintaan === */}
                 {isSuper && editMode ? (
                   <th className="text-left py-2 px-2">Aksi</th>
                 ) : null}
@@ -537,20 +536,19 @@ export default function TargetAchievement({
                     </td>
 
                     {[0, 1, 2, 3].map((w) => (
-                      <td
-                        key={w}
-                        className="py-3 px-2 select-none"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => toggleWeekly(p, w)}
-                        onKeyDown={(e) =>
-                          handleKeyActivate(e, () => toggleWeekly(p, w))
-                        }
-                        aria-label={`Toggle minggu ${
-                          w + 1
-                        } untuk ${principalLabel(p)}`}
-                      >
-                        <div className="inline-flex items-center justify-center w-10 h-10 rounded-md hover:bg-slate-100 focus:outline-none">
+                      <td key={w} className="py-3 px-2">
+                        <button
+                          type="button"
+                          className="inline-flex items-center justify-center w-10 h-10 rounded-md border border-slate-300 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-200 cursor-pointer select-none"
+                          onClick={() => toggleWeekly(p, w)}
+                          onKeyDown={(e) =>
+                            handleKeyActivate(e, () => toggleWeekly(p, w))
+                          }
+                          aria-pressed={weeklyRow[w]}
+                          aria-label={`Toggle minggu ${
+                            w + 1
+                          } untuk ${principalLabel(p)}`}
+                        >
                           <input
                             type="checkbox"
                             className="h-5 w-5 accent-blue-600 pointer-events-none"
@@ -558,11 +556,9 @@ export default function TargetAchievement({
                             readOnly
                             aria-hidden
                           />
-                        </div>
+                        </button>
                       </td>
                     ))}
-
-                    {/* === kolom Deadline DIHAPUS === */}
 
                     {isSuper && editMode ? (
                       <td className="py-3 px-2">
@@ -582,7 +578,6 @@ export default function TargetAchievement({
             </tbody>
           </table>
 
-          {/* Form tambah principal juga ada di bagian Mingguan */}
           {isSuper && editMode && (
             <div className="mt-4">
               <AddPrincipalForm onAdd={addPrincipal} />
