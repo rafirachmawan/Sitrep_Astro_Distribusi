@@ -13,14 +13,14 @@ import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 
-/* ================= OVERRIDES ================= */
+/* ================= OVERRIDES (tetap lokal, hanya label UI) ================= */
 type TargetOverrides = {
   copy?: {
     klaimTitle?: string;
     targetSelesaiLabel?: string;
     weeklyTitle?: string;
     fodksTitle?: string;
-    fodksCheckboxLabel?: string; // keep for compat
+    fodksCheckboxLabel?: string;
     deadlineLabel?: string;
   };
   principals?: Record<string, { label?: string }>;
@@ -29,9 +29,8 @@ type TargetOverrides = {
 
 const OV_KEY = "sitrep-target-copy-v2";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
-const SHARED_DEADLINES_KEY = "sitrep:target:shared-deadlines";
 
-/* ====== FODKS list (persist) ====== */
+/* ====== FODKS list ====== */
 type FodksItem = {
   id: string;
   name: string;
@@ -39,19 +38,18 @@ type FodksItem = {
   createdBy?: string;
   createdAt?: string;
 };
-type TargetStateWithFodks = TargetState & { fodksList?: FodksItem[] };
-const SHARED_FODKS_LIST_KEY = "sitrep:target:fodks-list-v1";
 
-/* ====== CHECKLIST per AKUN (per role) ====== */
-type ChecklistSnapshot = {
-  klaimSelesai?: Record<string, boolean>;
-  weekly?: Record<string, boolean[]>;
-  ketepatanFodks?: boolean;
+/* ====== Saved payload (server) ====== */
+type SavedChecks = {
+  klaimSelesai: Record<string, boolean>;
+  weekly: Record<string, boolean[]>;
+  fodksList: FodksItem[];
 };
-const checksKey = (role: string) => `sitrep:target:checks:${role}`;
 
-/* OPTIONAL: persist ke server lintas browser/device */
-const REMOTE_CHECKS_ENDPOINT = "/api/target/checks";
+type MinimalAuth = {
+  role?: Role | string;
+  user?: { id?: string; email?: string };
+};
 
 /* — helper keyboard untuk aksesibilitas (Enter/Space) — */
 function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
@@ -61,6 +59,7 @@ function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
   }
 }
 
+/* ===== local overrides (label UI) ===== */
 function readOverrides(role: Role): TargetOverrides {
   if (typeof window === "undefined") return {};
   try {
@@ -74,11 +73,8 @@ function writeOverrides(role: Role, v: TargetOverrides) {
   if (typeof window === "undefined") return;
   localStorage.setItem(`${OV_KEY}:${role}`, JSON.stringify(v));
 }
-
-/* ===== typing aman untuk copy ===== */
 type CopyShape = NonNullable<TargetOverrides["copy"]>;
 type CopyKeys = keyof Required<CopyShape>;
-
 function patchCopy(
   src: TargetOverrides,
   key: CopyKeys,
@@ -92,7 +88,6 @@ function patchCopy(
   const copy: TargetOverrides["copy"] = copyMap;
   return { ...src, copy };
 }
-
 function patchPrincipalLabel(
   src: TargetOverrides,
   principal: string,
@@ -120,7 +115,7 @@ function removeExtraPrincipal(
   return { ...src, extraPrincipals: extras };
 }
 
-/* ================= Row terpisah supaya ketikan lancar ================= */
+/* ================= Baris FODKS: ketik lancar (debounce) ================= */
 const FodksRow = React.memo(function FodksRow({
   item,
   canEdit,
@@ -140,13 +135,11 @@ const FodksRow = React.memo(function FodksRow({
     setNote(item.note);
   }, [item.name, item.note]);
 
-  const debRef = useRef<number | null>(null);
-  const scheduleCommit = useCallback(
+  const deb = useRef<number | null>(null);
+  const schedule = useCallback(
     (patch: Partial<FodksItem>) => {
-      if (debRef.current) window.clearTimeout(debRef.current);
-      debRef.current = window.setTimeout(() => {
-        onChange(patch);
-      }, 300);
+      if (deb.current) window.clearTimeout(deb.current);
+      deb.current = window.setTimeout(() => onChange(patch), 300);
     },
     [onChange]
   );
@@ -174,7 +167,7 @@ const FodksRow = React.memo(function FodksRow({
           value={name}
           onChange={(e) => {
             setName(e.target.value);
-            scheduleCommit({ name: e.target.value });
+            schedule({ name: e.target.value });
           }}
         />
         <div className="mt-1 text-[11px] text-slate-500">
@@ -195,7 +188,7 @@ const FodksRow = React.memo(function FodksRow({
           value={note}
           onChange={(e) => {
             setNote(e.target.value);
-            scheduleCommit({ note: e.target.value });
+            schedule({ note: e.target.value });
           }}
         />
       </td>
@@ -224,21 +217,17 @@ export default function TargetAchievement({
   data: TargetState;
   onChange: (v: TargetState) => void;
 }) {
-  const { role } = useAuth();
+  const auth = useAuth() as MinimalAuth;
+  const role = (auth.role as Role) || "admin";
   const isSuper = role === "superadmin";
+  const accountId = auth.user?.id || auth.user?.email || String(role);
 
   const [targetRole, setTargetRole] = useState<Role>("admin");
   const viewRole = (isSuper ? targetRole : (role as Role)) || "admin";
   const [editMode, setEditMode] = useState(false);
   const [rev, setRev] = useState(0);
 
-  // ⬇️ ganti useMemo → useState + useEffect (hilang warning 'rev')
-  const [overrides, setOverrides] = useState<TargetOverrides>(() =>
-    readOverrides(viewRole)
-  );
-  useEffect(() => {
-    setOverrides(readOverrides(viewRole));
-  }, [viewRole, rev]);
+  const overrides = useMemo(() => readOverrides(viewRole), [viewRole, rev]);
 
   const copy = {
     klaimTitle: overrides.copy?.klaimTitle ?? "Penyelesaian Klaim Bulan Ini",
@@ -252,7 +241,7 @@ export default function TargetAchievement({
     deadlineLabel: overrides.copy?.deadlineLabel ?? "Deadline",
   };
 
-  /* ===== principals ===== */
+  /* ===== list principal: base + custom ===== */
   const allPrincipals: string[] = useMemo(() => {
     const base = [...PRINCIPALS];
     const extras = Object.keys(overrides.extraPrincipals || {});
@@ -286,7 +275,87 @@ export default function TargetAchievement({
     setRev((x) => x + 1);
   };
 
-  /* ===== tambah/hapus principal ===== */
+  /* ====== STATE LOKAL CHECKLIST (disubmit ke server) ====== */
+  const [klaimMap, setKlaimMap] = useState<Record<string, boolean>>(
+    (data.klaimSelesai as unknown as Record<string, boolean>) || {}
+  );
+  const [weeklyMap, setWeeklyMap] = useState<Record<string, boolean[]>>(
+    (data.weekly as unknown as Record<string, boolean[]>) || {}
+  );
+  const [fodksListLocal, setFodksListLocal] = useState<FodksItem[]>([]);
+
+  // sinkronkan parent (agar UI lain tetap ikut) — tapi persist hanya saat Submit
+  useEffect(() => {
+    onChange({
+      ...data,
+      klaimSelesai: klaimMap as unknown as TargetState["klaimSelesai"],
+      weekly: weeklyMap as unknown as TargetState["weekly"],
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(klaimMap), JSON.stringify(weeklyMap)]);
+
+  /* ====== LOAD dari server saat mount ====== */
+  const [loadStatus, setLoadStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const loadFromServer = useCallback(async () => {
+    if (!accountId) return;
+    try {
+      setLoadStatus("loading");
+      const res = await fetch(
+        `/api/target/checks?accountId=${encodeURIComponent(accountId)}`,
+        {
+          method: "GET",
+          credentials: "include",
+          headers: { Accept: "application/json" },
+        }
+      );
+      if (!res.ok) throw new Error(String(res.status));
+      const json = (await res.json()) as Partial<SavedChecks>;
+      if (json.klaimSelesai) setKlaimMap(json.klaimSelesai);
+      if (json.weekly) setWeeklyMap(json.weekly);
+      if (json.fodksList) setFodksListLocal(json.fodksList);
+      setLoadStatus("loaded");
+    } catch {
+      setLoadStatus("error");
+    }
+  }, [accountId]);
+
+  useEffect(() => {
+    loadFromServer();
+  }, [loadFromServer]);
+
+  /* ====== TOMBOL SUBMIT (SIMPAN KE SERVER) ====== */
+  const [saveStatus, setSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const handleSubmit = async () => {
+    if (!accountId) return;
+    try {
+      setSaveStatus("saving");
+      const payload: SavedChecks = {
+        klaimSelesai: klaimMap,
+        weekly: weeklyMap,
+        fodksList: fodksListLocal,
+      };
+      const res = await fetch(
+        `/api/target/checks?accountId=${encodeURIComponent(accountId)}`,
+        {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+      if (!res.ok) throw new Error(String(res.status));
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 1500);
+    } catch {
+      setSaveStatus("error");
+    }
+  };
+
+  /* ===== tambah/hapus principal (superadmin saja) ===== */
   const addPrincipal = (key: string, label: string) => {
     if (!isSuper) return;
     const k = key.trim();
@@ -305,36 +374,11 @@ export default function TargetAchievement({
     writeOverrides(viewRole, addExtraPrincipal(cur, k, lbl));
     setRev((x) => x + 1);
 
-    const nextWeeklyMap = {
-      ...(data.weekly as unknown as Record<string, boolean[]>),
-    };
-    if (!nextWeeklyMap[k]) nextWeeklyMap[k] = [false, false, false, false];
-
-    const nextKlaimMap = {
-      ...(data.klaimSelesai as unknown as Record<string, boolean>),
-    };
-    if (typeof nextKlaimMap[k] === "undefined") nextKlaimMap[k] = false;
-
-    const nextDeadlines = { ...(data.deadlines as TargetDeadlines) };
-    const nextKlaimDL = {
-      ...(nextDeadlines.klaim as unknown as Record<string, string>),
-    };
-    if (!nextKlaimDL[k]) nextKlaimDL[k] = "";
-    const nextWeeklyDL = {
-      ...(nextDeadlines.weekly as unknown as Record<string, string>),
-    };
-    if (!nextWeeklyDL[k]) nextWeeklyDL[k] = "";
-
-    onChange({
-      ...data,
-      weekly: nextWeeklyMap as unknown as TargetState["weekly"],
-      klaimSelesai: nextKlaimMap as unknown as TargetState["klaimSelesai"],
-      deadlines: {
-        ...nextDeadlines,
-        klaim: nextKlaimDL as unknown as TargetDeadlines["klaim"],
-        weekly: nextWeeklyDL as unknown as TargetDeadlines["weekly"],
-      },
-    });
+    setWeeklyMap((prev) => ({
+      ...prev,
+      [k]: prev[k] ?? [false, false, false, false],
+    }));
+    setKlaimMap((prev) => ({ ...prev, [k]: prev[k] ?? false }));
   };
 
   const removePrincipal = (key: string) => {
@@ -343,30 +387,22 @@ export default function TargetAchievement({
     const cur = readOverrides(viewRole);
     writeOverrides(viewRole, removeExtraPrincipal(cur, key));
     setRev((x) => x + 1);
+    // nilai lama dibiarkan (histori)
   };
 
   /* ===== toggle helpers ===== */
-  const toggleKlaim = (p: string) => {
-    const cur = {
-      ...(data.klaimSelesai as unknown as Record<string, boolean>),
-    };
-    cur[p] = !cur[p];
-    onChange({
-      ...data,
-      klaimSelesai: cur as unknown as TargetState["klaimSelesai"],
+  const toggleKlaim = (p: string) =>
+    setKlaimMap((prev) => ({ ...prev, [p]: !prev[p] }));
+
+  const toggleWeekly = (p: string, w: number) =>
+    setWeeklyMap((prev) => {
+      const arr = prev[p] ? [...prev[p]] : [false, false, false, false];
+      arr[w] = !arr[w];
+      return { ...prev, [p]: arr };
     });
-  };
 
-  const toggleWeekly = (p: string, w: number) => {
-    const cur = { ...(data.weekly as unknown as Record<string, boolean[]>) };
-    const arr = cur[p] ? [...cur[p]] : [false, false, false, false];
-    arr[w] = !arr[w];
-    cur[p] = arr;
-    onChange({ ...data, weekly: cur as unknown as TargetState["weekly"] });
-  };
-
+  /* ===== deadline (hanya update parent; persist terserah parent/superadmin) ===== */
   type DeadlineScope = keyof TargetDeadlines;
-
   const setDeadline = (scope: DeadlineScope, value: string, p?: string) => {
     if (!isSuper) return;
     const next: TargetDeadlines = { ...data.deadlines };
@@ -402,282 +438,30 @@ export default function TargetAchievement({
     return "";
   };
 
-  /* ================= Sinkronisasi DEADLINES via localStorage ================= */
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!isSuper) return;
-    try {
-      localStorage.setItem(
-        SHARED_DEADLINES_KEY,
-        JSON.stringify(data.deadlines)
-      );
-    } catch {}
-  }, [isSuper, data.deadlines]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const pull = () => {
-      try {
-        const raw = localStorage.getItem(SHARED_DEADLINES_KEY);
-        if (!raw) return;
-        const dl = JSON.parse(raw) as TargetDeadlines;
-        onChange({
-          ...data,
-          deadlines: {
-            ...data.deadlines,
-            targetSelesai: dl.targetSelesai ?? data.deadlines.targetSelesai,
-            fodks: dl.fodks ?? data.deadlines.fodks,
-            klaim: {
-              ...(data.deadlines.klaim as object),
-              ...(dl.klaim as object),
-            } as TargetDeadlines["klaim"],
-            weekly: {
-              ...(data.deadlines.weekly as object),
-              ...(dl.weekly as object),
-            } as TargetDeadlines["weekly"],
-          },
-        });
-      } catch {}
-    };
-
-    if (!isSuper) pull();
-    const handler = (e: StorageEvent) => {
-      if (e.key === SHARED_DEADLINES_KEY && !isSuper) pull();
-    };
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
-  }, [isSuper, data, onChange]);
-
-  /* =================== CHECKLIST PER ROLE: load/save (local + optional remote) =================== */
-  const roleKey = viewRole as string;
-
-  const buildSnapshot = useCallback((): ChecklistSnapshot => {
-    return {
-      klaimSelesai: {
-        ...(data.klaimSelesai as unknown as Record<string, boolean>),
-      },
-      weekly: {
-        ...(data.weekly as unknown as Record<string, boolean[]>),
-      },
-      ketepatanFodks:
-        (data as { ketepatanFodks?: boolean }).ketepatanFodks ?? false,
-    };
-  }, [data]);
-
-  const saveChecksLocal = useCallback(
-    (snap: ChecklistSnapshot) => {
-      try {
-        localStorage.setItem(checksKey(roleKey), JSON.stringify(snap));
-      } catch {}
-    },
-    [roleKey]
-  );
-
-  const loadChecksLocal = useCallback((): ChecklistSnapshot | null => {
-    if (typeof window === "undefined") return null;
-    try {
-      const raw = localStorage.getItem(checksKey(roleKey));
-      return raw ? (JSON.parse(raw) as ChecklistSnapshot) : null;
-    } catch {
-      return null;
-    }
-  }, [roleKey]);
-
-  const saveChecksRemote = useCallback(
-    async (snap: ChecklistSnapshot) => {
-      try {
-        await fetch(
-          `${REMOTE_CHECKS_ENDPOINT}?role=${encodeURIComponent(roleKey)}`,
-          {
-            method: "PUT",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(snap),
-          }
-        );
-      } catch {
-        /* ignore */
-      }
-    },
-    [roleKey]
-  );
-
-  const loadChecksRemote =
-    useCallback(async (): Promise<ChecklistSnapshot | null> => {
-      try {
-        const res = await fetch(
-          `${REMOTE_CHECKS_ENDPOINT}?role=${encodeURIComponent(roleKey)}`,
-          { credentials: "include" }
-        );
-        if (!res.ok) return null;
-        const snap = (await res.json()) as ChecklistSnapshot;
-        return snap;
-      } catch {
-        return null;
-      }
-    }, [roleKey]);
-
-  // LOAD saat role berubah / mount
-  useEffect(() => {
-    let isMounted = true;
-
-    const applySnap = (snap: ChecklistSnapshot | null) => {
-      if (!snap || !isMounted) return;
-
-      const mergedKlaim = {
-        ...(data.klaimSelesai as unknown as Record<string, boolean>),
-        ...(snap.klaimSelesai || {}),
-      };
-      const mergedWeekly = {
-        ...(data.weekly as unknown as Record<string, boolean[]>),
-        ...(snap.weekly || {}),
-      };
-
-      onChange({
-        ...data,
-        klaimSelesai: mergedKlaim as unknown as TargetState["klaimSelesai"],
-        weekly: mergedWeekly as unknown as TargetState["weekly"],
-        ketepatanFodks:
-          typeof snap.ketepatanFodks !== "undefined"
-            ? snap.ketepatanFodks
-            : (data as { ketepatanFodks?: boolean }).ketepatanFodks ?? false,
-      });
-    };
-
-    (async () => {
-      const remote = await loadChecksRemote();
-      if (remote) {
-        applySnap(remote);
-        saveChecksLocal(remote);
-      } else {
-        const local = loadChecksLocal();
-        applySnap(local);
-      }
-    })();
-
-    const storageHandler = (e: StorageEvent) => {
-      if (e.key === checksKey(roleKey) && e.newValue) {
-        try {
-          const snap = JSON.parse(e.newValue) as ChecklistSnapshot;
-          applySnap(snap);
-        } catch {}
-      }
-    };
-    window.addEventListener("storage", storageHandler);
-
-    return () => {
-      isMounted = false;
-      window.removeEventListener("storage", storageHandler);
-    };
-  }, [
-    roleKey,
-    data,
-    onChange,
-    loadChecksRemote,
-    saveChecksLocal,
-    loadChecksLocal,
-  ]);
-
-  // SAVE debounced saat checklist berubah
-  const saveTimer = useRef<number | null>(null);
-  useEffect(() => {
-    const snap = buildSnapshot();
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => {
-      saveChecksLocal(snap);
-      void saveChecksRemote(snap);
-    }, 300);
-  }, [buildSnapshot, saveChecksLocal, saveChecksRemote]);
-
-  /* =================== FODKS LIST: local fast state + debounced commit =================== */
-  const dataF = data as TargetStateWithFodks;
-  const getFodksListFromProp = (): FodksItem[] => dataF.fodksList ?? [];
-
-  const [fodksListLocal, setFodksListLocal] = useState<FodksItem[]>(
-    getFodksListFromProp()
-  );
-
-  useEffect(() => {
-    setFodksListLocal(getFodksListFromProp());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(getFodksListFromProp())]);
-
-  const commitTimer = useRef<number | null>(null);
-  const scheduleCommitAll = useCallback(
-    (next: FodksItem[]) => {
-      setFodksListLocal(next);
-      if (commitTimer.current) window.clearTimeout(commitTimer.current);
-      commitTimer.current = window.setTimeout(() => {
-        const nextData = {
-          ...(dataF as TargetStateWithFodks),
-          fodksList: next,
-        } as unknown as TargetState;
-        onChange(nextData);
-        try {
-          localStorage.setItem(SHARED_FODKS_LIST_KEY, JSON.stringify(next));
-        } catch {}
-      }, 350);
-    },
-    [onChange, dataF]
-  );
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try {
-      const raw = localStorage.getItem(SHARED_FODKS_LIST_KEY);
-      if (raw) {
-        const stored = JSON.parse(raw) as FodksItem[];
-        scheduleCommitAll(stored);
-      }
-    } catch {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handler = (e: StorageEvent) => {
-      if (e.key === SHARED_FODKS_LIST_KEY && e.newValue) {
-        try {
-          const stored = JSON.parse(e.newValue) as FodksItem[];
-          setFodksListLocal(stored);
-        } catch {}
-      }
-    };
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
-  }, []);
-
+  /* ===== FODKS logic ===== */
   const uid = () =>
     Math.random().toString(36).slice(2) + Date.now().toString(36);
-
   const addFodksItem = () => {
-    const next = [
+    const next: FodksItem[] = [
       ...fodksListLocal,
       {
         id: uid(),
         name: "",
         note: "",
-        createdBy: role ?? "unknown",
+        createdBy: String(role),
         createdAt: new Date().toISOString(),
       },
     ];
-    scheduleCommitAll(next);
+    setFodksListLocal(next);
   };
-
   const canEditItem = (it: FodksItem) => isSuper || it.createdBy === role;
-
-  const patchFodksItem = (id: string, patch: Partial<FodksItem>) => {
-    const next = fodksListLocal.map((it) =>
-      it.id === id ? { ...it, ...patch } : it
+  const patchFodksItem = (id: string, patch: Partial<FodksItem>) =>
+    setFodksListLocal((list) =>
+      list.map((it) => (it.id === id ? { ...it, ...patch } : it))
     );
-    scheduleCommitAll(next);
-  };
-
   const removeFodksItem = (id: string) => {
     if (!isSuper) return;
-    const next = fodksListLocal.filter((it) => it.id !== id);
-    scheduleCommitAll(next);
+    setFodksListLocal((list) => list.filter((it) => it.id !== id));
   };
 
   /* =================== RENDER =================== */
@@ -689,42 +473,65 @@ export default function TargetAchievement({
           <div className="flex items-center gap-2">
             <TargetIcon className="h-5 w-5 text-blue-600" />
             <h3 className="font-semibold text-slate-800">
-              Target & Achievement
+              Target &amp; Achievement
             </h3>
+            {loadStatus === "loading" && (
+              <span className="ml-2 text-xs text-slate-500">Memuat…</span>
+            )}
+            {loadStatus === "error" && (
+              <span className="ml-2 text-xs text-rose-600">Gagal memuat</span>
+            )}
           </div>
 
-          {isSuper && (
-            <div className="flex items-center gap-2">
-              <label className="text-sm text-slate-600">Role:</label>
-              <select
-                className="rounded-xl border-2 border-slate-300 text-sm bg-white px-2 py-1 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-                value={targetRole}
-                onChange={(e) => setTargetRole(e.target.value as Role)}
-              >
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-              <label className="flex items-center gap-1 text-sm">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-blue-600"
-                  checked={editMode}
-                  onChange={(e) => setEditMode(e.target.checked)}
-                />
-                Mode Edit
-              </label>
-              <button
-                type="button"
-                onClick={resetOverrides}
-                className="text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
-              >
-                Reset
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Submit Simpan ke Server */}
+            <button
+              type="button"
+              onClick={handleSubmit}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+            >
+              {saveStatus === "saving" ? "Menyimpan…" : "Submit"}
+            </button>
+            {saveStatus === "saved" && (
+              <span className="text-xs text-emerald-700">Tersimpan ✔</span>
+            )}
+            {saveStatus === "error" && (
+              <span className="text-xs text-rose-600">Gagal menyimpan</span>
+            )}
+
+            {isSuper && (
+              <>
+                <label className="text-sm text-slate-600 ml-3">Role:</label>
+                <select
+                  className="rounded-xl border-2 border-slate-300 text-sm bg-white px-2 py-1 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                  value={targetRole}
+                  onChange={(e) => setTargetRole(e.target.value as Role)}
+                >
+                  {ROLES.map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+                <label className="flex items-center gap-1 text-sm">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-blue-600"
+                    checked={editMode}
+                    onChange={(e) => setEditMode(e.target.checked)}
+                  />
+                  Mode Edit
+                </label>
+                <button
+                  type="button"
+                  onClick={resetOverrides}
+                  className="text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                >
+                  Reset Label
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* ===== Bagian 1: Klaim selesai ===== */}
@@ -756,10 +563,7 @@ export default function TargetAchievement({
               </thead>
               <tbody className="divide-y border rounded-xl bg-white">
                 {allPrincipals.map((p) => {
-                  const checked =
-                    (data.klaimSelesai as unknown as Record<string, boolean>)[
-                      p
-                    ] || false;
+                  const checked = klaimMap[p] || false;
                   return (
                     <tr key={p}>
                       <td className="py-3 px-2 font-medium text-slate-800">
@@ -877,9 +681,7 @@ export default function TargetAchievement({
             </thead>
             <tbody className="divide-y bg-white">
               {allPrincipals.map((p) => {
-                const weeklyRow = (
-                  data.weekly as unknown as Record<string, boolean[]>
-                )[p] || [false, false, false, false];
+                const weeklyRow = weeklyMap[p] || [false, false, false, false];
                 return (
                   <tr key={p}>
                     <td className="py-3 px-2 font-medium text-slate-800">
