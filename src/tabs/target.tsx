@@ -116,9 +116,11 @@ export default function TargetAchievement({
       overrides.copy?.targetSelesaiLabel ?? "Target Selesai (bulan ini)",
     weeklyTitle:
       overrides.copy?.weeklyTitle ?? "Laporan Penjualan ke Prinsipal Mingguan",
-    fodksTitle: overrides.copy?.fodksTitle ?? "Ketepatan Waktu Input FODKS",
+    // ↓ sesuai permintaan: ganti menjadi "Akhir Input FODKS"
+    fodksTitle: overrides.copy?.fodksTitle ?? "Akhir Input FODKS",
+    // ↓ checkbox label disesuaikan
     fodksCheckboxLabel:
-      overrides.copy?.fodksCheckboxLabel ?? "Tandai jika tepat waktu",
+      overrides.copy?.fodksCheckboxLabel ?? "Tandai jika sudah input",
     deadlineLabel: overrides.copy?.deadlineLabel ?? "Deadline",
   };
 
@@ -327,6 +329,11 @@ export default function TargetAchievement({
     return () => window.removeEventListener("storage", handler);
   }, [isSuper, data, onChange]);
   /* =================== akhir sinkronisasi =================== */
+
+  // ===== util aman untuk Keterangan FODKS (tanpa ganggu tipe) =====
+  const getFodksNote = () => ((data as any).fodksNote as string) ?? "";
+  const setFodksNote = (v: string) =>
+    onChange({ ...data, ...({ fodksNote: v } as any) });
 
   return (
     <div className="space-y-6">
@@ -615,7 +622,10 @@ export default function TargetAchievement({
             copy.fodksTitle
           )}
         </div>
-        <div className="p-3 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
+
+        {/* Grid: checkbox + deadline + keterangan */}
+        <div className="p-3 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
+          {/* Checkbox */}
           <label
             className="inline-flex items-center gap-3 cursor-pointer select-none"
             role="button"
@@ -629,7 +639,7 @@ export default function TargetAchievement({
               onChange({ ...data, ketepatanFodks: !data.ketepatanFodks })
             }
             style={{ userSelect: "none" }}
-            aria-label="Toggle ketepatan FODKS"
+            aria-label="Toggle FODKS sudah diinput"
           >
             <input
               type="checkbox"
@@ -655,7 +665,8 @@ export default function TargetAchievement({
             )}
           </label>
 
-          <div className="sm:col-span-2">
+          {/* Deadline */}
+          <div className="sm:col-span-1">
             <span className="block text-sm font-medium text-slate-700 mb-1">
               {copy.deadlineLabel}
             </span>
@@ -665,6 +676,20 @@ export default function TargetAchievement({
               className={`${INPUT_BASE} ${!isSuper ? INPUT_DISABLED : ""}`}
               value={getDeadline("fodks")}
               onChange={(e) => setDeadline("fodks", e.target.value)}
+            />
+          </div>
+
+          {/* Keterangan */}
+          <div className="sm:col-span-1">
+            <span className="block text-sm font-medium text-slate-700 mb-1">
+              Keterangan
+            </span>
+            <textarea
+              rows={1}
+              className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+              placeholder="Tambahkan keterangan akhir input FODKS (opsional)…"
+              value={getFodksNote()}
+              onChange={(e) => setFodksNote(e.target.value)}
             />
           </div>
         </div>
