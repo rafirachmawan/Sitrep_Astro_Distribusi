@@ -13,7 +13,7 @@ import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 
-/* ================= OVERRIDES (hanya label UI, lokal) ================= */
+/* ================= OVERRIDES (label UI lokal) ================= */
 type TargetOverrides = {
   copy?: {
     klaimTitle?: string;
@@ -28,6 +28,7 @@ type TargetOverrides = {
 };
 
 const OV_KEY = "sitrep-target-copy-v2";
+const ROLE_PREF_KEY = "sitrep-target-role-pref";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
 
 /* ====== FODKS list ====== */
@@ -51,7 +52,7 @@ type MinimalAuth = {
   user?: { id?: string; email?: string };
 };
 
-/* — helper keyboard untuk aksesibilitas (Enter/Space) — */
+/* — helper keyboard (Enter/Space) — */
 function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
   if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
@@ -59,7 +60,7 @@ function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
   }
 }
 
-/* ===== local overrides (label UI) ===== */
+/* ===== local overrides ===== */
 function readOverrides(role: Role): TargetOverrides {
   if (typeof window === "undefined") return {};
   try {
@@ -115,7 +116,7 @@ function removeExtraPrincipal(
   return { ...src, extraPrincipals: extras };
 }
 
-/* ================= Baris FODKS: ketik lancar (debounce) ================= */
+/* ================= Baris FODKS (debounce) ================= */
 const FodksRow = React.memo(function FodksRow({
   item,
   canEdit,
@@ -220,16 +221,30 @@ export default function TargetAchievement({
   const auth = useAuth() as MinimalAuth;
   const role = (auth.role as Role) || "admin";
   const isSuper = role === "superadmin";
-  const accountId = auth.user?.id || auth.user?.email || String(role);
 
-  // periode bulanan untuk GET dan PUT (harus konsisten)
+  /** SIMPAN PER USER (stabil lintas device) */
+  const STORAGE_MODE: "byUser" | "byRole" = "byUser";
+  const accountId =
+    STORAGE_MODE === "byUser"
+      ? auth.user?.email || auth.user?.id || null
+      : (`role:${role}` as string | null);
+
+  // periode bulanan
   const period = useMemo(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   }, []);
 
-  const [targetRole, setTargetRole] = useState<Role>("admin");
+  // role picker utk superadmin (hanya utk label/preview)
+  const [targetRole, setTargetRole] = useState<Role>(() => {
+    if (typeof window === "undefined") return "admin";
+    return (localStorage.getItem(ROLE_PREF_KEY) as Role) || "admin";
+  });
+  useEffect(() => {
+    if (isSuper) localStorage.setItem(ROLE_PREF_KEY, targetRole);
+  }, [isSuper, targetRole]);
   const viewRole = (isSuper ? targetRole : (role as Role)) || "admin";
+
   const [editMode, setEditMode] = useState(false);
   const [rev, setRev] = useState(0);
 
@@ -281,7 +296,7 @@ export default function TargetAchievement({
     setRev((x) => x + 1);
   };
 
-  /* ====== STATE LOKAL CHECKLIST (disubmit ke server) ====== */
+  /* ====== STATE LOKAL CHECKLIST ====== */
   const [klaimMap, setKlaimMap] = useState<Record<string, boolean>>(
     (data.klaimSelesai as unknown as Record<string, boolean>) || {}
   );
@@ -300,13 +315,13 @@ export default function TargetAchievement({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(klaimMap), JSON.stringify(weeklyMap)]);
 
-  /* ====== LOAD dari server saat mount / berubah account ====== */
+  /* ====== LOAD dari server (tunggu accountId siap) ====== */
   const [loadStatus, setLoadStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
   >("idle");
 
   const loadFromServer = useCallback(async () => {
-    if (!accountId) return;
+    if (!accountId) return; // tunggu auth siap
     try {
       setLoadStatus("loading");
       const res = await fetch(
@@ -335,7 +350,7 @@ export default function TargetAchievement({
     loadFromServer();
   }, [loadFromServer]);
 
-  /* ====== TOMBOL SUBMIT (SIMPAN KE SERVER) ====== */
+  /* ====== SUBMIT (PUT) ====== */
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
@@ -363,8 +378,7 @@ export default function TargetAchievement({
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 1500);
-      // refresh dari server agar yakin sinkron
-      loadFromServer();
+      await loadFromServer(); // refresh agar state sama dgn DB
     } catch (err) {
       console.error("PUT /api/target/checks error:", err);
       setSaveStatus("error");
@@ -403,7 +417,6 @@ export default function TargetAchievement({
     const cur = readOverrides(viewRole);
     writeOverrides(viewRole, removeExtraPrincipal(cur, key));
     setRev((x) => x + 1);
-    // nilai map lama dibiarkan (histori)
   };
 
   /* ===== toggle helpers ===== */
@@ -497,14 +510,25 @@ export default function TargetAchievement({
             {loadStatus === "error" && (
               <span className="ml-2 text-xs text-rose-600">Gagal memuat</span>
             )}
+            {!accountId && (
+              <span className="ml-2 text-xs text-slate-500">
+                Menunggu akun…
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Submit Simpan ke Server */}
+            {/* Submit */}
             <button
               type="button"
               onClick={handleSubmit}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700 focus:outline-none focus:ring-4 focus:ring-emerald-100"
+              disabled={!accountId || saveStatus === "saving"}
+              className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-white text-sm focus:outline-none focus:ring-4 ${
+                !accountId
+                  ? "bg-emerald-400/60 cursor-not-allowed"
+                  : "bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-100"
+              }`}
+              title={!accountId ? "Login dulu, akun belum siap" : "Simpan"}
             >
               {saveStatus === "saving" ? "Menyimpan…" : "Submit"}
             </button>
