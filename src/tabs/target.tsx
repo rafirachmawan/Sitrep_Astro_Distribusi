@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Target as TargetIcon, Plus, Trash2 } from "lucide-react";
 import type { TargetState, TargetDeadlines } from "@/lib/types";
 import { PRINCIPALS } from "@/lib/types";
@@ -92,9 +92,6 @@ function removeExtraPrincipal(
   return { ...src, extraPrincipals: extras };
 }
 
-/* ====== Tambahan kecil untuk hindari `any` pada fodksNote ====== */
-type TargetStateWithNote = TargetState & { fodksNote?: string };
-
 /* ================= COMPONENT ================= */
 export default function TargetAchievement({
   data,
@@ -111,11 +108,7 @@ export default function TargetAchievement({
   const [editMode, setEditMode] = useState(false);
   const [rev, setRev] = useState(0);
 
-  // Ganti useMemo -> useEffect + state (hilangkan warning exhaustive-deps)
-  const [overrides, setOverrides] = useState<TargetOverrides>({});
-  useEffect(() => {
-    setOverrides(readOverrides(viewRole));
-  }, [viewRole, rev]);
+  const overrides = useMemo(() => readOverrides(viewRole), [viewRole, rev]);
 
   const copy = {
     klaimTitle: overrides.copy?.klaimTitle ?? "Penyelesaian Klaim Bulan Ini",
@@ -123,15 +116,14 @@ export default function TargetAchievement({
       overrides.copy?.targetSelesaiLabel ?? "Target Selesai (bulan ini)",
     weeklyTitle:
       overrides.copy?.weeklyTitle ?? "Laporan Penjualan ke Prinsipal Mingguan",
-    // Sesuai permintaan
-    fodksTitle: overrides.copy?.fodksTitle ?? "Akhir Input FODKS",
+    fodksTitle: overrides.copy?.fodksTitle ?? "Ketepatan Waktu Input FODKS",
     fodksCheckboxLabel:
-      overrides.copy?.fodksCheckboxLabel ?? "Tandai jika sudah input",
+      overrides.copy?.fodksCheckboxLabel ?? "Tandai jika tepat waktu",
     deadlineLabel: overrides.copy?.deadlineLabel ?? "Deadline",
   };
 
   /* ===== list principal: base + custom ===== */
-  const allPrincipals: string[] = React.useMemo(() => {
+  const allPrincipals: string[] = useMemo(() => {
     const base = [...PRINCIPALS];
     const extras = Object.keys(overrides.extraPrincipals || {});
     return [...base, ...extras];
@@ -222,6 +214,7 @@ export default function TargetAchievement({
     const cur = readOverrides(viewRole);
     writeOverrides(viewRole, removeExtraPrincipal(cur, key));
     setRev((x) => x + 1);
+    // data state dibiarkan (histori)
   };
 
   /* ===== toggle helpers ===== */
@@ -333,14 +326,7 @@ export default function TargetAchievement({
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
   }, [isSuper, data, onChange]);
-
-  /* ===== util aman untuk Keterangan FODKS (tanpa ubah tipe global) ===== */
-  const dataWithNote = data as TargetStateWithNote;
-  const getFodksNote = (): string => dataWithNote.fodksNote ?? "";
-  const setFodksNote = (v: string) => {
-    const next: TargetStateWithNote = { ...dataWithNote, fodksNote: v };
-    onChange(next as unknown as TargetState);
-  };
+  /* =================== akhir sinkronisasi =================== */
 
   return (
     <div className="space-y-6">
@@ -486,6 +472,7 @@ export default function TargetAchievement({
                             checked={checked}
                             readOnly
                             onClick={(e) => {
+                              // tetap ada agar klik langsung di checkbox juga jalan
                               e.stopPropagation();
                               toggleKlaim(p);
                             }}
@@ -621,17 +608,14 @@ export default function TargetAchievement({
             <input
               defaultValue={copy.fodksTitle}
               onBlur={(e) => saveCopy("fodksTitle", e.target.value)}
-              className="w-full max-w-[420px] rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+              className="w-full max-w-[420px] rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
               placeholder="Judul bagian FODKS…"
             />
           ) : (
             copy.fodksTitle
           )}
         </div>
-
-        {/* Grid: checkbox + deadline + keterangan */}
-        <div className="p-3 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-3 items-start">
-          {/* Checkbox */}
+        <div className="p-3 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
           <label
             className="inline-flex items-center gap-3 cursor-pointer select-none"
             role="button"
@@ -645,7 +629,7 @@ export default function TargetAchievement({
               onChange({ ...data, ketepatanFodks: !data.ketepatanFodks })
             }
             style={{ userSelect: "none" }}
-            aria-label="Toggle FODKS sudah diinput"
+            aria-label="Toggle ketepatan FODKS"
           >
             <input
               type="checkbox"
@@ -671,8 +655,7 @@ export default function TargetAchievement({
             )}
           </label>
 
-          {/* Deadline */}
-          <div className="sm:col-span-1">
+          <div className="sm:col-span-2">
             <span className="block text-sm font-medium text-slate-700 mb-1">
               {copy.deadlineLabel}
             </span>
@@ -682,20 +665,6 @@ export default function TargetAchievement({
               className={`${INPUT_BASE} ${!isSuper ? INPUT_DISABLED : ""}`}
               value={getDeadline("fodks")}
               onChange={(e) => setDeadline("fodks", e.target.value)}
-            />
-          </div>
-
-          {/* Keterangan */}
-          <div className="sm:col-span-1">
-            <span className="block text-sm font-medium text-slate-700 mb-1">
-              Keterangan
-            </span>
-            <textarea
-              rows={1}
-              className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-              placeholder="Tambahkan keterangan akhir input FODKS (opsional)…"
-              value={getFodksNote()}
-              onChange={(e) => setFodksNote(e.target.value)}
             />
           </div>
         </div>
