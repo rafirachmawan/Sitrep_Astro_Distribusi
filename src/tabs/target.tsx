@@ -13,7 +13,7 @@ import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 
-/* ================= OVERRIDES (tetap lokal, hanya label UI) ================= */
+/* ================= OVERRIDES (hanya label UI, lokal) ================= */
 type TargetOverrides = {
   copy?: {
     klaimTitle?: string;
@@ -39,7 +39,7 @@ type FodksItem = {
   createdAt?: string;
 };
 
-/* ====== Saved payload (server) ====== */
+/* ====== Payload untuk server ====== */
 type SavedChecks = {
   klaimSelesai: Record<string, boolean>;
   weekly: Record<string, boolean[]>;
@@ -222,6 +222,12 @@ export default function TargetAchievement({
   const isSuper = role === "superadmin";
   const accountId = auth.user?.id || auth.user?.email || String(role);
 
+  // periode bulanan untuk GET dan PUT (harus konsisten)
+  const period = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }, []);
+
   const [targetRole, setTargetRole] = useState<Role>("admin");
   const viewRole = (isSuper ? targetRole : (role as Role)) || "admin";
   const [editMode, setEditMode] = useState(false);
@@ -284,7 +290,7 @@ export default function TargetAchievement({
   );
   const [fodksListLocal, setFodksListLocal] = useState<FodksItem[]>([]);
 
-  // sinkronkan parent (agar UI lain tetap ikut) — tapi persist hanya saat Submit
+  // sinkronkan ke parent (untuk konsistensi antar section)
   useEffect(() => {
     onChange({
       ...data,
@@ -294,32 +300,36 @@ export default function TargetAchievement({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(klaimMap), JSON.stringify(weeklyMap)]);
 
-  /* ====== LOAD dari server saat mount ====== */
+  /* ====== LOAD dari server saat mount / berubah account ====== */
   const [loadStatus, setLoadStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
   >("idle");
+
   const loadFromServer = useCallback(async () => {
     if (!accountId) return;
     try {
       setLoadStatus("loading");
       const res = await fetch(
-        `/api/target/checks?accountId=${encodeURIComponent(accountId)}`,
+        `/api/target/checks?accountId=${encodeURIComponent(
+          accountId
+        )}&period=${period}`,
         {
           method: "GET",
           credentials: "include",
           headers: { Accept: "application/json" },
         }
       );
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as Partial<SavedChecks>;
       if (json.klaimSelesai) setKlaimMap(json.klaimSelesai);
       if (json.weekly) setWeeklyMap(json.weekly);
       if (json.fodksList) setFodksListLocal(json.fodksList);
       setLoadStatus("loaded");
-    } catch {
+    } catch (err) {
+      console.error("GET /api/target/checks error:", err);
       setLoadStatus("error");
     }
-  }, [accountId]);
+  }, [accountId, period]);
 
   useEffect(() => {
     loadFromServer();
@@ -329,6 +339,7 @@ export default function TargetAchievement({
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
+
   const handleSubmit = async () => {
     if (!accountId) return;
     try {
@@ -339,7 +350,9 @@ export default function TargetAchievement({
         fodksList: fodksListLocal,
       };
       const res = await fetch(
-        `/api/target/checks?accountId=${encodeURIComponent(accountId)}`,
+        `/api/target/checks?accountId=${encodeURIComponent(
+          accountId
+        )}&period=${period}`,
         {
           method: "PUT",
           credentials: "include",
@@ -347,10 +360,13 @@ export default function TargetAchievement({
           body: JSON.stringify(payload),
         }
       );
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 1500);
-    } catch {
+      // refresh dari server agar yakin sinkron
+      loadFromServer();
+    } catch (err) {
+      console.error("PUT /api/target/checks error:", err);
       setSaveStatus("error");
     }
   };
@@ -387,7 +403,7 @@ export default function TargetAchievement({
     const cur = readOverrides(viewRole);
     writeOverrides(viewRole, removeExtraPrincipal(cur, key));
     setRev((x) => x + 1);
-    // nilai lama dibiarkan (histori)
+    // nilai map lama dibiarkan (histori)
   };
 
   /* ===== toggle helpers ===== */
@@ -401,7 +417,7 @@ export default function TargetAchievement({
       return { ...prev, [p]: arr };
     });
 
-  /* ===== deadline (hanya update parent; persist terserah parent/superadmin) ===== */
+  /* ===== deadline (edit superadmin, persist via parent) ===== */
   type DeadlineScope = keyof TargetDeadlines;
   const setDeadline = (scope: DeadlineScope, value: string, p?: string) => {
     if (!isSuper) return;
