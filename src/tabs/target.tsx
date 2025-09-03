@@ -42,6 +42,23 @@ type FodksItem = {
 type TargetStateWithFodks = TargetState & { fodksList?: FodksItem[] };
 const SHARED_FODKS_LIST_KEY = "sitrep:target:fodks-list-v1";
 
+/* ====== CHECKLIST per AKUN (per role) ====== */
+/** Snapshot checklist yang disimpan per role */
+type ChecklistSnapshot = {
+  klaimSelesai?: Record<string, boolean>;
+  weekly?: Record<string, boolean[]>;
+  ketepatanFodks?: boolean;
+};
+/** Key localStorage per role */
+const checksKey = (role: string) => `sitrep:target:checks:${role}`;
+
+/** OPTIONAL: endpoint untuk persist lintas browser/device.
+ * Implement di server kamu:
+ *  GET  /api/target/checks?role=<role>    -> return ChecklistSnapshot
+ *  PUT  /api/target/checks?role=<role>    -> body: ChecklistSnapshot
+ */
+const REMOTE_CHECKS_ENDPOINT = "/api/target/checks";
+
 /* — helper keyboard untuk aksesibilitas (Enter/Space) — */
 function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
   if (e.key === "Enter" || e.key === " ") {
@@ -441,7 +458,145 @@ export default function TargetAchievement({
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
   }, [isSuper, data, onChange]);
-  /* =================== akhir sinkronisasi =================== */
+  /* =================== akhir sinkronisasi DEADLINES =================== */
+
+  /* =================== CHECKLIST PER ROLE: load/save (local + optional remote) =================== */
+  const roleKey = viewRole as string;
+
+  const buildSnapshot = useCallback((): ChecklistSnapshot => {
+    return {
+      klaimSelesai: {
+        ...(data.klaimSelesai as unknown as Record<string, boolean>),
+      },
+      weekly: {
+        ...(data.weekly as unknown as Record<string, boolean[]>),
+      },
+      ketepatanFodks: (data as any)?.ketepatanFodks ?? false,
+    };
+  }, [data]);
+
+  const saveChecksLocal = useCallback(
+    (snap: ChecklistSnapshot) => {
+      try {
+        localStorage.setItem(checksKey(roleKey), JSON.stringify(snap));
+      } catch {}
+    },
+    [roleKey]
+  );
+
+  const loadChecksLocal = useCallback((): ChecklistSnapshot | null => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem(checksKey(roleKey));
+      return raw ? (JSON.parse(raw) as ChecklistSnapshot) : null;
+    } catch {
+      return null;
+    }
+  }, [roleKey]);
+
+  const saveChecksRemote = useCallback(
+    async (snap: ChecklistSnapshot) => {
+      // OPTIONAL: aktif kalau endpoint tersedia di server kamu
+      try {
+        await fetch(
+          `${REMOTE_CHECKS_ENDPOINT}?role=${encodeURIComponent(roleKey)}`,
+          {
+            method: "PUT",
+            credentials: "include",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(snap),
+          }
+        );
+      } catch {
+        // abaikan jika endpoint belum ada
+      }
+    },
+    [roleKey]
+  );
+
+  const loadChecksRemote =
+    useCallback(async (): Promise<ChecklistSnapshot | null> => {
+      // OPTIONAL: aktif kalau endpoint tersedia di server kamu
+      try {
+        const res = await fetch(
+          `${REMOTE_CHECKS_ENDPOINT}?role=${encodeURIComponent(roleKey)}`,
+          { credentials: "include" }
+        );
+        if (!res.ok) return null;
+        const snap = (await res.json()) as ChecklistSnapshot;
+        return snap;
+      } catch {
+        return null;
+      }
+    }, [roleKey]);
+
+  // LOAD saat role berubah / mount
+  useEffect(() => {
+    let isMounted = true;
+
+    const applySnap = (snap: ChecklistSnapshot | null) => {
+      if (!snap) return;
+      if (!isMounted) return;
+
+      const mergedKlaim = {
+        ...(data.klaimSelesai as unknown as Record<string, boolean>),
+        ...(snap.klaimSelesai || {}),
+      };
+      const mergedWeekly = {
+        ...(data.weekly as unknown as Record<string, boolean[]>),
+        ...(snap.weekly || {}),
+      };
+
+      onChange({
+        ...data,
+        klaimSelesai: mergedKlaim as unknown as TargetState["klaimSelesai"],
+        weekly: mergedWeekly as unknown as TargetState["weekly"],
+        ...(typeof snap.ketepatanFodks !== "undefined"
+          ? { ketepatanFodks: snap.ketepatanFodks as any }
+          : {}),
+      });
+    };
+
+    (async () => {
+      // coba remote dulu → kalau gagal, pakai local
+      const remote = await loadChecksRemote();
+      if (remote) {
+        applySnap(remote);
+        saveChecksLocal(remote); // mirror ke local
+      } else {
+        const local = loadChecksLocal();
+        applySnap(local);
+      }
+    })();
+
+    // sinkron antar-tab browser (per role)
+    const storageHandler = (e: StorageEvent) => {
+      if (e.key === checksKey(roleKey) && e.newValue) {
+        try {
+          const snap = JSON.parse(e.newValue) as ChecklistSnapshot;
+          applySnap(snap);
+        } catch {}
+      }
+    };
+    window.addEventListener("storage", storageHandler);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener("storage", storageHandler);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roleKey]);
+
+  // SAVE debounced saat checklist berubah
+  const saveTimer = useRef<number | null>(null);
+  useEffect(() => {
+    const snap = buildSnapshot();
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      saveChecksLocal(snap);
+      void saveChecksRemote(snap); // tidak blocking
+    }, 300);
+  }, [buildSnapshot, saveChecksLocal, saveChecksRemote]);
 
   /* =================== FODKS LIST: local fast state + debounced commit =================== */
   const dataF = data as TargetStateWithFodks;
@@ -493,7 +648,7 @@ export default function TargetAchievement({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // sync antar-tab
+  // sync antar-tab (FODKS shared)
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handler = (e: StorageEvent) => {
@@ -511,7 +666,7 @@ export default function TargetAchievement({
   const uid = () =>
     Math.random().toString(36).slice(2) + Date.now().toString(36);
 
-  // Semua user bisa MENAMBAH, TIDAK bisa menghapus (kecuali superadmin)
+  // Semua user bisa MENAMBAH FODKS item, TIDAK bisa hapus (kecuali superadmin)
   const addFodksItem = () => {
     const next = [
       ...fodksListLocal,
