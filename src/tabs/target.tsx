@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Target as TargetIcon, Plus, Trash2 } from "lucide-react";
 import type { TargetState, TargetDeadlines } from "@/lib/types";
 import { PRINCIPALS } from "@/lib/types";
@@ -92,6 +92,9 @@ function removeExtraPrincipal(
   return { ...src, extraPrincipals: extras };
 }
 
+/* ====== Tambahan kecil untuk hindari `any` pada fodksNote ====== */
+type TargetStateWithNote = TargetState & { fodksNote?: string };
+
 /* ================= COMPONENT ================= */
 export default function TargetAchievement({
   data,
@@ -108,7 +111,11 @@ export default function TargetAchievement({
   const [editMode, setEditMode] = useState(false);
   const [rev, setRev] = useState(0);
 
-  const overrides = useMemo(() => readOverrides(viewRole), [viewRole, rev]);
+  // Ganti useMemo -> useEffect + state (hilangkan warning exhaustive-deps)
+  const [overrides, setOverrides] = useState<TargetOverrides>({});
+  useEffect(() => {
+    setOverrides(readOverrides(viewRole));
+  }, [viewRole, rev]);
 
   const copy = {
     klaimTitle: overrides.copy?.klaimTitle ?? "Penyelesaian Klaim Bulan Ini",
@@ -116,16 +123,15 @@ export default function TargetAchievement({
       overrides.copy?.targetSelesaiLabel ?? "Target Selesai (bulan ini)",
     weeklyTitle:
       overrides.copy?.weeklyTitle ?? "Laporan Penjualan ke Prinsipal Mingguan",
-    // ↓ sesuai permintaan: ganti menjadi "Akhir Input FODKS"
+    // Sesuai permintaan
     fodksTitle: overrides.copy?.fodksTitle ?? "Akhir Input FODKS",
-    // ↓ checkbox label disesuaikan
     fodksCheckboxLabel:
       overrides.copy?.fodksCheckboxLabel ?? "Tandai jika sudah input",
     deadlineLabel: overrides.copy?.deadlineLabel ?? "Deadline",
   };
 
   /* ===== list principal: base + custom ===== */
-  const allPrincipals: string[] = useMemo(() => {
+  const allPrincipals: string[] = React.useMemo(() => {
     const base = [...PRINCIPALS];
     const extras = Object.keys(overrides.extraPrincipals || {});
     return [...base, ...extras];
@@ -216,7 +222,6 @@ export default function TargetAchievement({
     const cur = readOverrides(viewRole);
     writeOverrides(viewRole, removeExtraPrincipal(cur, key));
     setRev((x) => x + 1);
-    // data state dibiarkan (histori)
   };
 
   /* ===== toggle helpers ===== */
@@ -328,12 +333,14 @@ export default function TargetAchievement({
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
   }, [isSuper, data, onChange]);
-  /* =================== akhir sinkronisasi =================== */
 
-  // ===== util aman untuk Keterangan FODKS (tanpa ganggu tipe) =====
-  const getFodksNote = () => ((data as any).fodksNote as string) ?? "";
-  const setFodksNote = (v: string) =>
-    onChange({ ...data, ...({ fodksNote: v } as any) });
+  /* ===== util aman untuk Keterangan FODKS (tanpa ubah tipe global) ===== */
+  const dataWithNote = data as TargetStateWithNote;
+  const getFodksNote = (): string => dataWithNote.fodksNote ?? "";
+  const setFodksNote = (v: string) => {
+    const next: TargetStateWithNote = { ...dataWithNote, fodksNote: v };
+    onChange(next as unknown as TargetState);
+  };
 
   return (
     <div className="space-y-6">
@@ -479,7 +486,6 @@ export default function TargetAchievement({
                             checked={checked}
                             readOnly
                             onClick={(e) => {
-                              // tetap ada agar klik langsung di checkbox juga jalan
                               e.stopPropagation();
                               toggleKlaim(p);
                             }}
@@ -615,7 +621,7 @@ export default function TargetAchievement({
             <input
               defaultValue={copy.fodksTitle}
               onBlur={(e) => saveCopy("fodksTitle", e.target.value)}
-              className="w-full max-w-[420px] rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+              className="w-full max-w-[420px] rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
               placeholder="Judul bagian FODKS…"
             />
           ) : (
