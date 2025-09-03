@@ -30,8 +30,8 @@ type FodksItem = {
   id: string;
   name: string;
   note: string;
-  createdBy?: string; // siapa yang menambah
-  createdAt?: string; // kapan menambah
+  createdBy?: string;
+  createdAt?: string;
 };
 type TargetStateWithFodks = TargetState & { fodksList?: FodksItem[] };
 const SHARED_FODKS_LIST_KEY = "sitrep:target:fodks-list-v1";
@@ -127,7 +127,7 @@ export default function TargetAchievement({
       overrides.copy?.targetSelesaiLabel ?? "Target Selesai (bulan ini)",
     weeklyTitle:
       overrides.copy?.weeklyTitle ?? "Laporan Penjualan ke Prinsipal Mingguan",
-    // diganti sesuai request
+    // judul diminta → Input FODKS
     fodksTitle: overrides.copy?.fodksTitle ?? "Input FODKS",
     fodksCheckboxLabel:
       overrides.copy?.fodksCheckboxLabel ?? "Tandai jika sudah input",
@@ -344,7 +344,7 @@ export default function TargetAchievement({
   const setFodksList = (list: FodksItem[]) =>
     onChange({ ...dataF, fodksList: list } as unknown as TargetState);
 
-  // simpan ke localStorage setiap berubah (agar tetap ada setelah logout/login)
+  // simpan ke localStorage setiap berubah
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
@@ -356,7 +356,7 @@ export default function TargetAchievement({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(getFodksList())]);
 
-  // tarik dari localStorage saat mount & saat storage berubah (tab lain)
+  // ambil dari localStorage saat mount & sync antar-tab
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -381,7 +381,7 @@ export default function TargetAchievement({
   const uid = () =>
     Math.random().toString(36).slice(2) + Date.now().toString(36);
 
-  // sekarang: semua user bisa menambah. createdBy diset agar hanya pembuat (atau superadmin) bisa edit.
+  // Semua user bisa MENAMBAH. createdBy untuk kontrol edit.
   const addFodksItem = () => {
     const list = getFodksList();
     setFodksList([
@@ -407,7 +407,7 @@ export default function TargetAchievement({
     setFodksList(list);
   };
 
-  // hapus: hanya superadmin
+  // Hapus: hanya superadmin
   const removeFodksItem = (id: string) => {
     if (!isSuper) return;
     const list = getFodksList().filter((it) => it.id !== id);
@@ -419,7 +419,7 @@ export default function TargetAchievement({
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between gap-2">
+        <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <TargetIcon className="h-5 w-5 text-blue-600" />
             <h3 className="font-semibold text-slate-800">
@@ -688,7 +688,7 @@ export default function TargetAchievement({
 
       {/* ===== Bagian 3: Input FODKS ===== */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between">
+        <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex flex-wrap items-center justify-between gap-2">
           {editMode ? (
             <input
               defaultValue={copy.fodksTitle}
@@ -703,8 +703,12 @@ export default function TargetAchievement({
           )}
 
           <button
+            type="button"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => handleKeyActivate(e, addFodksItem)}
             onClick={addFodksItem}
-            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+            className="pointer-events-auto relative z-10 select-none inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100"
             aria-label="Tambah item FODKS"
             title="Tambah item FODKS"
           >
@@ -768,8 +772,9 @@ export default function TargetAchievement({
                     {isSuper ? (
                       <td className="py-2 px-2 align-top">
                         <button
+                          type="button"
                           onClick={() => removeFodksItem(it.id)}
-                          className="px-2 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700"
+                          className="px-2 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700 focus:outline-none focus:ring-4 focus:ring-rose-100"
                           aria-label="Hapus item"
                           title="Hapus item (superadmin saja)"
                         >
@@ -829,12 +834,13 @@ function AddPrincipalForm({
           placeholder="Label tampilan"
         />
         <button
+          type="button"
           onClick={() => {
             onAdd(key, label);
             setKey("p_");
             setLabel("");
           }}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100"
         >
           <Plus className="h-4 w-4" /> Tambah
         </button>
