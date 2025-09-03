@@ -1,85 +1,76 @@
 "use client";
+import React, { createContext, useContext, useMemo, useState } from "react";
 
-import React, {
-  createContext,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+export type Role = "admin" | "sales" | "gudang" | "superadmin";
 
-/** ==== Definisi Role/User ==== */
-export type Role = "superadmin" | "admin" | "sales" | "gudang";
-
-export type User = {
-  id: string;
+type User = {
+  id: string; // WAJIB stabil
+  email: string; // boleh dummy
   name: string;
-  role: Role;
 };
 
-type AuthContextType = {
-  user: User | null;
+type AuthState = {
   role: Role | null;
-  signIn: (payload: { name: string; role: Role }) => void;
+  user: User | null;
+};
+
+type AuthCtx = AuthState & {
+  signIn: (v: { name: string; role: Role }) => void;
   signOut: () => void;
 };
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
-const STORAGE_KEY = "sitrep-auth";
+const LS_KEY = "sitrep-auth";
 
-/** ==== Provider (default export) ==== */
-export default function AuthProvider({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const [user, setUser] = useState<User | null>(null);
+const AuthContext = createContext<AuthCtx>({
+  role: null,
+  user: null,
+  signIn: () => {},
+  signOut: () => {},
+});
 
-  // load dari localStorage saat mount
-  useEffect(() => {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<AuthState>(() => {
+    if (typeof window === "undefined") return { role: null, user: null };
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) setUser(JSON.parse(raw));
-    } catch {}
-  }, []);
+      const raw = localStorage.getItem(LS_KEY);
+      return raw ? (JSON.parse(raw) as AuthState) : { role: null, user: null };
+    } catch {
+      return { role: null, user: null };
+    }
+  });
 
-  // persist ke localStorage saat berubah
-  useEffect(() => {
-    if (user) localStorage.setItem(STORAGE_KEY, JSON.stringify(user));
-    else localStorage.removeItem(STORAGE_KEY);
-  }, [user]);
+  const signIn: AuthCtx["signIn"] = ({ name, role }) => {
+    const key = name.trim().toLowerCase();
+    const next: AuthState = {
+      role,
+      user: {
+        id: `demo:${key}`, // <-- STABIL per nama
+        email: `${key}@demo.local`, // <-- dummy tapi stabil
+        name,
+      },
+    };
+    setState(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(LS_KEY, JSON.stringify(next));
+      // bersihkan override kalau ada
+      localStorage.removeItem("sitrep-force-account-id");
+    }
+  };
 
-  const signIn: AuthContextType["signIn"] = ({ name, role }) =>
-    setUser({ id: crypto.randomUUID(), name, role });
+  const signOut = () => {
+    const next: AuthState = { role: null, user: null };
+    setState(next);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(LS_KEY, JSON.stringify(next));
+    }
+  };
 
-  const signOut = () => setUser(null);
-
-  const value = useMemo<AuthContextType>(
-    () => ({ user, role: user?.role ?? null, signIn, signOut }),
-    [user]
+  const value = useMemo<AuthCtx>(
+    () => ({ ...state, signIn, signOut }),
+    [state]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-/** ==== Hook akses auth ==== */
-export function useAuth() {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth harus dipakai di dalam <AuthProvider />");
-  return ctx;
-}
-
-/** ==== Guard role opsional ==== */
-export function RequireRole({
-  allow,
-  fallback = null,
-  children,
-}: {
-  allow: Role[];
-  fallback?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  const { role } = useAuth();
-  if (!role || !allow.includes(role)) return <>{fallback}</>;
-  return <>{children}</>;
-}
+export const useAuth = () => useContext(AuthContext);

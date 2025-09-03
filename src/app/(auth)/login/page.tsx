@@ -44,6 +44,20 @@ export default function LoginPage() {
     } finally {
       setSubmitting(false);
     }
+    // ...
+    try {
+      // Simpan ke AuthProvider
+      signIn({ name: acc.displayName, role: acc.role });
+
+      // Opsional: pastikan tidak ada override
+      if (typeof window !== "undefined") {
+        localStorage.removeItem("sitrep-force-account-id");
+      }
+
+      router.push("/" as Route);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
