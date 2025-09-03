@@ -43,20 +43,14 @@ type TargetStateWithFodks = TargetState & { fodksList?: FodksItem[] };
 const SHARED_FODKS_LIST_KEY = "sitrep:target:fodks-list-v1";
 
 /* ====== CHECKLIST per AKUN (per role) ====== */
-/** Snapshot checklist yang disimpan per role */
 type ChecklistSnapshot = {
   klaimSelesai?: Record<string, boolean>;
   weekly?: Record<string, boolean[]>;
   ketepatanFodks?: boolean;
 };
-/** Key localStorage per role */
 const checksKey = (role: string) => `sitrep:target:checks:${role}`;
 
-/** OPTIONAL: endpoint untuk persist lintas browser/device.
- * Implement di server kamu:
- *  GET  /api/target/checks?role=<role>    -> return ChecklistSnapshot
- *  PUT  /api/target/checks?role=<role>    -> body: ChecklistSnapshot
- */
+/* OPTIONAL: persist ke server lintas browser/device */
 const REMOTE_CHECKS_ENDPOINT = "/api/target/checks";
 
 /* — helper keyboard untuk aksesibilitas (Enter/Space) — */
@@ -138,17 +132,14 @@ const FodksRow = React.memo(function FodksRow({
   onChange: (patch: Partial<FodksItem>) => void;
   onDelete?: () => void;
 }) {
-  // local input state → ketik lancar
   const [name, setName] = useState(item.name);
   const [note, setNote] = useState(item.note);
 
-  // sinkronkan jika item dari luar berubah (misal setelah load)
   useEffect(() => {
     setName(item.name);
     setNote(item.note);
   }, [item.name, item.note]);
 
-  // debounce commit ke parent
   const debRef = useRef<number | null>(null);
   const scheduleCommit = useCallback(
     (patch: Partial<FodksItem>) => {
@@ -241,7 +232,13 @@ export default function TargetAchievement({
   const [editMode, setEditMode] = useState(false);
   const [rev, setRev] = useState(0);
 
-  const overrides = useMemo(() => readOverrides(viewRole), [viewRole, rev]);
+  // ⬇️ ganti useMemo → useState + useEffect (hilang warning 'rev')
+  const [overrides, setOverrides] = useState<TargetOverrides>(() =>
+    readOverrides(viewRole)
+  );
+  useEffect(() => {
+    setOverrides(readOverrides(viewRole));
+  }, [viewRole, rev]);
 
   const copy = {
     klaimTitle: overrides.copy?.klaimTitle ?? "Penyelesaian Klaim Bulan Ini",
@@ -249,14 +246,13 @@ export default function TargetAchievement({
       overrides.copy?.targetSelesaiLabel ?? "Target Selesai (bulan ini)",
     weeklyTitle:
       overrides.copy?.weeklyTitle ?? "Laporan Penjualan ke Prinsipal Mingguan",
-    // judul sesuai request
     fodksTitle: overrides.copy?.fodksTitle ?? "Input FODKS",
     fodksCheckboxLabel:
       overrides.copy?.fodksCheckboxLabel ?? "Tandai jika sudah input",
     deadlineLabel: overrides.copy?.deadlineLabel ?? "Deadline",
   };
 
-  /* ===== list principal: base + custom ===== */
+  /* ===== principals ===== */
   const allPrincipals: string[] = useMemo(() => {
     const base = [...PRINCIPALS];
     const extras = Object.keys(overrides.extraPrincipals || {});
@@ -369,12 +365,6 @@ export default function TargetAchievement({
     onChange({ ...data, weekly: cur as unknown as TargetState["weekly"] });
   };
 
-  /* ===== styling ===== */
-  const INPUT_BASE =
-    "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
-  const INPUT_DISABLED =
-    "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500";
-
   type DeadlineScope = keyof TargetDeadlines;
 
   const setDeadline = (scope: DeadlineScope, value: string, p?: string) => {
@@ -458,7 +448,6 @@ export default function TargetAchievement({
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
   }, [isSuper, data, onChange]);
-  /* =================== akhir sinkronisasi DEADLINES =================== */
 
   /* =================== CHECKLIST PER ROLE: load/save (local + optional remote) =================== */
   const roleKey = viewRole as string;
@@ -471,7 +460,8 @@ export default function TargetAchievement({
       weekly: {
         ...(data.weekly as unknown as Record<string, boolean[]>),
       },
-      ketepatanFodks: (data as any)?.ketepatanFodks ?? false,
+      ketepatanFodks:
+        (data as { ketepatanFodks?: boolean }).ketepatanFodks ?? false,
     };
   }, [data]);
 
@@ -496,7 +486,6 @@ export default function TargetAchievement({
 
   const saveChecksRemote = useCallback(
     async (snap: ChecklistSnapshot) => {
-      // OPTIONAL: aktif kalau endpoint tersedia di server kamu
       try {
         await fetch(
           `${REMOTE_CHECKS_ENDPOINT}?role=${encodeURIComponent(roleKey)}`,
@@ -508,7 +497,7 @@ export default function TargetAchievement({
           }
         );
       } catch {
-        // abaikan jika endpoint belum ada
+        /* ignore */
       }
     },
     [roleKey]
@@ -516,7 +505,6 @@ export default function TargetAchievement({
 
   const loadChecksRemote =
     useCallback(async (): Promise<ChecklistSnapshot | null> => {
-      // OPTIONAL: aktif kalau endpoint tersedia di server kamu
       try {
         const res = await fetch(
           `${REMOTE_CHECKS_ENDPOINT}?role=${encodeURIComponent(roleKey)}`,
@@ -535,8 +523,7 @@ export default function TargetAchievement({
     let isMounted = true;
 
     const applySnap = (snap: ChecklistSnapshot | null) => {
-      if (!snap) return;
-      if (!isMounted) return;
+      if (!snap || !isMounted) return;
 
       const mergedKlaim = {
         ...(data.klaimSelesai as unknown as Record<string, boolean>),
@@ -551,25 +538,24 @@ export default function TargetAchievement({
         ...data,
         klaimSelesai: mergedKlaim as unknown as TargetState["klaimSelesai"],
         weekly: mergedWeekly as unknown as TargetState["weekly"],
-        ...(typeof snap.ketepatanFodks !== "undefined"
-          ? { ketepatanFodks: snap.ketepatanFodks as any }
-          : {}),
+        ketepatanFodks:
+          typeof snap.ketepatanFodks !== "undefined"
+            ? snap.ketepatanFodks
+            : (data as { ketepatanFodks?: boolean }).ketepatanFodks ?? false,
       });
     };
 
     (async () => {
-      // coba remote dulu → kalau gagal, pakai local
       const remote = await loadChecksRemote();
       if (remote) {
         applySnap(remote);
-        saveChecksLocal(remote); // mirror ke local
+        saveChecksLocal(remote);
       } else {
         const local = loadChecksLocal();
         applySnap(local);
       }
     })();
 
-    // sinkron antar-tab browser (per role)
     const storageHandler = (e: StorageEvent) => {
       if (e.key === checksKey(roleKey) && e.newValue) {
         try {
@@ -584,8 +570,14 @@ export default function TargetAchievement({
       isMounted = false;
       window.removeEventListener("storage", storageHandler);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roleKey]);
+  }, [
+    roleKey,
+    data,
+    onChange,
+    loadChecksRemote,
+    saveChecksLocal,
+    loadChecksLocal,
+  ]);
 
   // SAVE debounced saat checklist berubah
   const saveTimer = useRef<number | null>(null);
@@ -594,7 +586,7 @@ export default function TargetAchievement({
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
       saveChecksLocal(snap);
-      void saveChecksRemote(snap); // tidak blocking
+      void saveChecksRemote(snap);
     }, 300);
   }, [buildSnapshot, saveChecksLocal, saveChecksRemote]);
 
@@ -602,18 +594,15 @@ export default function TargetAchievement({
   const dataF = data as TargetStateWithFodks;
   const getFodksListFromProp = (): FodksItem[] => dataF.fodksList ?? [];
 
-  // state lokal yang cepat untuk ketik
   const [fodksListLocal, setFodksListLocal] = useState<FodksItem[]>(
     getFodksListFromProp()
   );
 
-  // sinkron kalau prop berubah dari luar (misal load dari storage/tab lain)
   useEffect(() => {
     setFodksListLocal(getFodksListFromProp());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(getFodksListFromProp())]);
 
-  // debounce commit ke parent + localStorage (agar hemat render & I/O)
   const commitTimer = useRef<number | null>(null);
   const scheduleCommitAll = useCallback(
     (next: FodksItem[]) => {
@@ -630,25 +619,21 @@ export default function TargetAchievement({
         } catch {}
       }, 350);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [onChange, dataF]
   );
 
-  // load dari localStorage saat mount
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       const raw = localStorage.getItem(SHARED_FODKS_LIST_KEY);
       if (raw) {
         const stored = JSON.parse(raw) as FodksItem[];
-        // merge sederhana: utamakan storage
         scheduleCommitAll(stored);
       }
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // sync antar-tab (FODKS shared)
   useEffect(() => {
     if (typeof window === "undefined") return;
     const handler = (e: StorageEvent) => {
@@ -666,7 +651,6 @@ export default function TargetAchievement({
   const uid = () =>
     Math.random().toString(36).slice(2) + Date.now().toString(36);
 
-  // Semua user bisa MENAMBAH FODKS item, TIDAK bisa hapus (kecuali superadmin)
   const addFodksItem = () => {
     const next = [
       ...fodksListLocal,
@@ -691,7 +675,7 @@ export default function TargetAchievement({
   };
 
   const removeFodksItem = (id: string) => {
-    if (!isSuper) return; // hanya superadmin
+    if (!isSuper) return;
     const next = fodksListLocal.filter((it) => it.id !== id);
     scheduleCommitAll(next);
   };
