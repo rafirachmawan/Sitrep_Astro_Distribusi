@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Target as TargetIcon, Plus, Trash2 } from "lucide-react";
 import type { TargetState, TargetDeadlines } from "@/lib/types";
 import { PRINCIPALS } from "@/lib/types";
@@ -103,6 +109,105 @@ function removeExtraPrincipal(
   return { ...src, extraPrincipals: extras };
 }
 
+/* ================= Row terpisah supaya ketikan lancar ================= */
+const FodksRow = React.memo(function FodksRow({
+  item,
+  canEdit,
+  onChange,
+  onDelete,
+}: {
+  item: FodksItem;
+  canEdit: boolean;
+  onChange: (patch: Partial<FodksItem>) => void;
+  onDelete?: () => void;
+}) {
+  // local input state → ketik lancar
+  const [name, setName] = useState(item.name);
+  const [note, setNote] = useState(item.note);
+
+  // sinkronkan jika item dari luar berubah (misal setelah load)
+  useEffect(() => {
+    setName(item.name);
+    setNote(item.note);
+  }, [item.name, item.note]);
+
+  // debounce commit ke parent
+  const debRef = useRef<number | null>(null);
+  const scheduleCommit = useCallback(
+    (patch: Partial<FodksItem>) => {
+      if (debRef.current) window.clearTimeout(debRef.current);
+      debRef.current = window.setTimeout(() => {
+        onChange(patch);
+      }, 300);
+    },
+    [onChange]
+  );
+
+  const createdInfo = useMemo(() => {
+    if (!item.createdAt) return "";
+    try {
+      return new Date(item.createdAt).toLocaleString();
+    } catch {
+      return item.createdAt;
+    }
+  }, [item.createdAt]);
+
+  return (
+    <tr>
+      <td className="py-2 px-2 align-top">
+        <input
+          disabled={!canEdit}
+          className={`w-full rounded-xl border-2 text-sm px-3 py-2 focus:outline-none ${
+            canEdit
+              ? "border-slate-300 bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+              : "border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
+          }`}
+          placeholder="Tuliskan FODKS apa yang diinput…"
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            scheduleCommit({ name: e.target.value });
+          }}
+        />
+        <div className="mt-1 text-[11px] text-slate-500">
+          Dibuat oleh: {item.createdBy ?? "—"}{" "}
+          {createdInfo ? `• ${createdInfo}` : ""}
+        </div>
+      </td>
+      <td className="py-2 px-2 align-top">
+        <textarea
+          disabled={!canEdit}
+          rows={1}
+          className={`w-full rounded-xl border-2 text-sm px-3 py-2 focus:outline-none ${
+            canEdit
+              ? "border-slate-300 bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+              : "border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
+          }`}
+          placeholder="Keterangan (opsional)…"
+          value={note}
+          onChange={(e) => {
+            setNote(e.target.value);
+            scheduleCommit({ note: e.target.value });
+          }}
+        />
+      </td>
+      {onDelete ? (
+        <td className="py-2 px-2 align-top">
+          <button
+            type="button"
+            onClick={onDelete}
+            className="px-2 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700 focus:outline-none focus:ring-4 focus:ring-rose-100"
+            aria-label="Hapus item"
+            title="Hapus item (superadmin saja)"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+        </td>
+      ) : null}
+    </tr>
+  );
+});
+
 /* ================= COMPONENT ================= */
 export default function TargetAchievement({
   data,
@@ -127,7 +232,7 @@ export default function TargetAchievement({
       overrides.copy?.targetSelesaiLabel ?? "Target Selesai (bulan ini)",
     weeklyTitle:
       overrides.copy?.weeklyTitle ?? "Laporan Penjualan ke Prinsipal Mingguan",
-    // judul diminta → Input FODKS
+    // judul sesuai request
     fodksTitle: overrides.copy?.fodksTitle ?? "Input FODKS",
     fodksCheckboxLabel:
       overrides.copy?.fodksCheckboxLabel ?? "Tandai jika sudah input",
@@ -338,54 +443,78 @@ export default function TargetAchievement({
   }, [isSuper, data, onChange]);
   /* =================== akhir sinkronisasi =================== */
 
-  /* =================== FODKS LIST: persist + rule add/edit/delete =================== */
+  /* =================== FODKS LIST: local fast state + debounced commit =================== */
   const dataF = data as TargetStateWithFodks;
-  const getFodksList = (): FodksItem[] => dataF.fodksList ?? [];
-  const setFodksList = (list: FodksItem[]) =>
-    onChange({ ...dataF, fodksList: list } as unknown as TargetState);
+  const getFodksListFromProp = (): FodksItem[] => dataF.fodksList ?? [];
 
-  // simpan ke localStorage setiap berubah
+  // state lokal yang cepat untuk ketik
+  const [fodksListLocal, setFodksListLocal] = useState<FodksItem[]>(
+    getFodksListFromProp()
+  );
+
+  // sinkron kalau prop berubah dari luar (misal load dari storage/tab lain)
+  useEffect(() => {
+    setFodksListLocal(getFodksListFromProp());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(getFodksListFromProp())]);
+
+  // debounce commit ke parent + localStorage (agar hemat render & I/O)
+  const commitTimer = useRef<number | null>(null);
+  const scheduleCommitAll = useCallback(
+    (next: FodksItem[]) => {
+      setFodksListLocal(next);
+      if (commitTimer.current) window.clearTimeout(commitTimer.current);
+      commitTimer.current = window.setTimeout(() => {
+        const nextData = {
+          ...(dataF as TargetStateWithFodks),
+          fodksList: next,
+        } as unknown as TargetState;
+        onChange(nextData);
+        try {
+          localStorage.setItem(SHARED_FODKS_LIST_KEY, JSON.stringify(next));
+        } catch {}
+      }, 350);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [onChange, dataF]
+  );
+
+  // load dari localStorage saat mount
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
-      localStorage.setItem(
-        SHARED_FODKS_LIST_KEY,
-        JSON.stringify(getFodksList())
-      );
+      const raw = localStorage.getItem(SHARED_FODKS_LIST_KEY);
+      if (raw) {
+        const stored = JSON.parse(raw) as FodksItem[];
+        // merge sederhana: utamakan storage
+        scheduleCommitAll(stored);
+      }
     } catch {}
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(getFodksList())]);
+  }, []);
 
-  // ambil dari localStorage saat mount & sync antar-tab
+  // sync antar-tab
   useEffect(() => {
     if (typeof window === "undefined") return;
-
-    const pull = () => {
-      try {
-        const raw = localStorage.getItem(SHARED_FODKS_LIST_KEY);
-        if (!raw) return;
-        const stored = JSON.parse(raw) as FodksItem[];
-        setFodksList(stored);
-      } catch {}
-    };
-    pull();
-
     const handler = (e: StorageEvent) => {
-      if (e.key === SHARED_FODKS_LIST_KEY) pull();
+      if (e.key === SHARED_FODKS_LIST_KEY && e.newValue) {
+        try {
+          const stored = JSON.parse(e.newValue) as FodksItem[];
+          setFodksListLocal(stored);
+        } catch {}
+      }
     };
     window.addEventListener("storage", handler);
     return () => window.removeEventListener("storage", handler);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const uid = () =>
     Math.random().toString(36).slice(2) + Date.now().toString(36);
 
-  // Semua user bisa MENAMBAH. createdBy untuk kontrol edit.
+  // Semua user bisa MENAMBAH, TIDAK bisa menghapus (kecuali superadmin)
   const addFodksItem = () => {
-    const list = getFodksList();
-    setFodksList([
-      ...list,
+    const next = [
+      ...fodksListLocal,
       {
         id: uid(),
         name: "",
@@ -393,25 +522,23 @@ export default function TargetAchievement({
         createdBy: role ?? "unknown",
         createdAt: new Date().toISOString(),
       },
-    ]);
+    ];
+    scheduleCommitAll(next);
   };
 
   const canEditItem = (it: FodksItem) => isSuper || it.createdBy === role;
 
-  const updateFodksItem = (id: string, patch: Partial<FodksItem>) => {
-    const list = getFodksList().map((it) => {
-      if (it.id !== id) return it;
-      if (!canEditItem(it)) return it; // non-pemilik tidak boleh edit
-      return { ...it, ...patch };
-    });
-    setFodksList(list);
+  const patchFodksItem = (id: string, patch: Partial<FodksItem>) => {
+    const next = fodksListLocal.map((it) =>
+      it.id === id ? { ...it, ...patch } : it
+    );
+    scheduleCommitAll(next);
   };
 
-  // Hapus: hanya superadmin
   const removeFodksItem = (id: string) => {
-    if (!isSuper) return;
-    const list = getFodksList().filter((it) => it.id !== id);
-    setFodksList(list);
+    if (!isSuper) return; // hanya superadmin
+    const next = fodksListLocal.filter((it) => it.id !== id);
+    scheduleCommitAll(next);
   };
 
   /* =================== RENDER =================== */
@@ -451,6 +578,7 @@ export default function TargetAchievement({
                 Mode Edit
               </label>
               <button
+                type="button"
                 onClick={resetOverrides}
                 className="text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
               >
@@ -508,6 +636,7 @@ export default function TargetAchievement({
                             />
                             {overrides.extraPrincipals?.[p] && isSuper && (
                               <button
+                                type="button"
                                 onClick={() => removePrincipal(p)}
                                 className="px-2 py-1 rounded-md bg-rose-600 text-white"
                               >
@@ -664,6 +793,7 @@ export default function TargetAchievement({
                       <td className="py-3 px-2">
                         {overrides.extraPrincipals?.[p] && (
                           <button
+                            type="button"
                             onClick={() => removePrincipal(p)}
                             className="px-2 py-1 rounded-md bg-rose-600 text-white"
                           >
@@ -708,7 +838,8 @@ export default function TargetAchievement({
             tabIndex={0}
             onKeyDown={(e) => handleKeyActivate(e, addFodksItem)}
             onClick={addFodksItem}
-            className="pointer-events-auto relative z-10 select-none inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100"
+            className="pointer-events-auto relative z-10 select-none inline-flex items-center gap-2 px-4 py-3 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100"
+            style={{ touchAction: "manipulation" }}
             aria-label="Tambah item FODKS"
             title="Tambah item FODKS"
           >
@@ -728,65 +859,7 @@ export default function TargetAchievement({
               </tr>
             </thead>
             <tbody className="divide-y bg-white">
-              {getFodksList().map((it) => {
-                const editable = canEditItem(it);
-                return (
-                  <tr key={it.id}>
-                    <td className="py-2 px-2 align-top">
-                      <input
-                        disabled={!editable}
-                        className={`w-full rounded-xl border-2 text-sm px-3 py-2 focus:outline-none ${
-                          editable
-                            ? "border-slate-300 bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-                            : "border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
-                        }`}
-                        placeholder="Tuliskan FODKS apa yang diinput…"
-                        value={it.name}
-                        onChange={(e) =>
-                          updateFodksItem(it.id, { name: e.target.value })
-                        }
-                      />
-                      <div className="mt-1 text-[11px] text-slate-500">
-                        Dibuat oleh: {it.createdBy ?? "—"}{" "}
-                        {it.createdAt
-                          ? `• ${new Date(it.createdAt).toLocaleString()}`
-                          : ""}
-                      </div>
-                    </td>
-                    <td className="py-2 px-2 align-top">
-                      <textarea
-                        disabled={!editable}
-                        rows={1}
-                        className={`w-full rounded-xl border-2 text-sm px-3 py-2 focus:outline-none ${
-                          editable
-                            ? "border-slate-300 bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-                            : "border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
-                        }`}
-                        placeholder="Keterangan (opsional)…"
-                        value={it.note}
-                        onChange={(e) =>
-                          updateFodksItem(it.id, { note: e.target.value })
-                        }
-                      />
-                    </td>
-                    {isSuper ? (
-                      <td className="py-2 px-2 align-top">
-                        <button
-                          type="button"
-                          onClick={() => removeFodksItem(it.id)}
-                          className="px-2 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700 focus:outline-none focus:ring-4 focus:ring-rose-100"
-                          aria-label="Hapus item"
-                          title="Hapus item (superadmin saja)"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </td>
-                    ) : null}
-                  </tr>
-                );
-              })}
-
-              {getFodksList().length === 0 && (
+              {fodksListLocal.length === 0 && (
                 <tr>
                   <td
                     colSpan={isSuper ? 3 : 2}
@@ -798,6 +871,21 @@ export default function TargetAchievement({
                   </td>
                 </tr>
               )}
+
+              {fodksListLocal.map((it) => {
+                const editable = canEditItem(it);
+                return (
+                  <FodksRow
+                    key={it.id}
+                    item={it}
+                    canEdit={editable}
+                    onChange={(patch) => patchFodksItem(it.id, patch)}
+                    onDelete={
+                      isSuper ? () => removeFodksItem(it.id) : undefined
+                    }
+                  />
+                );
+              })}
             </tbody>
           </table>
         </div>
