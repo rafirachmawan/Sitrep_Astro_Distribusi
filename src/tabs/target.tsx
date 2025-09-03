@@ -26,7 +26,13 @@ const ROLES: Role[] = ["admin", "sales", "gudang"];
 const SHARED_DEADLINES_KEY = "sitrep:target:shared-deadlines";
 
 /* ====== FODKS list (persist) ====== */
-type FodksItem = { id: string; name: string; note: string };
+type FodksItem = {
+  id: string;
+  name: string;
+  note: string;
+  createdBy?: string; // siapa yang menambah
+  createdAt?: string; // kapan menambah
+};
 type TargetStateWithFodks = TargetState & { fodksList?: FodksItem[] };
 const SHARED_FODKS_LIST_KEY = "sitrep:target:fodks-list-v1";
 
@@ -181,7 +187,6 @@ export default function TargetAchievement({
     writeOverrides(viewRole, addExtraPrincipal(cur, k, lbl));
     setRev((x) => x + 1);
 
-    // siapkan slot data di state jika belum ada
     const nextWeeklyMap = {
       ...(data.weekly as unknown as Record<string, boolean[]>),
     };
@@ -220,7 +225,6 @@ export default function TargetAchievement({
     const cur = readOverrides(viewRole);
     writeOverrides(viewRole, removeExtraPrincipal(cur, key));
     setRev((x) => x + 1);
-    // data state dibiarkan (histori)
   };
 
   /* ===== toggle helpers ===== */
@@ -334,7 +338,7 @@ export default function TargetAchievement({
   }, [isSuper, data, onChange]);
   /* =================== akhir sinkronisasi =================== */
 
-  /* =================== FODKS LIST: persist + guard add/edit/delete =================== */
+  /* =================== FODKS LIST: persist + rule add/edit/delete =================== */
   const dataF = data as TargetStateWithFodks;
   const getFodksList = (): FodksItem[] => dataF.fodksList ?? [];
   const setFodksList = (list: FodksItem[]) =>
@@ -377,22 +381,35 @@ export default function TargetAchievement({
   const uid = () =>
     Math.random().toString(36).slice(2) + Date.now().toString(36);
 
+  // sekarang: semua user bisa menambah. createdBy diset agar hanya pembuat (atau superadmin) bisa edit.
   const addFodksItem = () => {
-    if (!isSuper) return; // hanya superadmin
     const list = getFodksList();
-    setFodksList([...list, { id: uid(), name: "", note: "" }]);
+    setFodksList([
+      ...list,
+      {
+        id: uid(),
+        name: "",
+        note: "",
+        createdBy: role ?? "unknown",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
   };
 
+  const canEditItem = (it: FodksItem) => isSuper || it.createdBy === role;
+
   const updateFodksItem = (id: string, patch: Partial<FodksItem>) => {
-    if (!isSuper) return; // hanya superadmin
-    const list = getFodksList().map((it) =>
-      it.id === id ? { ...it, ...patch } : it
-    );
+    const list = getFodksList().map((it) => {
+      if (it.id !== id) return it;
+      if (!canEditItem(it)) return it; // non-pemilik tidak boleh edit
+      return { ...it, ...patch };
+    });
     setFodksList(list);
   };
 
+  // hapus: hanya superadmin
   const removeFodksItem = (id: string) => {
-    if (!isSuper) return; // hanya superadmin
+    if (!isSuper) return;
     const list = getFodksList().filter((it) => it.id !== id);
     setFodksList(list);
   };
@@ -687,19 +704,9 @@ export default function TargetAchievement({
 
           <button
             onClick={addFodksItem}
-            disabled={!isSuper}
-            aria-disabled={!isSuper}
-            className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
-              isSuper
-                ? "bg-blue-600 text-white hover:bg-blue-700"
-                : "bg-slate-200 text-slate-500 cursor-not-allowed"
-            }`}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
             aria-label="Tambah item FODKS"
-            title={
-              isSuper
-                ? "Tambah item FODKS"
-                : "Hanya superadmin yang dapat menambah"
-            }
+            title="Tambah item FODKS"
           >
             <Plus className="h-4 w-4" /> Tambah
           </button>
@@ -717,53 +724,62 @@ export default function TargetAchievement({
               </tr>
             </thead>
             <tbody className="divide-y bg-white">
-              {getFodksList().map((it) => (
-                <tr key={it.id}>
-                  <td className="py-2 px-2 align-top">
-                    <input
-                      disabled={!isSuper}
-                      className={`w-full rounded-xl border-2 text-sm px-3 py-2 focus:outline-none ${
-                        isSuper
-                          ? "border-slate-300 bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-                          : "border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
-                      }`}
-                      placeholder="Tuliskan FODKS apa yang diinput…"
-                      value={it.name}
-                      onChange={(e) =>
-                        updateFodksItem(it.id, { name: e.target.value })
-                      }
-                    />
-                  </td>
-                  <td className="py-2 px-2 align-top">
-                    <textarea
-                      disabled={!isSuper}
-                      rows={1}
-                      className={`w-full rounded-xl border-2 text-sm px-3 py-2 focus:outline-none ${
-                        isSuper
-                          ? "border-slate-300 bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-                          : "border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
-                      }`}
-                      placeholder="Keterangan (opsional)…"
-                      value={it.note}
-                      onChange={(e) =>
-                        updateFodksItem(it.id, { note: e.target.value })
-                      }
-                    />
-                  </td>
-                  {isSuper ? (
+              {getFodksList().map((it) => {
+                const editable = canEditItem(it);
+                return (
+                  <tr key={it.id}>
                     <td className="py-2 px-2 align-top">
-                      <button
-                        onClick={() => removeFodksItem(it.id)}
-                        className="px-2 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700"
-                        aria-label="Hapus item"
-                        title="Hapus item (superadmin saja)"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <input
+                        disabled={!editable}
+                        className={`w-full rounded-xl border-2 text-sm px-3 py-2 focus:outline-none ${
+                          editable
+                            ? "border-slate-300 bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                            : "border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
+                        }`}
+                        placeholder="Tuliskan FODKS apa yang diinput…"
+                        value={it.name}
+                        onChange={(e) =>
+                          updateFodksItem(it.id, { name: e.target.value })
+                        }
+                      />
+                      <div className="mt-1 text-[11px] text-slate-500">
+                        Dibuat oleh: {it.createdBy ?? "—"}{" "}
+                        {it.createdAt
+                          ? `• ${new Date(it.createdAt).toLocaleString()}`
+                          : ""}
+                      </div>
                     </td>
-                  ) : null}
-                </tr>
-              ))}
+                    <td className="py-2 px-2 align-top">
+                      <textarea
+                        disabled={!editable}
+                        rows={1}
+                        className={`w-full rounded-xl border-2 text-sm px-3 py-2 focus:outline-none ${
+                          editable
+                            ? "border-slate-300 bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                            : "border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
+                        }`}
+                        placeholder="Keterangan (opsional)…"
+                        value={it.note}
+                        onChange={(e) =>
+                          updateFodksItem(it.id, { note: e.target.value })
+                        }
+                      />
+                    </td>
+                    {isSuper ? (
+                      <td className="py-2 px-2 align-top">
+                        <button
+                          onClick={() => removeFodksItem(it.id)}
+                          className="px-2 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700"
+                          aria-label="Hapus item"
+                          title="Hapus item (superadmin saja)"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    ) : null}
+                  </tr>
+                );
+              })}
 
               {getFodksList().length === 0 && (
                 <tr>
@@ -771,10 +787,9 @@ export default function TargetAchievement({
                     colSpan={isSuper ? 3 : 2}
                     className="py-6 px-2 text-center text-slate-500"
                   >
-                    Belum ada input FODKS.
-                    {isSuper
-                      ? " Klik Tambah untuk menambahkan."
-                      : " Hubungi superadmin untuk menambahkan."}
+                    Belum ada input FODKS. Klik{" "}
+                    <span className="font-medium">Tambah</span> untuk
+                    menambahkan.
                   </td>
                 </tr>
               )}
