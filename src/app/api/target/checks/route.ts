@@ -20,9 +20,10 @@ type ChecksRow = {
   id: string;
   account_id: string;
   period: string; // YYYY-MM
-  klaim_selesai: Record<string, boolean>;
-  weekly: Record<string, boolean[]>;
-  fodks_list: FodksItem[];
+  // bisa jsonb (object) atau text (string JSON), jadi pakai unknown
+  klaim_selesai: unknown;
+  weekly: unknown;
+  fodks_list: unknown;
   updated_at: string | null;
 };
 
@@ -30,6 +31,30 @@ type ChecksRow = {
 function currentPeriod(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+// Coercer: kalau string JSON → parse, kalau sudah object/array → kembalikan apa adanya
+function toObject<T extends object>(v: unknown, fallback: T): T {
+  if (v && typeof v === "object" && !Array.isArray(v)) return v as T;
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as T;
+      }
+    } catch {}
+  }
+  return fallback;
+}
+function toArray<T>(v: unknown, fallback: T[]): T[] {
+  if (Array.isArray(v)) return v as T[];
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      if (Array.isArray(parsed)) return parsed as T[];
+    } catch {}
+  }
+  return fallback;
 }
 
 function errorMessage(err: unknown): string {
@@ -71,16 +96,23 @@ export async function GET(req: Request) {
       });
     }
 
+    // 🔧 Kunci: paksa konversi ke bentuk yang UI butuhkan
+    const klaimSelesai = toObject<Record<string, boolean>>(
+      data.klaim_selesai,
+      {}
+    );
+    const weekly = toObject<Record<string, boolean[]>>(data.weekly, {});
+    const fodksList = toArray<FodksItem>(data.fodks_list, []);
+
     return NextResponse.json({
       accountId: data.account_id,
       period: data.period,
-      klaimSelesai: data.klaim_selesai ?? {},
-      weekly: data.weekly ?? {},
-      fodksList: data.fodks_list ?? [],
+      klaimSelesai,
+      weekly,
+      fodksList,
       updatedAt: data.updated_at ?? null,
     });
   } catch (err: unknown) {
-    // Tidak pakai "any"
     console.error("GET /api/target/checks", err);
     return NextResponse.json(
       { error: errorMessage(err) || "Server error" },
@@ -112,6 +144,7 @@ export async function PUT(req: Request) {
       {
         account_id: accountId,
         period,
+        // Supabase menerima object/array ini baik untuk kolom jsonb maupun text (akan di-cast)
         klaim_selesai: klaimSelesai,
         weekly,
         fodks_list: fodksList,
@@ -124,7 +157,6 @@ export async function PUT(req: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (err: unknown) {
-    // Tidak pakai "any"
     console.error("PUT /api/target/checks", err);
     return NextResponse.json(
       { error: errorMessage(err) || "Server error" },
