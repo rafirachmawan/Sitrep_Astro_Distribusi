@@ -450,19 +450,29 @@ export default function TargetAchievement({
                         />
                       </td>
 
-                      {/* === kolom Selesai: input checkbox controlled, readOnly + onClick (desktop-proof) === */}
-                      <td className="py-3 px-2">
-                        <label
-                          className="inline-flex items-center gap-3 px-2 py-2 rounded-md hover:bg-slate-100 cursor-pointer select-none"
-                          aria-label={`Toggle selesai ${principalLabel(p)}`}
-                        >
+                      {/* === kolom Selesai: seluruh sel bisa diklik (laptop-friendly) === */}
+                      <td
+                        className="py-3 px-2"
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleKlaim(p);
+                        }}
+                        onKeyDown={(e) =>
+                          handleKeyActivate(e, () => toggleKlaim(p))
+                        }
+                        style={{ userSelect: "none", cursor: "pointer" }}
+                        aria-label={`Toggle selesai ${principalLabel(p)}`}
+                      >
+                        <label className="inline-flex items-center gap-3 px-2 py-2 rounded-md hover:bg-slate-100 cursor-pointer select-none w-full">
                           <input
                             type="checkbox"
                             className="h-5 w-5 accent-blue-600"
                             checked={checked}
                             readOnly
                             onClick={(e) => {
-                              // gunakan onClick + readOnly agar React tidak menunggu event onChange (desktop Safari/Chrome kadang ngaco di tabel)
+                              // tetap ada agar klik langsung di checkbox juga jalan
                               e.stopPropagation();
                               toggleKlaim(p);
                             }}
@@ -533,13 +543,24 @@ export default function TargetAchievement({
                     </td>
 
                     {[0, 1, 2, 3].map((w) => (
-                      <td key={w} className="py-3 px-2">
-                        <label
-                          className="inline-flex items-center justify-center w-10 h-10 rounded-md hover:bg-slate-100 cursor-pointer select-none"
-                          aria-label={`Toggle minggu ${
-                            w + 1
-                          } untuk ${principalLabel(p)}`}
-                        >
+                      <td
+                        key={w}
+                        className="py-3 px-2"
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleWeekly(p, w);
+                        }}
+                        onKeyDown={(e) =>
+                          handleKeyActivate(e, () => toggleWeekly(p, w))
+                        }
+                        style={{ userSelect: "none", cursor: "pointer" }}
+                        aria-label={`Toggle minggu ${
+                          w + 1
+                        } untuk ${principalLabel(p)}`}
+                      >
+                        <label className="inline-flex items-center justify-center w-10 h-10 rounded-md hover:bg-slate-100 cursor-pointer select-none">
                           <input
                             type="checkbox"
                             className="h-5 w-5 accent-blue-600"
@@ -595,15 +616,30 @@ export default function TargetAchievement({
           )}
         </div>
         <div className="p-3 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
-          <label className="inline-flex items-center gap-3 cursor-pointer select-none">
+          <label
+            className="inline-flex items-center gap-3 cursor-pointer select-none"
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) =>
+              handleKeyActivate(e, () =>
+                onChange({ ...data, ketepatanFodks: !data.ketepatanFodks })
+              )
+            }
+            onClick={() =>
+              onChange({ ...data, ketepatanFodks: !data.ketepatanFodks })
+            }
+            style={{ userSelect: "none" }}
+            aria-label="Toggle ketepatan FODKS"
+          >
             <input
               type="checkbox"
               className="h-5 w-5 accent-blue-600"
               checked={data.ketepatanFodks}
               readOnly
-              onClick={() =>
-                onChange({ ...data, ketepatanFodks: !data.ketepatanFodks })
-              }
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange({ ...data, ketepatanFodks: !data.ketepatanFodks });
+              }}
             />
             {editMode ? (
               <input
