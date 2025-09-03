@@ -224,10 +224,22 @@ export default function TargetAchievement({
 
   /** SIMPAN PER USER (stabil lintas device) */
   const STORAGE_MODE: "byUser" | "byRole" = "byUser";
-  const accountId =
+
+  // Ambil dua kemungkinan ID dari auth
+  const uid = auth.user?.id || null;
+  const email = auth.user?.email || null;
+
+  // Primary accountId
+  const accountId: string | null =
     STORAGE_MODE === "byUser"
-      ? auth.user?.email || auth.user?.id || null
-      : (`role:${role}` as string | null);
+      ? email || uid || null
+      : (`role:${role}` as string);
+
+  // Alt ID untuk kompatibilitas (mis. data lama tersimpan dengan UID)
+  const altId: string | null = (() => {
+    if (!email || !uid) return null;
+    return accountId === email ? uid : email;
+  })();
 
   // periode bulanan
   const period = useMemo(() => {
@@ -324,10 +336,11 @@ export default function TargetAchievement({
     if (!accountId) return; // tunggu auth siap
     try {
       setLoadStatus("loading");
+      const altParam = altId ? `&altId=${encodeURIComponent(altId)}` : "";
       const res = await fetch(
         `/api/target/checks?accountId=${encodeURIComponent(
           accountId
-        )}&period=${period}`,
+        )}&period=${period}${altParam}`,
         {
           method: "GET",
           credentials: "include",
@@ -344,7 +357,7 @@ export default function TargetAchievement({
       console.error("GET /api/target/checks error:", err);
       setLoadStatus("error");
     }
-  }, [accountId, period]);
+  }, [accountId, altId, period]);
 
   useEffect(() => {
     loadFromServer();
@@ -364,10 +377,11 @@ export default function TargetAchievement({
         weekly: weeklyMap,
         fodksList: fodksListLocal,
       };
+      const altParam = altId ? `&altId=${encodeURIComponent(altId)}` : "";
       const res = await fetch(
         `/api/target/checks?accountId=${encodeURIComponent(
           accountId
-        )}&period=${period}`,
+        )}&period=${period}${altParam}`,
         {
           method: "PUT",
           credentials: "include",
@@ -468,13 +482,13 @@ export default function TargetAchievement({
   };
 
   /* ===== FODKS logic ===== */
-  const uid = () =>
+  const uidGen = () =>
     Math.random().toString(36).slice(2) + Date.now().toString(36);
   const addFodksItem = () => {
     const next: FodksItem[] = [
       ...fodksListLocal,
       {
-        id: uid(),
+        id: uidGen(),
         name: "",
         note: "",
         createdBy: String(role),
@@ -581,7 +595,7 @@ export default function TargetAchievement({
               <input
                 defaultValue={copy.klaimTitle}
                 onBlur={(e) => saveCopy("klaimTitle", e.target.value)}
-                className="w-full max-w-[420px] rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                className="w-full max-w-[420px] rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                 placeholder="Judul bagian klaim…"
               />
             ) : (
@@ -614,7 +628,7 @@ export default function TargetAchievement({
                               onBlur={(e) =>
                                 savePrincipalLabel(p, e.target.value)
                               }
-                              className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                              className="w-full rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                               placeholder={`Nama principal untuk ${p}`}
                             />
                             {overrides.extraPrincipals?.[p] && isSuper && (
@@ -637,7 +651,7 @@ export default function TargetAchievement({
                         <input
                           type="date"
                           disabled={!isSuper}
-                          className={`w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
+                          className={`w-full rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
                             !isSuper
                               ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
                               : ""
@@ -698,7 +712,7 @@ export default function TargetAchievement({
             <input
               defaultValue={copy.weeklyTitle}
               onBlur={(e) => saveCopy("weeklyTitle", e.target.value)}
-              className="w-full max-w-[520px] rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+              className="w-full max-w-[520px] rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
               placeholder="Judul bagian mingguan…"
             />
           ) : (
@@ -729,7 +743,7 @@ export default function TargetAchievement({
                         <input
                           defaultValue={principalLabel(p)}
                           onBlur={(e) => savePrincipalLabel(p, e.target.value)}
-                          className="w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                          className="w-full rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                           placeholder={`Nama principal untuk ${p}`}
                         />
                       ) : (
@@ -804,7 +818,7 @@ export default function TargetAchievement({
             <input
               defaultValue={copy.fodksTitle}
               onBlur={(e) => saveCopy("fodksTitle", e.target.value)}
-              className="w-full max-w-[420px] rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+              className="w-full max-w-[420px] rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
               placeholder="Judul bagian…"
             />
           ) : (
@@ -893,13 +907,13 @@ function AddPrincipalForm({
         <input
           value={key}
           onChange={(e) => setKey(e.target.value)}
-          className="rounded-xl border-2 border-blue-200 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+          className="rounded-2xl border-2 border-blue-200 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
           placeholder="Key unik (contoh: p_klaim-baru)"
         />
         <input
           value={label}
           onChange={(e) => setLabel(e.target.value)}
-          className="rounded-xl border-2 border-blue-200 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+          className="rounded-2xl border-2 border-blue-200 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
           placeholder="Label tampilan"
         />
         <button
