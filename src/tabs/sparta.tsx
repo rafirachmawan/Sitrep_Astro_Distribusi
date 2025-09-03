@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { ListChecks, CalendarDays, Plus, Trash2, Wrench } from "lucide-react";
 import type { SpartaState } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
@@ -16,26 +16,22 @@ export type ProjectProgress = {
   kendala: string;
 };
 
-// pastikan state punya field progress (state baru)
 type SpartaStateWithProgress = SpartaState & {
   projectsProgress?: Record<string, ProjectProgress>;
 };
-
-// state lama (kompatibilitas)
-type LegacyFields = {
+type SpartaStateAny = SpartaStateWithProgress & {
   steps?: boolean[];
   deadline?: string;
   progressText?: string;
   nextAction?: string;
 };
-type SpartaStateAny = SpartaStateWithProgress & LegacyFields;
 
 type ProjectDef = {
   id: string;
   title: string;
   steps: string[];
-  deadline: string; // YYYY-MM-DD
-  targetRole: TargetRole; // proyek ini untuk role apa
+  deadline: string;
+  targetRole: TargetRole;
 };
 
 /* -------------------------- Catalog (superadmin) -------------------------- */
@@ -58,7 +54,6 @@ function defaultCatalog(): ProjectDef[] {
     },
   ];
 }
-
 function normalizeProject(p: Partial<ProjectDef>): ProjectDef {
   return {
     id:
@@ -72,23 +67,19 @@ function normalizeProject(p: Partial<ProjectDef>): ProjectDef {
     targetRole: (p.targetRole ?? "admin") as TargetRole,
   };
 }
-
 function readCatalog(): ProjectDef[] {
   if (typeof window === "undefined") return defaultCatalog();
   try {
-    // v3
     const raw = localStorage.getItem(CATALOG_KEY);
     if (raw) {
       const arr = JSON.parse(raw) as Array<Partial<ProjectDef>>;
       return arr.map(normalizeProject);
     }
-    // v2
     const rawV2 = localStorage.getItem("sitrep-sparta-catalog-v2");
     if (rawV2) {
       const arr = JSON.parse(rawV2) as Array<Partial<ProjectDef>>;
       return arr.map(normalizeProject);
     }
-    // v1 (tanpa targetRole)
     const rawV1 = localStorage.getItem("sitrep-sparta-catalog-v1");
     if (rawV1) {
       const old = JSON.parse(rawV1) as Array<Omit<ProjectDef, "targetRole">>;
@@ -142,6 +133,10 @@ function clampBoolArray(arr: boolean[] | undefined, len: number): boolean[] {
   while (a.length < len) a.push(false);
   return a;
 }
+function currentPeriod() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 /* -------------------------- Component -------------------------- */
 export default function SpartaTracking({
@@ -151,18 +146,46 @@ export default function SpartaTracking({
   data: SpartaState;
   onChange: (v: SpartaState) => void;
 }) {
-  const { role } = useAuth();
+  const { role, user } = useAuth();
   const isSuper = role === "superadmin";
+
+  // ===== Account identity (stabil) =====
+  const uid = user?.id || null;
+  const email = user?.email || null;
+  const FORCE =
+    typeof window !== "undefined"
+      ? localStorage.getItem("sitrep-force-account-id")
+      : null;
+
+  const accountId: string | null = FORCE || email || uid || null; // pakai email lalu uid
+  const altId: string | null =
+    FORCE || !email || !uid ? null : accountId === email ? uid : email;
+
+  const period = useMemo(currentPeriod, []);
 
   // Catalog global (dikelola superadmin)
   const [catalog, setCatalog] = useState<ProjectDef[]>(readCatalog);
   useEffect(() => writeCatalog(catalog), [catalog]);
 
-  // Toggle kelola proyek (judul, deadline, langkah, target role)
   const [manage, setManage] = useState(false);
-
-  // Superadmin: filter tampilan proyek (lihat sebagai per-role atau semua)
   const [viewRole, setViewRole] = useState<TargetRole | "semua">("semua");
+
+  // ====== STATE PROGRESS PER USER (local + sinkron parent) ======
+  const localProgress =
+    (data as SpartaStateWithProgress).projectsProgress ?? {};
+
+  const [progressMap, setProgressMap] =
+    useState<Record<string, ProjectProgress>>(localProgress);
+
+  // jaga parent tetap sync
+  useEffect(() => {
+    const next: SpartaStateWithProgress = {
+      ...(data as object),
+      projectsProgress: progressMap,
+    } as SpartaStateWithProgress;
+    onChange(next as SpartaState);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(progressMap)]);
 
   // Back-compat: migrasi struktur lama → projectsProgress (sekali)
   useEffect(() => {
@@ -184,21 +207,15 @@ export default function SpartaTracking({
             kendala: "",
           },
         };
-        const nextState: SpartaStateWithProgress = {
-          ...(data as object),
-          projectsProgress: prog,
-        } as SpartaStateWithProgress;
-        onChange(nextState as SpartaState);
+        setProgressMap(prog);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Helper get/set progress per proyek (state per user)
+  // Helper get/set progress per proyek
   const getProgress = (id: string, stepLen: number): ProjectProgress => {
-    const map: Record<string, ProjectProgress> =
-      (data as SpartaStateWithProgress).projectsProgress ?? {};
-    const cur = map[id] ?? {
+    const cur = progressMap[id] ?? {
       steps: [],
       progressText: "",
       nextAction: "",
@@ -212,23 +229,15 @@ export default function SpartaTracking({
     };
   };
   const setProgress = (id: string, patch: Partial<ProjectProgress>) => {
-    const prevMap: Record<string, ProjectProgress> =
-      (data as SpartaStateWithProgress).projectsProgress ?? {};
-    const cur: ProjectProgress = prevMap[id] ?? {
-      steps: [],
-      progressText: "",
-      nextAction: "",
-      kendala: "",
-    };
-    const nextAll: Record<string, ProjectProgress> = {
-      ...prevMap,
-      [id]: { ...cur, ...patch },
-    };
-    const nextState: SpartaStateWithProgress = {
-      ...(data as object),
-      projectsProgress: nextAll,
-    } as SpartaStateWithProgress;
-    onChange(nextState as SpartaState);
+    setProgressMap((prev) => {
+      const cur: ProjectProgress = prev[id] ?? {
+        steps: [],
+        progressText: "",
+        nextAction: "",
+        kendala: "",
+      };
+      return { ...prev, [id]: { ...cur, ...patch } };
+    });
   };
 
   // --- Actions (kelola proyek, hanya superadmin) ---
@@ -250,20 +259,11 @@ export default function SpartaTracking({
   const deleteProject = (id: string) => {
     if (!confirm("Hapus proyek ini?")) return;
     setCatalog((c) => c.filter((x) => x.id !== id));
-
-    const prevMap: Record<string, ProjectProgress> =
-      (data as SpartaStateWithProgress).projectsProgress ?? {};
-    if (prevMap[id]) {
-      const { [id]: _, ...rest } = prevMap;
-      const nextState: SpartaStateWithProgress = {
-        ...(data as object),
-        projectsProgress: rest,
-      } as SpartaStateWithProgress;
-      onChange(nextState as SpartaState);
-    }
+    setProgressMap((prev) => {
+      const { [id]: _drop, ...rest } = prev;
+      return rest;
+    });
   };
-
-  // Edit langkah
   const updateStepText = (projId: string, idx: number, text: string) => {
     setCatalog((c) =>
       c.map((p) =>
@@ -299,6 +299,62 @@ export default function SpartaTracking({
     return catalog.filter((p) => p.targetRole === (role as TargetRole));
   }, [catalog, isSuper, viewRole, role]);
 
+  /* ====== LOAD / SAVE KE SERVER (per akun) ====== */
+  const [loadStatus, setLoadStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+  const [saveStatus, setSaveStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+
+  const loadFromServer = useCallback(async () => {
+    if (!accountId) return;
+    try {
+      setLoadStatus("loading");
+      const altParam = altId ? `&altId=${encodeURIComponent(altId)}` : "";
+      const url = `/api/sparta/progress?accountId=${encodeURIComponent(
+        accountId
+      )}&period=${period}${altParam}`;
+      const res = await fetch(url, { headers: { Accept: "application/json" } });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as {
+        projectsProgress?: Record<string, ProjectProgress>;
+      };
+      if (json.projectsProgress) setProgressMap(json.projectsProgress);
+      setLoadStatus("loaded");
+    } catch (e) {
+      console.error("GET /api/sparta/progress", e);
+      setLoadStatus("error");
+    }
+  }, [accountId, altId, period]);
+
+  useEffect(() => {
+    loadFromServer();
+  }, [loadFromServer]);
+
+  const saveToServer = async () => {
+    if (!accountId) return;
+    try {
+      setSaveStatus("saving");
+      const altParam = altId ? `&altId=${encodeURIComponent(altId)}` : "";
+      const url = `/api/sparta/progress?accountId=${encodeURIComponent(
+        accountId
+      )}&period=${period}${altParam}`;
+      const res = await fetch(url, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectsProgress: progressMap }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus("idle"), 1200);
+      await loadFromServer();
+    } catch (e) {
+      console.error("PUT /api/sparta/progress", e);
+      setSaveStatus("error");
+    }
+  };
+
   return (
     <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
       <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between gap-3">
@@ -307,50 +363,77 @@ export default function SpartaTracking({
           <h3 className="font-semibold text-slate-800">
             SPARTA Project Tracking
           </h3>
+          {loadStatus === "loading" && (
+            <span className="ml-2 text-xs text-slate-500">Memuat…</span>
+          )}
+          {loadStatus === "error" && (
+            <span className="ml-2 text-xs text-rose-600">Gagal memuat</span>
+          )}
         </div>
 
-        {isSuper && (
-          <div className="flex items-center gap-2">
-            <label className="text-sm text-slate-600">Lihat role:</label>
-            <select
-              className="rounded-md border-slate-300 text-sm"
-              value={viewRole}
-              onChange={(e) =>
-                setViewRole(e.target.value as TargetRole | "semua")
-              }
-            >
-              <option value="semua">Semua</option>
-              {TARGET_ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={saveToServer}
+            disabled={!accountId || saveStatus === "saving"}
+            className={`inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md ${
+              !accountId
+                ? "bg-emerald-400/60 text-white cursor-not-allowed"
+                : "bg-emerald-600 text-white hover:bg-emerald-700"
+            }`}
+            title={!accountId ? "Login dulu" : "Simpan progress"}
+          >
+            {saveStatus === "saving" ? "Menyimpan…" : "Simpan"}
+          </button>
+          {saveStatus === "saved" && (
+            <span className="text-xs text-emerald-700">Tersimpan ✔</span>
+          )}
+          {saveStatus === "error" && (
+            <span className="text-xs text-rose-600">Gagal menyimpan</span>
+          )}
 
-            <button
-              onClick={() => setManage((m) => !m)}
-              className={
-                "inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md border " +
-                (manage
-                  ? "bg-amber-50 border-amber-300 text-amber-800"
-                  : "hover:bg-slate-50")
-              }
-              title="Kelola daftar proyek (judul, deadline, langkah, role tujuan)"
-            >
-              <Wrench className="h-4 w-4" />
-              Kelola Proyek
-            </button>
-
-            {manage && (
-              <button
-                onClick={addProject}
-                className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+          {isSuper && (
+            <>
+              <label className="text-sm text-slate-600">Lihat role:</label>
+              <select
+                className="rounded-md border-slate-300 text-sm"
+                value={viewRole}
+                onChange={(e) =>
+                  setViewRole(e.target.value as TargetRole | "semua")
+                }
               >
-                <Plus className="h-4 w-4" /> Tambah Proyek
+                <option value="semua">Semua</option>
+                {TARGET_ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+
+              <button
+                onClick={() => setManage((m) => !m)}
+                className={
+                  "inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md border " +
+                  (manage
+                    ? "bg-amber-50 border-amber-300 text-amber-800"
+                    : "hover:bg-slate-50")
+                }
+                title="Kelola daftar proyek (judul, deadline, langkah, role tujuan)"
+              >
+                <Wrench className="h-4 w-4" />
+                Kelola Proyek
               </button>
-            )}
-          </div>
-        )}
+
+              {manage && (
+                <button
+                  onClick={addProject}
+                  className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  <Plus className="h-4 w-4" /> Tambah Proyek
+                </button>
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Daftar Project */}
@@ -565,7 +648,7 @@ export default function SpartaTracking({
                     </div>
                   </div>
 
-                  {/* Progress, Next Action, Kendala (diisi user) */}
+                  {/* Progress, Next Action, Kendala */}
                   {!manage && (
                     <>
                       <div>
@@ -610,7 +693,7 @@ export default function SpartaTracking({
                           onChange={(e) =>
                             setProgress(proj.id, { kendala: e.target.value })
                           }
-                          placeholder="Contoh: kendala koordinasi dengan tim logistik…"
+                          placeholder="Contoh: kendala koordinasi…"
                           className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
