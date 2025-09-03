@@ -14,7 +14,7 @@ type TargetOverrides = {
     targetSelesaiLabel?: string;
     weeklyTitle?: string;
     fodksTitle?: string;
-    fodksCheckboxLabel?: string;
+    fodksCheckboxLabel?: string; // keep for compat
     deadlineLabel?: string;
   };
   principals?: Record<string, { label?: string }>;
@@ -24,6 +24,11 @@ type TargetOverrides = {
 const OV_KEY = "sitrep-target-copy-v2";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
 const SHARED_DEADLINES_KEY = "sitrep:target:shared-deadlines";
+
+/* ====== FODKS list (persist) ====== */
+type FodksItem = { id: string; name: string; note: string };
+type TargetStateWithFodks = TargetState & { fodksList?: FodksItem[] };
+const SHARED_FODKS_LIST_KEY = "sitrep:target:fodks-list-v1";
 
 /* — helper keyboard untuk aksesibilitas (Enter/Space) — */
 function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
@@ -116,9 +121,10 @@ export default function TargetAchievement({
       overrides.copy?.targetSelesaiLabel ?? "Target Selesai (bulan ini)",
     weeklyTitle:
       overrides.copy?.weeklyTitle ?? "Laporan Penjualan ke Prinsipal Mingguan",
-    fodksTitle: overrides.copy?.fodksTitle ?? "Ketepatan Waktu Input FODKS",
+    // diganti sesuai request
+    fodksTitle: overrides.copy?.fodksTitle ?? "Input FODKS",
     fodksCheckboxLabel:
-      overrides.copy?.fodksCheckboxLabel ?? "Tandai jika tepat waktu",
+      overrides.copy?.fodksCheckboxLabel ?? "Tandai jika sudah input",
     deadlineLabel: overrides.copy?.deadlineLabel ?? "Deadline",
   };
 
@@ -328,6 +334,70 @@ export default function TargetAchievement({
   }, [isSuper, data, onChange]);
   /* =================== akhir sinkronisasi =================== */
 
+  /* =================== FODKS LIST: persist + guard add/edit/delete =================== */
+  const dataF = data as TargetStateWithFodks;
+  const getFodksList = (): FodksItem[] => dataF.fodksList ?? [];
+  const setFodksList = (list: FodksItem[]) =>
+    onChange({ ...dataF, fodksList: list } as unknown as TargetState);
+
+  // simpan ke localStorage setiap berubah (agar tetap ada setelah logout/login)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.setItem(
+        SHARED_FODKS_LIST_KEY,
+        JSON.stringify(getFodksList())
+      );
+    } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(getFodksList())]);
+
+  // tarik dari localStorage saat mount & saat storage berubah (tab lain)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const pull = () => {
+      try {
+        const raw = localStorage.getItem(SHARED_FODKS_LIST_KEY);
+        if (!raw) return;
+        const stored = JSON.parse(raw) as FodksItem[];
+        setFodksList(stored);
+      } catch {}
+    };
+    pull();
+
+    const handler = (e: StorageEvent) => {
+      if (e.key === SHARED_FODKS_LIST_KEY) pull();
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const uid = () =>
+    Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+  const addFodksItem = () => {
+    if (!isSuper) return; // hanya superadmin
+    const list = getFodksList();
+    setFodksList([...list, { id: uid(), name: "", note: "" }]);
+  };
+
+  const updateFodksItem = (id: string, patch: Partial<FodksItem>) => {
+    if (!isSuper) return; // hanya superadmin
+    const list = getFodksList().map((it) =>
+      it.id === id ? { ...it, ...patch } : it
+    );
+    setFodksList(list);
+  };
+
+  const removeFodksItem = (id: string) => {
+    if (!isSuper) return; // hanya superadmin
+    const list = getFodksList().filter((it) => it.id !== id);
+    setFodksList(list);
+  };
+
+  /* =================== RENDER =================== */
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -433,7 +503,7 @@ export default function TargetAchievement({
                         )}
                       </td>
 
-                      {/* === kolom Deadline (tetap) === */}
+                      {/* deadline */}
                       <td className="py-3 px-2">
                         <input
                           type="date"
@@ -450,7 +520,7 @@ export default function TargetAchievement({
                         />
                       </td>
 
-                      {/* === kolom Selesai: seluruh sel bisa diklik (laptop-friendly) === */}
+                      {/* toggle selesai */}
                       <td
                         className="py-3 px-2"
                         role="button"
@@ -472,7 +542,6 @@ export default function TargetAchievement({
                             checked={checked}
                             readOnly
                             onClick={(e) => {
-                              // tetap ada agar klik langsung di checkbox juga jalan
                               e.stopPropagation();
                               toggleKlaim(p);
                             }}
@@ -489,7 +558,6 @@ export default function TargetAchievement({
             </table>
           </div>
 
-          {/* Form tambah principal (klaim) */}
           {isSuper && editMode && <AddPrincipalForm onAdd={addPrincipal} />}
         </div>
       </div>
@@ -601,72 +669,117 @@ export default function TargetAchievement({
         </div>
       </div>
 
-      {/* ===== Bagian 3: FODKS ===== */}
+      {/* ===== Bagian 3: Input FODKS ===== */}
       <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
-        <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 font-semibold text-slate-800">
+        <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between">
           {editMode ? (
             <input
               defaultValue={copy.fodksTitle}
               onBlur={(e) => saveCopy("fodksTitle", e.target.value)}
               className="w-full max-w-[420px] rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-              placeholder="Judul bagian FODKS…"
+              placeholder="Judul bagian…"
             />
           ) : (
-            copy.fodksTitle
+            <div className="font-semibold text-slate-800">
+              {copy.fodksTitle}
+            </div>
           )}
-        </div>
-        <div className="p-3 sm:p-6 grid grid-cols-1 sm:grid-cols-3 gap-3 items-center">
-          <label
-            className="inline-flex items-center gap-3 cursor-pointer select-none"
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) =>
-              handleKeyActivate(e, () =>
-                onChange({ ...data, ketepatanFodks: !data.ketepatanFodks })
-              )
-            }
-            onClick={() =>
-              onChange({ ...data, ketepatanFodks: !data.ketepatanFodks })
-            }
-            style={{ userSelect: "none" }}
-            aria-label="Toggle ketepatan FODKS"
-          >
-            <input
-              type="checkbox"
-              className="h-5 w-5 accent-blue-600"
-              checked={data.ketepatanFodks}
-              readOnly
-              onClick={(e) => {
-                e.stopPropagation();
-                onChange({ ...data, ketepatanFodks: !data.ketepatanFodks });
-              }}
-            />
-            {editMode ? (
-              <input
-                defaultValue={copy.fodksCheckboxLabel}
-                onBlur={(e) => saveCopy("fodksCheckboxLabel", e.target.value)}
-                className={INPUT_BASE}
-                placeholder="Label checkbox…"
-              />
-            ) : (
-              <span className="text-sm text-slate-700">
-                {copy.fodksCheckboxLabel}
-              </span>
-            )}
-          </label>
 
-          <div className="sm:col-span-2">
-            <span className="block text-sm font-medium text-slate-700 mb-1">
-              {copy.deadlineLabel}
-            </span>
-            <input
-              type="date"
-              disabled={!isSuper}
-              className={`${INPUT_BASE} ${!isSuper ? INPUT_DISABLED : ""}`}
-              value={getDeadline("fodks")}
-              onChange={(e) => setDeadline("fodks", e.target.value)}
-            />
-          </div>
+          <button
+            onClick={addFodksItem}
+            disabled={!isSuper}
+            aria-disabled={!isSuper}
+            className={`inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${
+              isSuper
+                ? "bg-blue-600 text-white hover:bg-blue-700"
+                : "bg-slate-200 text-slate-500 cursor-not-allowed"
+            }`}
+            aria-label="Tambah item FODKS"
+            title={
+              isSuper
+                ? "Tambah item FODKS"
+                : "Hanya superadmin yang dapat menambah"
+            }
+          >
+            <Plus className="h-4 w-4" /> Tambah
+          </button>
+        </div>
+
+        <div className="p-3 sm:p-6 overflow-x-auto">
+          <table className="w-full min-w-[680px] text-sm">
+            <thead className="bg-slate-50 text-slate-600">
+              <tr>
+                <th className="text-left py-2 px-2 w-[40%]">FODKS</th>
+                <th className="text-left py-2 px-2">Keterangan</th>
+                {isSuper ? (
+                  <th className="text-left py-2 px-2 w-[80px]">Aksi</th>
+                ) : null}
+              </tr>
+            </thead>
+            <tbody className="divide-y bg-white">
+              {getFodksList().map((it) => (
+                <tr key={it.id}>
+                  <td className="py-2 px-2 align-top">
+                    <input
+                      disabled={!isSuper}
+                      className={`w-full rounded-xl border-2 text-sm px-3 py-2 focus:outline-none ${
+                        isSuper
+                          ? "border-slate-300 bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                          : "border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
+                      }`}
+                      placeholder="Tuliskan FODKS apa yang diinput…"
+                      value={it.name}
+                      onChange={(e) =>
+                        updateFodksItem(it.id, { name: e.target.value })
+                      }
+                    />
+                  </td>
+                  <td className="py-2 px-2 align-top">
+                    <textarea
+                      disabled={!isSuper}
+                      rows={1}
+                      className={`w-full rounded-xl border-2 text-sm px-3 py-2 focus:outline-none ${
+                        isSuper
+                          ? "border-slate-300 bg-white focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                          : "border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed"
+                      }`}
+                      placeholder="Keterangan (opsional)…"
+                      value={it.note}
+                      onChange={(e) =>
+                        updateFodksItem(it.id, { note: e.target.value })
+                      }
+                    />
+                  </td>
+                  {isSuper ? (
+                    <td className="py-2 px-2 align-top">
+                      <button
+                        onClick={() => removeFodksItem(it.id)}
+                        className="px-2 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700"
+                        aria-label="Hapus item"
+                        title="Hapus item (superadmin saja)"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+
+              {getFodksList().length === 0 && (
+                <tr>
+                  <td
+                    colSpan={isSuper ? 3 : 2}
+                    className="py-6 px-2 text-center text-slate-500"
+                  >
+                    Belum ada input FODKS.
+                    {isSuper
+                      ? " Klik Tambah untuk menambahkan."
+                      : " Hubungi superadmin untuk menambahkan."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
