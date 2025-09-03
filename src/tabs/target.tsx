@@ -229,14 +229,20 @@ export default function TargetAchievement({
   const uid = auth.user?.id || null;
   const email = auth.user?.email || null;
 
+  // Opsional: paksa accountId dari localStorage untuk debugging
+  const FORCE_ACCOUNT_ID =
+    typeof window !== "undefined"
+      ? localStorage.getItem("sitrep-force-account-id")
+      : null;
+
   // Primary accountId
   const accountId: string | null =
-    STORAGE_MODE === "byUser"
-      ? email || uid || null
-      : (`role:${role}` as string);
+    FORCE_ACCOUNT_ID ||
+    (STORAGE_MODE === "byUser" ? email || uid || null : `role:${role}`);
 
   // Alt ID untuk kompatibilitas (mis. data lama tersimpan dengan UID)
   const altId: string | null = (() => {
+    if (FORCE_ACCOUNT_ID) return null; // jika paksa, ga perlu alt
     if (!email || !uid) return null;
     return accountId === email ? uid : email;
   })();
@@ -337,18 +343,26 @@ export default function TargetAchievement({
     try {
       setLoadStatus("loading");
       const altParam = altId ? `&altId=${encodeURIComponent(altId)}` : "";
-      const res = await fetch(
-        `/api/target/checks?accountId=${encodeURIComponent(
-          accountId
-        )}&period=${period}${altParam}`,
-        {
-          method: "GET",
-          credentials: "include",
-          headers: { Accept: "application/json" },
-        }
-      );
+      const url = `/api/target/checks?accountId=${encodeURIComponent(
+        accountId
+      )}&period=${period}${altParam}`;
+
+      // Debug URL
+      // eslint-disable-next-line no-console
+      console.log("GET checks =>", url);
+
+      const res = await fetch(url, {
+        method: "GET",
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as Partial<SavedChecks>;
+
+      // Debug response
+      // eslint-disable-next-line no-console
+      console.log("GET checks resp =", json);
+
       if (json.klaimSelesai) setKlaimMap(json.klaimSelesai);
       if (json.weekly) setWeeklyMap(json.weekly);
       if (json.fodksList) setFodksListLocal(json.fodksList);
@@ -378,18 +392,22 @@ export default function TargetAchievement({
         fodksList: fodksListLocal,
       };
       const altParam = altId ? `&altId=${encodeURIComponent(altId)}` : "";
-      const res = await fetch(
-        `/api/target/checks?accountId=${encodeURIComponent(
-          accountId
-        )}&period=${period}${altParam}`,
-        {
-          method: "PUT",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }
-      );
+      const url = `/api/target/checks?accountId=${encodeURIComponent(
+        accountId
+      )}&period=${period}${altParam}`;
+
+      // Debug URL
+      // eslint-disable-next-line no-console
+      console.log("PUT checks =>", url, payload);
+
+      const res = await fetch(url, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 1500);
       await loadFromServer(); // refresh agar state sama dgn DB
@@ -507,6 +525,11 @@ export default function TargetAchievement({
     setFodksListLocal((list) => list.filter((it) => it.id !== id));
   };
 
+  const showDebug =
+    isSuper ||
+    (typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("debug") === "1");
+
   /* =================== RENDER =================== */
   return (
     <div className="space-y-6">
@@ -587,6 +610,19 @@ export default function TargetAchievement({
             )}
           </div>
         </div>
+
+        {showDebug && (
+          <div className="px-3 sm:px-6 py-2 text-[11px] text-slate-600 bg-amber-50 border-b">
+            <div>
+              <b>DEBUG</b> • accountId: <code>{String(accountId)}</code> •
+              altId: <code>{String(altId)}</code> • period:{" "}
+              <code>{period}</code>{" "}
+              {typeof window !== "undefined" && FORCE_ACCOUNT_ID ? (
+                <span> • FORCED ✅</span>
+              ) : null}
+            </div>
+          </div>
+        )}
 
         {/* ===== Bagian 1: Klaim selesai ===== */}
         <div className="p-3 sm:p-6">
