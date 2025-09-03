@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import "./globals.css"; // <-- jika file ada di src/app/globals.css
-import AuthProvider from "@/components/AuthProvider";
+import "./globals.css";
+import { AuthProvider } from "@/components/AuthProvider"; // ✅ named import + alias "@"
 
 export const metadata: Metadata = {
   title: "SITREP Daily",

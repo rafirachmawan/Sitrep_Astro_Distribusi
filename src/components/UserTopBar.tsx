@@ -3,7 +3,7 @@
 import { useAuth } from "@/components/AuthProvider";
 
 export default function UserTopBar() {
-  const { user, signOut } = useAuth();
+  const { user, role, signOut } = useAuth(); // ⬅️ ambil role di sini
 
   return (
     <div className="max-w-6xl mx-auto px-3 sm:px-4 py-3">
@@ -12,7 +12,7 @@ export default function UserTopBar() {
           {user ? (
             <>
               Masuk sebagai: <span className="font-medium">{user.name}</span>{" "}
-              <span className="text-slate-500">({user.role})</span>
+              <span className="text-slate-500">({role ?? "unknown"})</span>
             </>
           ) : (
             <span className="opacity-60">Tidak terautentikasi</span>
