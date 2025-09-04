@@ -35,19 +35,7 @@ type ChecklistOverrides = {
 const OV_KEY = "sitrep-checklist-copy-v2";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
 
-function readRoleOverrides(role: Role): ChecklistOverrides {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(`${OV_KEY}:${role}`);
-    return raw ? (JSON.parse(raw) as ChecklistOverrides) : {};
-  } catch {
-    return {};
-  }
-}
-function writeRoleOverrides(role: Role, v: ChecklistOverrides) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(`${OV_KEY}:${role}`, JSON.stringify(v));
-}
+/* ===== Helpers untuk override (WAJIB ADA) ===== */
 function mergeRowOverride(
   src: ChecklistOverrides,
   sec: AnySectionKey,
@@ -101,6 +89,45 @@ function deleteExtraSection(
   const rows = { ...(src.rows || {}) };
   delete rows[key];
   return { ...src, extraSections: extra, rows };
+}
+
+/* ====== LOCAL (tetap dipakai untuk mempertahankan logika lama) ====== */
+function readRoleOverrides(role: Role): ChecklistOverrides {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(`${OV_KEY}:${role}`);
+    return raw ? (JSON.parse(raw) as ChecklistOverrides) : {};
+  } catch {
+    return {};
+  }
+}
+function writeRoleOverrides(role: Role, v: ChecklistOverrides) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(`${OV_KEY}:${role}`, JSON.stringify(v));
+}
+
+/* ====== SERVER SYNC (Supabase via Next.js API) ====== */
+async function fetchOverridesFromServer(
+  role: Role
+): Promise<ChecklistOverrides> {
+  const res = await fetch(`/api/checklist/overrides?role=${role}`, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`GET /overrides ${res.status}`);
+  const json = await res.json();
+  return (json?.overrides ?? {}) as ChecklistOverrides;
+}
+async function saveOverridesToServer(
+  role: Role,
+  overrides: ChecklistOverrides
+) {
+  const res = await fetch(`/api/checklist/overrides?role=${role}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ overrides }),
+  });
+  if (!res.ok) throw new Error(`PUT /overrides ${res.status}`);
 }
 
 /* ================= DEFINISI ROW & BASE ================= */
@@ -375,6 +402,25 @@ export default function ChecklistArea({
     const top = window.scrollY + rect.top - offsetPx;
     window.scrollTo({ top, behavior: "smooth" });
   };
+
+  /* ===== sinkronisasi awal dari SERVER → localStorage (per role) ===== */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const remote = await fetchOverridesFromServer(viewRole);
+        if (!alive) return;
+        writeRoleOverrides(viewRole, remote); // simpan ke local agar logic lama tetap sama
+        setRev((x) => x + 1); // picu re-render supaya overrides terbaru terpakai
+      } catch (e) {
+        // diamkan saja; fallback tetap ke localStorage
+        console.warn("Gagal memuat overrides dari server:", e);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [viewRole]);
 
   /* ===== BASE (fixed) ===== */
   const BASE_MAP: Record<SectionKey, { title: string; rows: RowDef[] }> =
@@ -866,7 +912,7 @@ export default function ChecklistArea({
       []
     );
 
-  // refresh overrides dari localStorage
+  // refresh overrides dari localStorage (tetap pakai pola lama)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const overrides = useMemo(() => readRoleOverrides(viewRole), [viewRole, rev]);
 
@@ -1031,15 +1077,14 @@ export default function ChecklistArea({
   const updateSectionTitleAny = (sec: AnySectionKey, title: string) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
+    let next: ChecklistOverrides;
     if (String(sec).startsWith("x_")) {
-      const next = mergeExtraSection(cur, sec as `x_${string}`, { title });
-      writeRoleOverrides(viewRole, next);
+      next = mergeExtraSection(cur, sec as `x_${string}`, { title });
     } else {
-      writeRoleOverrides(
-        viewRole,
-        mergeSectionTitle(cur, sec as SectionKey, title)
-      );
+      next = mergeSectionTitle(cur, sec as SectionKey, title);
     }
+    writeRoleOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
   };
 
@@ -1062,6 +1107,7 @@ export default function ChecklistArea({
     const cur = readRoleOverrides(viewRole);
     const next = mergeExtraSection(cur, key as `x_${string}`, { title: ttl });
     writeRoleOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
     setSecActive(key as AnySectionKey);
   };
@@ -1077,6 +1123,7 @@ export default function ChecklistArea({
     const cur = readRoleOverrides(viewRole);
     const next = deleteExtraSection(cur, key);
     writeRoleOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
     setSecActive("kas");
   };
@@ -1088,7 +1135,9 @@ export default function ChecklistArea({
   ) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
-    writeRoleOverrides(viewRole, mergeRowOverride(cur, sec, rowKey, { label }));
+    const next = mergeRowOverride(cur, sec, rowKey, { label });
+    writeRoleOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
   };
   const updateRowOptions = (
@@ -1102,10 +1151,9 @@ export default function ChecklistArea({
       .map((s) => s.trim())
       .filter(Boolean);
     const cur = readRoleOverrides(viewRole);
-    writeRoleOverrides(
-      viewRole,
-      mergeRowOverride(cur, sec, rowKey, { options: opts })
-    );
+    const next = mergeRowOverride(cur, sec, rowKey, { options: opts });
+    writeRoleOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
   };
   const updateRowSuffix = (
@@ -1115,20 +1163,18 @@ export default function ChecklistArea({
   ) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
-    writeRoleOverrides(
-      viewRole,
-      mergeRowOverride(cur, sec, rowKey, { suffix })
-    );
+    const next = mergeRowOverride(cur, sec, rowKey, { suffix });
+    writeRoleOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
   };
   const deleteRow = (sec: AnySectionKey, rowKey: string) => {
     if (!isSuper) return;
     if (!confirm("Hapus baris ini dari section?")) return;
     const cur = readRoleOverrides(viewRole);
-    writeRoleOverrides(
-      viewRole,
-      mergeRowOverride(cur, sec, rowKey, { __delete: true })
-    );
+    const next = mergeRowOverride(cur, sec, rowKey, { __delete: true });
+    writeRoleOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
   };
   const addRow = (
@@ -1158,7 +1204,9 @@ export default function ChecklistArea({
       suffix: payload.suffix,
       extras: payload.extras,
     };
-    writeRoleOverrides(viewRole, mergeRowOverride(cur, sec, key, patch));
+    const next = mergeRowOverride(cur, sec, key, patch);
+    writeRoleOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
   };
 
@@ -1170,7 +1218,9 @@ export default function ChecklistArea({
       )
     )
       return;
-    writeRoleOverrides(viewRole, {});
+    const next: ChecklistOverrides = {};
+    writeRoleOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
   };
 
@@ -1219,21 +1269,20 @@ export default function ChecklistArea({
   const toggleSectionHiddenAny = (sec: AnySectionKey, hidden: boolean) => {
     if (!isSuper) return;
     const cur = readRoleOverrides(viewRole);
+    let next: ChecklistOverrides;
     if (String(sec).startsWith("x_")) {
       const k = sec as `x_${string}`;
       const prev = (cur.extraSections || {})[k];
-      const next = mergeExtraSection(cur, k, {
+      next = mergeExtraSection(cur, k, {
         title: prev?.title ?? (FINAL_MAP[k]?.title || "Custom Section"),
         hidden,
         order: prev?.order,
       });
-      writeRoleOverrides(viewRole, next);
     } else {
-      writeRoleOverrides(
-        viewRole,
-        mergeSectionHidden(cur, sec as SectionKey, hidden)
-      );
+      next = mergeSectionHidden(cur, sec as SectionKey, hidden);
     }
+    writeRoleOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
   };
 
@@ -1910,7 +1959,7 @@ function InlineAddRow({
           <input
             value={suffix}
             onChange={(e) => setSuffix(e.target.value)}
-            className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+            className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 fokus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
             placeholder="Suffix (pcs/faktur/…)"
           />
         )}
