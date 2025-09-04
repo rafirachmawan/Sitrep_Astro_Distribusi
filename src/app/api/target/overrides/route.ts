@@ -2,14 +2,43 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
+/** ==== Types (selaras dengan komponen Target) ==== */
+type TargetOverrides = {
+  copy?: {
+    klaimTitle?: string;
+    targetSelesaiLabel?: string;
+    weeklyTitle?: string;
+    fodksTitle?: string;
+    fodksCheckboxLabel?: string;
+    deadlineLabel?: string;
+  };
+  principals?: Record<string, { label?: string }>;
+  extraPrincipals?: Record<string, { label: string }>;
+};
+
+/** ==== Utils ==== */
+function toErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null;
+}
+function pickOverrides(x: unknown): TargetOverrides {
+  if (isRecord(x) && isRecord(x.overrides)) {
+    return x.overrides as TargetOverrides;
+  }
+  return {};
+}
+
+/** ==== Supabase server client ==== */
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  // penting: pakai SERVICE ROLE di server
+  // gunakan SERVICE ROLE di server
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
 const TABLE = "app_overrides";
-const FEATURE = "target"; // bedakan dengan 'checklist' dll
+const FEATURE = "target"; // bedakan feature lain (mis. 'checklist')
 
 export async function GET(req: NextRequest) {
   try {
@@ -26,12 +55,11 @@ export async function GET(req: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
-    return NextResponse.json({ overrides: data?.overrides ?? {} });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: String(e?.message || e) },
-      { status: 500 }
-    );
+
+    const overrides = (data?.overrides ?? {}) as TargetOverrides;
+    return NextResponse.json({ overrides });
+  } catch (err: unknown) {
+    return NextResponse.json({ error: toErrorMessage(err) }, { status: 500 });
   }
 }
 
@@ -40,33 +68,28 @@ export async function PUT(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const role = (searchParams.get("role") || "admin").toLowerCase();
 
-    const body = await req.json();
-    const overrides = body?.overrides ?? {};
+    const bodyUnknown = (await req.json().catch(() => ({}))) as unknown;
+    const overrides = pickOverrides(bodyUnknown);
 
-    // TODO (opsional): validasi superadmin di sini jika kamu punya sesi/identitas user.
-    // misalnya baca header/cookie lalu cek ke database / middleware kamu.
+    // TODO (opsional): validasi superadmin di sini jika ada sesi user.
 
-    const { error } = await supabase.from(TABLE).upsert(
-      [
-        {
-          feature: FEATURE,
-          role,
-          overrides,
-          updated_at: new Date().toISOString(),
-        },
-      ],
-      { onConflict: "feature,role" }
-    );
+    const row = {
+      feature: FEATURE,
+      role,
+      overrides,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { error } = await supabase
+      .from(TABLE)
+      .upsert([row], { onConflict: "feature,role" });
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: String(e?.message || e) },
-      { status: 500 }
-    );
+  } catch (err: unknown) {
+    return NextResponse.json({ error: toErrorMessage(err) }, { status: 500 });
   }
 }
