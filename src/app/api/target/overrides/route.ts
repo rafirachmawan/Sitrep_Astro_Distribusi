@@ -1,8 +1,12 @@
 // app/api/target/overrides/route.ts
+import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-/** ==== Types (selaras dengan komponen Target) ==== */
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+// ===== Types selaras komponen Target =====
 type TargetOverrides = {
   copy?: {
     klaimTitle?: string;
@@ -16,32 +20,31 @@ type TargetOverrides = {
   extraPrincipals?: Record<string, { label: string }>;
 };
 
-/** ==== Utils ==== */
+const TABLE = "app_overrides";
+const FEATURE = "target";
+
+// ===== Helpers =====
 function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
-function isRecord(x: unknown): x is Record<string, unknown> {
-  return typeof x === "object" && x !== null;
+
+function getAdminClient() {
+  const url =
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+  if (!url) throw new Error("Missing SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL");
+  if (!serviceKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
+  return createClient(url, serviceKey);
 }
-function pickOverrides(x: unknown): TargetOverrides {
-  if (isRecord(x) && isRecord(x.overrides)) {
-    return x.overrides as TargetOverrides;
-  }
-  return {};
+
+function ensureOverridesPayload(x: unknown): TargetOverrides {
+  return x && typeof x === "object" ? (x as TargetOverrides) : {};
 }
 
-/** ==== Supabase server client ==== */
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  // gunakan SERVICE ROLE di server
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const TABLE = "app_overrides";
-const FEATURE = "target"; // bedakan feature lain (mis. 'checklist')
-
+// ===== Handlers =====
 export async function GET(req: NextRequest) {
   try {
+    const supabase = getAdminClient();
     const { searchParams } = new URL(req.url);
     const role = (searchParams.get("role") || "admin").toLowerCase();
 
@@ -65,13 +68,13 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
+    const supabase = getAdminClient();
     const { searchParams } = new URL(req.url);
     const role = (searchParams.get("role") || "admin").toLowerCase();
 
     const bodyUnknown = (await req.json().catch(() => ({}))) as unknown;
-    const overrides = pickOverrides(bodyUnknown);
-
-    // TODO (opsional): validasi superadmin di sini jika ada sesi user.
+    const incoming = (bodyUnknown as { overrides?: unknown })?.overrides;
+    const overrides = ensureOverridesPayload(incoming);
 
     const row = {
       feature: FEATURE,
@@ -82,7 +85,7 @@ export async function PUT(req: NextRequest) {
 
     const { error } = await supabase
       .from(TABLE)
-      .upsert([row], { onConflict: "feature,role" });
+      .upsert(row, { onConflict: "feature,role" });
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
