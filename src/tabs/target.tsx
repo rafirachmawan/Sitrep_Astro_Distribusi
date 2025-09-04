@@ -60,7 +60,7 @@ function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
   }
 }
 
-/* ===== local overrides ===== */
+/* ===== local overrides (tetap dipakai) ===== */
 function readOverrides(role: Role): TargetOverrides {
   if (typeof window === "undefined") return {};
   try {
@@ -114,6 +114,25 @@ function removeExtraPrincipal(
   const extras = { ...(src.extraPrincipals || {}) };
   delete extras[key];
   return { ...src, extraPrincipals: extras };
+}
+
+/* ====== SERVER SYNC untuk overrides (Supabase via API) ====== */
+async function fetchOverridesFromServer(role: Role): Promise<TargetOverrides> {
+  const res = await fetch(`/api/target/overrides?role=${role}`, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) throw new Error(`GET /target/overrides ${res.status}`);
+  const json = await res.json();
+  return (json?.overrides ?? {}) as TargetOverrides;
+}
+async function saveOverridesToServer(role: Role, overrides: TargetOverrides) {
+  const res = await fetch(`/api/target/overrides?role=${role}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ overrides }),
+  });
+  if (!res.ok) throw new Error(`PUT /target/overrides ${res.status}`);
 }
 
 /* ================= Baris FODKS (debounce) ================= */
@@ -266,6 +285,24 @@ export default function TargetAchievement({
   const [editMode, setEditMode] = useState(false);
   const [rev, setRev] = useState(0);
 
+  /* ==== sinkronisasi awal overrides dari SERVER → localStorage (per role) ==== */
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const remote = await fetchOverridesFromServer(viewRole);
+        if (!alive) return;
+        writeOverrides(viewRole, remote); // simpan ke local agar logic lama tetap jalan
+        setRev((x) => x + 1); // re-render supaya overrides terbaru terpakai
+      } catch (e) {
+        console.warn("Gagal memuat Target overrides dari server:", e);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [viewRole]);
+
   const overrides = useMemo(() => readOverrides(viewRole), [viewRole, rev]);
 
   const copy = {
@@ -292,14 +329,19 @@ export default function TargetAchievement({
     overrides.extraPrincipals?.[p]?.label ??
     p;
 
+  /* === save helpers: tulis ke local + push ke server === */
   const saveCopy = (k: CopyKeys, v: string) => {
     const cur = readOverrides(viewRole);
-    writeOverrides(viewRole, patchCopy(cur, k, v));
+    const next = patchCopy(cur, k, v);
+    writeOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
   };
   const savePrincipalLabel = (p: string, v: string) => {
     const cur = readOverrides(viewRole);
-    writeOverrides(viewRole, patchPrincipalLabel(cur, p, v));
+    const next = patchPrincipalLabel(cur, p, v);
+    writeOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
   };
   const resetOverrides = () => {
@@ -310,7 +352,9 @@ export default function TargetAchievement({
       )
     )
       return;
-    writeOverrides(viewRole, {});
+    const next: TargetOverrides = {};
+    writeOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
   };
 
@@ -333,7 +377,7 @@ export default function TargetAchievement({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(klaimMap), JSON.stringify(weeklyMap)]);
 
-  /* ====== LOAD dari server (tunggu accountId siap) ====== */
+  /* ====== LOAD dari server (checks) ====== */
   const [loadStatus, setLoadStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
   >("idle");
@@ -347,10 +391,6 @@ export default function TargetAchievement({
         accountId
       )}&period=${period}${altParam}`;
 
-      // Debug URL
-      // eslint-disable-next-line no-console
-      console.log("GET checks =>", url);
-
       const res = await fetch(url, {
         method: "GET",
         credentials: "include",
@@ -358,10 +398,6 @@ export default function TargetAchievement({
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as Partial<SavedChecks>;
-
-      // Debug response
-      // eslint-disable-next-line no-console
-      console.log("GET checks resp =", json);
 
       if (json.klaimSelesai) setKlaimMap(json.klaimSelesai);
       if (json.weekly) setWeeklyMap(json.weekly);
@@ -377,7 +413,7 @@ export default function TargetAchievement({
     loadFromServer();
   }, [loadFromServer]);
 
-  /* ====== SUBMIT (PUT) ====== */
+  /* ====== SUBMIT (PUT checks) ====== */
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
@@ -395,10 +431,6 @@ export default function TargetAchievement({
       const url = `/api/target/checks?accountId=${encodeURIComponent(
         accountId
       )}&period=${period}${altParam}`;
-
-      // Debug URL
-      // eslint-disable-next-line no-console
-      console.log("PUT checks =>", url, payload);
 
       const res = await fetch(url, {
         method: "PUT",
@@ -433,7 +465,9 @@ export default function TargetAchievement({
       return;
     }
     const cur = readOverrides(viewRole);
-    writeOverrides(viewRole, addExtraPrincipal(cur, k, lbl));
+    const next = addExtraPrincipal(cur, k, lbl);
+    writeOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
 
     setWeeklyMap((prev) => ({
@@ -447,7 +481,9 @@ export default function TargetAchievement({
     if (!isSuper) return;
     if (!confirm(`Hapus principal ${key}?`)) return;
     const cur = readOverrides(viewRole);
-    writeOverrides(viewRole, removeExtraPrincipal(cur, key));
+    const next = removeExtraPrincipal(cur, key);
+    writeOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next).catch(console.error);
     setRev((x) => x + 1);
   };
 
