@@ -261,7 +261,7 @@ export default function TargetAchievement({
 
   // Alt ID untuk kompatibilitas (mis. data lama tersimpan dengan UID)
   const altId: string | null = (() => {
-    if (FORCE_ACCOUNT_ID) return null; // jika paksa, ga perlu alt
+    if (FORCE_ACCOUNT_ID) return null;
     if (!email || !uid) return null;
     return accountId === email ? uid : email;
   })();
@@ -317,11 +317,12 @@ export default function TargetAchievement({
     deadlineLabel: overrides.copy?.deadlineLabel ?? "Deadline",
   };
 
-  /* ===== list principal: base + custom ===== */
+  /* ===== list principal: base + custom (dedup) ===== */
   const allPrincipals: string[] = useMemo(() => {
     const base = [...PRINCIPALS];
     const extras = Object.keys(overrides.extraPrincipals || {});
-    return [...base, ...extras];
+    const set = new Set([...base, ...extras]);
+    return Array.from(set);
   }, [overrides.extraPrincipals]);
 
   const principalLabel = (p: string) =>
