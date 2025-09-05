@@ -13,7 +13,7 @@ import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 
-/* ================= OVERRIDES (label UI lokal) ================= */
+/* ================= OVERRIDES (server-synced + local cache) ================= */
 type TargetOverrides = {
   copy?: {
     klaimTitle?: string;
@@ -40,7 +40,7 @@ type FodksItem = {
   createdAt?: string;
 };
 
-/* ====== Payload untuk server ====== */
+/* ====== Payload checks untuk server ====== */
 type SavedChecks = {
   klaimSelesai: Record<string, boolean>;
   weekly: Record<string, boolean[]>;
@@ -60,7 +60,7 @@ function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
   }
 }
 
-/* ===== local overrides (tetap dipakai) ===== */
+/* ===== local cache helpers ===== */
 function readOverrides(role: Role): TargetOverrides {
   if (typeof window === "undefined") return {};
   try {
@@ -284,24 +284,40 @@ export default function TargetAchievement({
 
   const [editMode, setEditMode] = useState(false);
   const [rev, setRev] = useState(0);
+  const [lastSync, setLastSync] = useState<string>("—");
 
-  /* ==== sinkronisasi awal overrides dari SERVER → localStorage (per role) ==== */
+  // helper: refetch overrides utk role tertentu dan tulis ke local cache
+  const refreshOverrides = useCallback(async (r: Role) => {
+    const remote = await fetchOverridesFromServer(r);
+    writeOverrides(r, remote);
+    setRev((x) => x + 1);
+    setLastSync(new Date().toLocaleString());
+    return remote;
+  }, []);
+
+  /* ==== sinkronisasi awal & saat tab kembali aktif ==== */
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const remote = await fetchOverridesFromServer(viewRole);
+        const remote = await refreshOverrides(viewRole);
         if (!alive) return;
-        writeOverrides(viewRole, remote); // simpan ke local agar logic lama tetap jalan
-        setRev((x) => x + 1); // re-render supaya overrides terbaru terpakai
+        // remote sudah ditulis ke local + re-render via rev
       } catch (e) {
         console.warn("Gagal memuat Target overrides dari server:", e);
       }
     })();
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        void refreshOverrides(viewRole);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
     return () => {
+      document.removeEventListener("visibilitychange", onVis);
       alive = false;
     };
-  }, [viewRole]);
+  }, [viewRole, refreshOverrides]);
 
   const overrides = useMemo(() => readOverrides(viewRole), [viewRole, rev]);
 
@@ -321,8 +337,7 @@ export default function TargetAchievement({
   const allPrincipals: string[] = useMemo(() => {
     const base = [...PRINCIPALS];
     const extras = Object.keys(overrides.extraPrincipals || {});
-    const set = new Set([...base, ...extras]);
-    return Array.from(set);
+    return Array.from(new Set([...base, ...extras]));
   }, [overrides.extraPrincipals]);
 
   const principalLabel = (p: string) =>
@@ -330,22 +345,20 @@ export default function TargetAchievement({
     overrides.extraPrincipals?.[p]?.label ??
     p;
 
-  /* === save helpers: tulis ke local + push ke server === */
-  const saveCopy = (k: CopyKeys, v: string) => {
+  /* === save helpers: tulis ke server, lalu refetch dari server === */
+  const saveCopy = async (k: CopyKeys, v: string) => {
     const cur = readOverrides(viewRole);
     const next = patchCopy(cur, k, v);
-    writeOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
-    setRev((x) => x + 1);
+    await saveOverridesToServer(viewRole, next);
+    await refreshOverrides(viewRole);
   };
-  const savePrincipalLabel = (p: string, v: string) => {
+  const savePrincipalLabel = async (p: string, v: string) => {
     const cur = readOverrides(viewRole);
     const next = patchPrincipalLabel(cur, p, v);
-    writeOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
-    setRev((x) => x + 1);
+    await saveOverridesToServer(viewRole, next);
+    await refreshOverrides(viewRole);
   };
-  const resetOverrides = () => {
+  const resetOverrides = async () => {
     if (!isSuper) return;
     if (
       !confirm(
@@ -354,9 +367,8 @@ export default function TargetAchievement({
     )
       return;
     const next: TargetOverrides = {};
-    writeOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
-    setRev((x) => x + 1);
+    await saveOverridesToServer(viewRole, next);
+    await refreshOverrides(viewRole);
   };
 
   /* ====== STATE LOKAL CHECKLIST ====== */
@@ -384,14 +396,13 @@ export default function TargetAchievement({
   >("idle");
 
   const loadFromServer = useCallback(async () => {
-    if (!accountId) return; // tunggu auth siap
+    if (!accountId) return;
     try {
       setLoadStatus("loading");
       const altParam = altId ? `&altId=${encodeURIComponent(altId)}` : "";
       const url = `/api/target/checks?accountId=${encodeURIComponent(
         accountId
       )}&period=${period}${altParam}`;
-
       const res = await fetch(url, {
         method: "GET",
         credentials: "include",
@@ -399,7 +410,6 @@ export default function TargetAchievement({
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as Partial<SavedChecks>;
-
       if (json.klaimSelesai) setKlaimMap(json.klaimSelesai);
       if (json.weekly) setWeeklyMap(json.weekly);
       if (json.fodksList) setFodksListLocal(json.fodksList);
@@ -440,10 +450,9 @@ export default function TargetAchievement({
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 1500);
-      await loadFromServer(); // refresh agar state sama dgn DB
+      await loadFromServer();
     } catch (err) {
       console.error("PUT /api/target/checks error:", err);
       setSaveStatus("error");
@@ -451,7 +460,7 @@ export default function TargetAchievement({
   };
 
   /* ===== tambah/hapus principal (superadmin saja) ===== */
-  const addPrincipal = (key: string, label: string) => {
+  const addPrincipal = async (key: string, label: string) => {
     if (!isSuper) return;
     const k = key.trim();
     const lbl = label.trim();
@@ -467,10 +476,8 @@ export default function TargetAchievement({
     }
     const cur = readOverrides(viewRole);
     const next = addExtraPrincipal(cur, k, lbl);
-    writeOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
-    setRev((x) => x + 1);
-
+    await saveOverridesToServer(viewRole, next);
+    await refreshOverrides(viewRole);
     setWeeklyMap((prev) => ({
       ...prev,
       [k]: prev[k] ?? [false, false, false, false],
@@ -478,20 +485,18 @@ export default function TargetAchievement({
     setKlaimMap((prev) => ({ ...prev, [k]: prev[k] ?? false }));
   };
 
-  const removePrincipal = (key: string) => {
+  const removePrincipal = async (key: string) => {
     if (!isSuper) return;
     if (!confirm(`Hapus principal ${key}?`)) return;
     const cur = readOverrides(viewRole);
     const next = removeExtraPrincipal(cur, key);
-    writeOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
-    setRev((x) => x + 1);
+    await saveOverridesToServer(viewRole, next);
+    await refreshOverrides(viewRole);
   };
 
   /* ===== toggle helpers ===== */
   const toggleKlaim = (p: string) =>
     setKlaimMap((prev) => ({ ...prev, [p]: !prev[p] }));
-
   const toggleWeekly = (p: string, w: number) =>
     setWeeklyMap((prev) => {
       const arr = prev[p] ? [...prev[p]] : [false, false, false, false];
@@ -643,23 +648,21 @@ export default function TargetAchievement({
                 >
                   Reset Label
                 </button>
+                <span className="ml-2 text-[11px] text-slate-500">
+                  viewRole: <b>{viewRole}</b> • sync: {lastSync}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void refreshOverrides(viewRole)}
+                  className="text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                  title="Paksa refresh dari server"
+                >
+                  Refresh
+                </button>
               </>
             )}
           </div>
         </div>
-
-        {showDebug && (
-          <div className="px-3 sm:px-6 py-2 text-[11px] text-slate-600 bg-amber-50 border-b">
-            <div>
-              <b>DEBUG</b> • accountId: <code>{String(accountId)}</code> •
-              altId: <code>{String(altId)}</code> • period:{" "}
-              <code>{period}</code>{" "}
-              {typeof window !== "undefined" && FORCE_ACCOUNT_ID ? (
-                <span> • FORCED ✅</span>
-              ) : null}
-            </div>
-          </div>
-        )}
 
         {/* ===== Bagian 1: Klaim selesai ===== */}
         <div className="p-3 sm:p-6">
@@ -667,7 +670,7 @@ export default function TargetAchievement({
             {editMode ? (
               <input
                 defaultValue={copy.klaimTitle}
-                onBlur={(e) => saveCopy("klaimTitle", e.target.value)}
+                onBlur={(e) => void saveCopy("klaimTitle", e.target.value)}
                 className="w-full max-w-[420px] rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                 placeholder="Judul bagian klaim…"
               />
@@ -699,7 +702,7 @@ export default function TargetAchievement({
                             <input
                               defaultValue={principalLabel(p)}
                               onBlur={(e) =>
-                                savePrincipalLabel(p, e.target.value)
+                                void savePrincipalLabel(p, e.target.value)
                               }
                               className="w-full rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                               placeholder={`Nama principal untuk ${p}`}
@@ -707,7 +710,7 @@ export default function TargetAchievement({
                             {overrides.extraPrincipals?.[p] && isSuper && (
                               <button
                                 type="button"
-                                onClick={() => removePrincipal(p)}
+                                onClick={() => void removePrincipal(p)}
                                 className="px-2 py-1 rounded-md bg-rose-600 text-white"
                               >
                                 <Trash2 className="h-4 w-4" />
@@ -784,7 +787,7 @@ export default function TargetAchievement({
           {editMode ? (
             <input
               defaultValue={copy.weeklyTitle}
-              onBlur={(e) => saveCopy("weeklyTitle", e.target.value)}
+              onBlur={(e) => void saveCopy("weeklyTitle", e.target.value)}
               className="w-full max-w-[520px] rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
               placeholder="Judul bagian mingguan…"
             />
@@ -815,7 +818,9 @@ export default function TargetAchievement({
                       {editMode ? (
                         <input
                           defaultValue={principalLabel(p)}
-                          onBlur={(e) => savePrincipalLabel(p, e.target.value)}
+                          onBlur={(e) =>
+                            void savePrincipalLabel(p, e.target.value)
+                          }
                           className="w-full rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                           placeholder={`Nama principal untuk ${p}`}
                         />
@@ -862,7 +867,7 @@ export default function TargetAchievement({
                         {overrides.extraPrincipals?.[p] && (
                           <button
                             type="button"
-                            onClick={() => removePrincipal(p)}
+                            onClick={() => void removePrincipal(p)}
                             className="px-2 py-1 rounded-md bg-rose-600 text-white"
                           >
                             <Trash2 className="h-4 w-4" />
@@ -890,7 +895,7 @@ export default function TargetAchievement({
           {editMode ? (
             <input
               defaultValue={copy.fodksTitle}
-              onBlur={(e) => saveCopy("fodksTitle", e.target.value)}
+              onBlur={(e) => void saveCopy("fodksTitle", e.target.value)}
               className="w-full max-w-[420px] rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
               placeholder="Judul bagian…"
             />
