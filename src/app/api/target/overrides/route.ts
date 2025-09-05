@@ -1,12 +1,15 @@
 // app/api/target/overrides/route.ts
-import "server-only";
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
+/** =========================================
+ * Wajib env ini terpasang:
+ * - NEXT_PUBLIC_SUPABASE_URL
+ * - SUPABASE_SERVICE_ROLE_KEY  (service_role key)
+ * ========================================= */
 export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
+export const revalidate = 0;
 
-// ===== Types selaras komponen Target =====
 type TargetOverrides = {
   copy?: {
     klaimTitle?: string;
@@ -20,34 +23,45 @@ type TargetOverrides = {
   extraPrincipals?: Record<string, { label: string }>;
 };
 
+type AppOverridesRow = {
+  feature: string;
+  role: string;
+  overrides: TargetOverrides;
+  updated_at: string;
+};
+
 const TABLE = "app_overrides";
 const FEATURE = "target";
 
-// ===== Helpers =====
-function toErrorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+function json(data: unknown, status = 200) {
+  return new NextResponse(JSON.stringify(data), {
+    status,
+    headers: {
+      "content-type": "application/json",
+      "cache-control": "no-store",
+    },
+  });
 }
 
-function getAdminClient() {
-  const url =
-    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
-  if (!url) throw new Error("Missing SUPABASE_URL/NEXT_PUBLIC_SUPABASE_URL");
-  if (!serviceKey) throw new Error("Missing SUPABASE_SERVICE_ROLE_KEY");
-  return createClient(url, serviceKey);
+function getAdminClient(): SupabaseClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceRole = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceRole) {
+    throw new Error(
+      "Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY"
+    );
+  }
+  return createClient(url, serviceRole);
 }
 
-function ensureOverridesPayload(x: unknown): TargetOverrides {
-  return x && typeof x === "object" ? (x as TargetOverrides) : {};
-}
-
-// ===== Handlers =====
 export async function GET(req: NextRequest) {
   try {
-    const supabase = getAdminClient();
     const { searchParams } = new URL(req.url);
     const role = (searchParams.get("role") || "admin").toLowerCase();
 
+    const supabase = getAdminClient();
+
+    // Tanpa generic pada `.from()`, tiping di hasil saja:
     const { data, error } = await supabase
       .from(TABLE)
       .select("overrides")
@@ -55,44 +69,43 @@ export async function GET(req: NextRequest) {
       .eq("role", role)
       .maybeSingle();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    if (error) return json({ error: error.message }, 500);
 
     const overrides = (data?.overrides ?? {}) as TargetOverrides;
-    return NextResponse.json({ overrides });
-  } catch (err: unknown) {
-    return NextResponse.json({ error: toErrorMessage(err) }, { status: 500 });
+    return json({ overrides });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return json({ error: msg }, 500);
   }
 }
 
 export async function PUT(req: NextRequest) {
   try {
-    const supabase = getAdminClient();
     const { searchParams } = new URL(req.url);
     const role = (searchParams.get("role") || "admin").toLowerCase();
 
-    const bodyUnknown = (await req.json().catch(() => ({}))) as unknown;
-    const incoming = (bodyUnknown as { overrides?: unknown })?.overrides;
-    const overrides = ensureOverridesPayload(incoming);
+    const body = (await req.json()) as { overrides?: TargetOverrides };
+    const overrides: TargetOverrides = body?.overrides ?? {};
 
-    const row = {
+    const row: AppOverridesRow = {
       feature: FEATURE,
       role,
       overrides,
       updated_at: new Date().toISOString(),
     };
 
+    const supabase = getAdminClient();
+
+    // Juga tanpa generic di sini:
     const { error } = await supabase
       .from(TABLE)
-      .upsert(row, { onConflict: "feature,role" });
+      .upsert([row], { onConflict: "feature,role" });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
+    if (error) return json({ error: error.message }, 500);
 
-    return NextResponse.json({ ok: true });
-  } catch (err: unknown) {
-    return NextResponse.json({ error: toErrorMessage(err) }, { status: 500 });
+    return json({ ok: true });
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return json({ error: msg }, 500);
   }
 }
