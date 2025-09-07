@@ -25,6 +25,8 @@ type TargetOverrides = {
   };
   principals?: Record<string, { label?: string }>;
   extraPrincipals?: Record<string, { label: string }>;
+  /** ⬇️ deadines ikut disimpan di server (per role) */
+  deadlines?: TargetDeadlines;
 };
 
 const OV_KEY = "sitrep-target-copy-v2";
@@ -60,12 +62,16 @@ function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
   }
 }
 
-/* ===== local cache helpers ===== */
+/* ===== local cache (tanpa any) ===== */
 function readOverrides(role: Role): TargetOverrides {
   if (typeof window === "undefined") return {};
   try {
     const raw = localStorage.getItem(`${OV_KEY}:${role}`);
-    return raw ? (JSON.parse(raw) as TargetOverrides) : {};
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    return (
+      parsed && typeof parsed === "object" ? parsed : {}
+    ) as TargetOverrides;
   } catch {
     return {};
   }
@@ -74,20 +80,18 @@ function writeOverrides(role: Role, v: TargetOverrides) {
   if (typeof window === "undefined") return;
   localStorage.setItem(`${OV_KEY}:${role}`, JSON.stringify(v));
 }
+
 type CopyShape = NonNullable<TargetOverrides["copy"]>;
 type CopyKeys = keyof Required<CopyShape>;
+
 function patchCopy(
   src: TargetOverrides,
   key: CopyKeys,
   value: string
 ): TargetOverrides {
-  const copyMap = { ...(src.copy || {}) } as Record<
-    CopyKeys,
-    string | undefined
-  >;
-  copyMap[key] = value;
-  const copy: TargetOverrides["copy"] = copyMap;
-  return { ...src, copy };
+  const copyMap: CopyShape = { ...(src.copy || {}) };
+  (copyMap as Record<string, string | undefined>)[key as string] = value;
+  return { ...src, copy: copyMap };
 }
 function patchPrincipalLabel(
   src: TargetOverrides,
@@ -116,6 +120,54 @@ function removeExtraPrincipal(
   return { ...src, extraPrincipals: extras };
 }
 
+/* ======== KUNCI PRINCIPAL & DEADLINES (fix error ts7053) ======== */
+/** ambil union key langsung dari tipe deadlines kamu */
+type PKey = Extract<keyof TargetDeadlines["klaim"], string>;
+/** array principal base bertipe literal union */
+const BASE_P = PRINCIPALS as readonly string[] as readonly PKey[];
+/** type-guard: apakah string termasuk principal base */
+function isBasePrincipal(k: string): k is PKey {
+  return (BASE_P as readonly string[]).includes(k);
+}
+/** map default berisi "" utk semua principal base */
+function blankPrincipalMap(): Record<PKey, string> {
+  const acc = {} as Record<PKey, string>;
+  for (const k of BASE_P) acc[k] = "";
+  return acc;
+}
+
+/** patch deadline tipe-safe */
+function patchDeadlines(
+  src: TargetOverrides,
+  scope: keyof TargetDeadlines,
+  value: string,
+  p?: PKey
+): TargetOverrides {
+  const cur: TargetDeadlines = {
+    klaim: {
+      ...blankPrincipalMap(),
+      ...(src.deadlines?.klaim ?? {}),
+    } as Record<PKey, string>,
+    weekly: {
+      ...blankPrincipalMap(),
+      ...(src.deadlines?.weekly ?? {}),
+    } as Record<PKey, string>,
+    targetSelesai: src.deadlines?.targetSelesai ?? "",
+    fodks: src.deadlines?.fodks ?? "",
+  };
+
+  if (scope === "klaim" && p) {
+    (cur.klaim as Record<PKey, string>)[p] = value;
+  } else if (scope === "weekly" && p) {
+    (cur.weekly as Record<PKey, string>)[p] = value;
+  } else if (scope === "targetSelesai") {
+    cur.targetSelesai = value;
+  } else if (scope === "fodks") {
+    cur.fodks = value;
+  }
+  return { ...src, deadlines: cur };
+}
+
 /* ====== SERVER SYNC untuk overrides (Supabase via API) ====== */
 async function fetchOverridesFromServer(role: Role): Promise<TargetOverrides> {
   const res = await fetch(`/api/target/overrides?role=${role}`, {
@@ -123,8 +175,8 @@ async function fetchOverridesFromServer(role: Role): Promise<TargetOverrides> {
     headers: { Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`GET /target/overrides ${res.status}`);
-  const json = await res.json();
-  return (json?.overrides ?? {}) as TargetOverrides;
+  const json = (await res.json()) as { overrides?: TargetOverrides };
+  return json.overrides ?? {};
 }
 async function saveOverridesToServer(role: Role, overrides: TargetOverrides) {
   const res = await fetch(`/api/target/overrides?role=${role}`, {
@@ -185,9 +237,9 @@ const FodksRow = React.memo(function FodksRow({
           }`}
           placeholder="Tuliskan FODKS apa yang diinput…"
           value={name}
-          onChange={(e) => {
-            setName(e.target.value);
-            schedule({ name: e.target.value });
+          onChange={(ev) => {
+            setName(ev.target.value);
+            schedule({ name: ev.target.value });
           }}
         />
         <div className="mt-1 text-[11px] text-slate-500">
@@ -206,9 +258,9 @@ const FodksRow = React.memo(function FodksRow({
           }`}
           placeholder="Keterangan (opsional)…"
           value={note}
-          onChange={(e) => {
-            setNote(e.target.value);
-            schedule({ note: e.target.value });
+          onChange={(ev) => {
+            setNote(ev.target.value);
+            schedule({ note: ev.target.value });
           }}
         />
       </td>
@@ -288,27 +340,30 @@ export default function TargetAchievement({
   const viewRole = (isSuper ? targetRole : (role as Role)) || "admin";
 
   const [editMode, setEditMode] = useState(false);
-  const [rev, setRev] = useState(0);
   const [lastSync, setLastSync] = useState<string>("—");
   const [saveError, setSaveError] = useState<string>("");
+
+  /** ✅ Simpan overrides di state (tanpa 'rev') */
+  const [overrides, setOverrides] = useState<TargetOverrides>({});
 
   // helper: refetch overrides utk role tertentu dan tulis ke local cache
   const refreshOverrides = useCallback(async (r: Role) => {
     const remote = await fetchOverridesFromServer(r);
     writeOverrides(r, remote);
-    setRev((x) => x + 1);
+    setOverrides(remote);
     setLastSync(new Date().toLocaleString());
     return remote;
   }, []);
 
   /* ==== sinkronisasi awal & saat tab kembali aktif ==== */
   useEffect(() => {
-    let alive = true;
+    // baca cache dulu biar cepat render
+    setOverrides(readOverrides(viewRole));
     (async () => {
       try {
         await refreshOverrides(viewRole);
-      } catch (e) {
-        console.warn("Gagal memuat Target overrides dari server:", e);
+      } catch {
+        // diamkan; UI tetap jalan dgn cache
       }
     })();
     const onVis = () => {
@@ -319,11 +374,8 @@ export default function TargetAchievement({
     document.addEventListener("visibilitychange", onVis);
     return () => {
       document.removeEventListener("visibilitychange", onVis);
-      alive = false;
     };
   }, [viewRole, refreshOverrides]);
-
-  const overrides = useMemo(() => readOverrides(viewRole), [viewRole, rev]);
 
   const copy = {
     klaimTitle: overrides.copy?.klaimTitle ?? "Penyelesaian Klaim Bulan Ini",
@@ -353,11 +405,11 @@ export default function TargetAchievement({
   const doSave = async (next: TargetOverrides) => {
     setSaveError("");
     writeOverrides(viewRole, next); // optimistik
-    setRev((x) => x + 1);
+    setOverrides(next);
     try {
       await saveOverridesToServer(viewRole, next);
       await refreshOverrides(viewRole);
-    } catch (e: unknown) {
+    } catch {
       setSaveError("Gagal menyimpan ke server.");
       // rollback ke server state terbaru
       await refreshOverrides(viewRole);
@@ -385,10 +437,10 @@ export default function TargetAchievement({
 
   /* ====== STATE LOKAL CHECKLIST ====== */
   const [klaimMap, setKlaimMap] = useState<Record<string, boolean>>(
-    (data.klaimSelesai as unknown as Record<string, boolean>) || {}
+    data.klaimSelesai || {}
   );
   const [weeklyMap, setWeeklyMap] = useState<Record<string, boolean[]>>(
-    (data.weekly as unknown as Record<string, boolean[]>) || {}
+    data.weekly || {}
   );
   const [fodksListLocal, setFodksListLocal] = useState<FodksItem[]>([]);
 
@@ -396,8 +448,8 @@ export default function TargetAchievement({
   useEffect(() => {
     onChange({
       ...data,
-      klaimSelesai: klaimMap as unknown as TargetState["klaimSelesai"],
-      weekly: weeklyMap as unknown as TargetState["weekly"],
+      klaimSelesai: klaimMap,
+      weekly: weeklyMap,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(klaimMap), JSON.stringify(weeklyMap)]);
@@ -426,8 +478,7 @@ export default function TargetAchievement({
       if (json.weekly) setWeeklyMap(json.weekly);
       if (json.fodksList) setFodksListLocal(json.fodksList);
       setLoadStatus("loaded");
-    } catch (err) {
-      console.error("GET /api/target/checks error:", err);
+    } catch {
       setLoadStatus("error");
     }
   }, [accountId, altId, period]);
@@ -465,8 +516,7 @@ export default function TargetAchievement({
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 1500);
       await loadFromServer();
-    } catch (err) {
-      console.error("PUT /api/target/checks error:", err);
+    } catch {
       setSaveStatus("error");
     }
   };
@@ -512,40 +562,29 @@ export default function TargetAchievement({
       return { ...prev, [p]: arr };
     });
 
-  /* ===== deadline (edit superadmin, persist via parent) ===== */
+  /* ===== deadline (superadmin, persist ke server via overrides) ===== */
   type DeadlineScope = keyof TargetDeadlines;
-  const setDeadline = (scope: DeadlineScope, value: string, p?: string) => {
+  const setDeadline = async (scope: DeadlineScope, value: string, p?: PKey) => {
     if (!isSuper) return;
-    const next: TargetDeadlines = { ...data.deadlines };
-    if (scope === "klaim" && p) {
-      const map = { ...(next.klaim as unknown as Record<string, string>) };
-      map[p] = value;
-      next.klaim = map as unknown as TargetDeadlines["klaim"];
-    } else if (scope === "weekly" && p) {
-      const map = { ...(next.weekly as unknown as Record<string, string>) };
-      map[p] = value;
-      next.weekly = map as unknown as TargetDeadlines["weekly"];
-    } else if (scope === "targetSelesai") {
-      next.targetSelesai = value;
-    } else if (scope === "fodks") {
-      next.fodks = value;
-    }
-    onChange({ ...data, deadlines: next });
+    const cur = readOverrides(viewRole);
+    const next = patchDeadlines(cur, scope, value, p);
+    await doSave(next);
+
+    // update parent (opsional, supaya state di halaman ini konsisten)
+    onChange({
+      ...data,
+      deadlines: next.deadlines || data.deadlines,
+    });
   };
 
-  const getDeadline = (scope: DeadlineScope, p?: string): string => {
-    if (scope === "klaim" && p) {
-      return (
-        (data.deadlines.klaim as unknown as Record<string, string>)[p] ?? ""
-      );
-    }
-    if (scope === "weekly" && p) {
-      return (
-        (data.deadlines.weekly as unknown as Record<string, string>)[p] ?? ""
-      );
-    }
-    if (scope === "targetSelesai") return data.deadlines.targetSelesai ?? "";
-    if (scope === "fodks") return data.deadlines.fodks ?? "";
+  const getDeadline = (scope: DeadlineScope, p?: PKey): string => {
+    const d = overrides.deadlines;
+    if (scope === "klaim" && p)
+      return (d?.klaim as Record<PKey, string> | undefined)?.[p] ?? "";
+    if (scope === "weekly" && p)
+      return (d?.weekly as Record<PKey, string> | undefined)?.[p] ?? "";
+    if (scope === "targetSelesai") return d?.targetSelesai ?? "";
+    if (scope === "fodks") return d?.fodks ?? "";
     return "";
   };
 
@@ -632,7 +671,7 @@ export default function TargetAchievement({
                 <select
                   className="rounded-xl border-2 border-slate-300 text-sm bg-white px-2 py-1 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                   value={targetRole}
-                  onChange={(e) => setTargetRole(e.target.value as Role)}
+                  onChange={(ev) => setTargetRole(ev.target.value as Role)}
                 >
                   {ROLES.map((r) => (
                     <option key={r} value={r}>
@@ -645,7 +684,7 @@ export default function TargetAchievement({
                     type="checkbox"
                     className="h-4 w-4 accent-blue-600"
                     checked={editMode}
-                    onChange={(e) => setEditMode(e.target.checked)}
+                    onChange={(ev) => setEditMode(ev.target.checked)}
                   />
                   Mode Edit
                 </label>
@@ -684,7 +723,7 @@ export default function TargetAchievement({
             {editMode ? (
               <input
                 defaultValue={copy.klaimTitle}
-                onBlur={(e) => void saveCopy("klaimTitle", e.target.value)}
+                onBlur={(ev) => void saveCopy("klaimTitle", ev.target.value)}
                 className="w-full max-w-[420px] rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                 placeholder="Judul bagian klaim…"
               />
@@ -711,14 +750,15 @@ export default function TargetAchievement({
               <tbody className="divide-y border rounded-xl bg-white">
                 {allPrincipals.map((p) => {
                   const checked = klaimMap[p] || false;
+                  const isBase = isBasePrincipal(p);
                   return (
                     <tr key={p}>
                       <td className="py-3 px-2 font-medium text-slate-800">
                         {editMode ? (
                           <input
                             defaultValue={principalLabel(p)}
-                            onBlur={(e) =>
-                              void savePrincipalLabel(p, e.target.value)
+                            onBlur={(ev) =>
+                              void savePrincipalLabel(p, ev.target.value)
                             }
                             className="w-full rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                             placeholder={`Nama principal untuk ${p}`}
@@ -731,15 +771,16 @@ export default function TargetAchievement({
                       <td className="py-3 px-2">
                         <input
                           type="date"
-                          disabled={!isSuper}
+                          disabled={!isSuper || !isBase}
                           className={`w-full rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
-                            !isSuper
+                            !isSuper || !isBase
                               ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
                               : ""
                           }`}
-                          value={getDeadline("klaim", p)}
-                          onChange={(e) =>
-                            setDeadline("klaim", e.target.value, p)
+                          value={isBase ? getDeadline("klaim", p) : ""}
+                          onChange={(ev) =>
+                            isBase &&
+                            void setDeadline("klaim", ev.target.value, p)
                           }
                         />
                       </td>
@@ -748,12 +789,12 @@ export default function TargetAchievement({
                         className="py-3 px-2"
                         role="button"
                         tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={(ev) => {
+                          ev.stopPropagation();
                           toggleKlaim(p);
                         }}
-                        onKeyDown={(e) =>
-                          handleKeyActivate(e, () => toggleKlaim(p))
+                        onKeyDown={(ev) =>
+                          handleKeyActivate(ev, () => toggleKlaim(p))
                         }
                         style={{ userSelect: "none", cursor: "pointer" }}
                         aria-label={`Toggle selesai ${principalLabel(p)}`}
@@ -764,8 +805,8 @@ export default function TargetAchievement({
                             className="h-5 w-5 accent-blue-600"
                             checked={checked}
                             readOnly
-                            onClick={(e) => {
-                              e.stopPropagation();
+                            onClick={(ev) => {
+                              ev.stopPropagation();
                               toggleKlaim(p);
                             }}
                           />
@@ -805,7 +846,7 @@ export default function TargetAchievement({
           {editMode ? (
             <input
               defaultValue={copy.weeklyTitle}
-              onBlur={(e) => void saveCopy("weeklyTitle", e.target.value)}
+              onBlur={(ev) => void saveCopy("weeklyTitle", ev.target.value)}
               className="w-full max-w-[520px] rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
               placeholder="Judul bagian mingguan…"
             />
@@ -836,8 +877,8 @@ export default function TargetAchievement({
                       {editMode ? (
                         <input
                           defaultValue={principalLabel(p)}
-                          onBlur={(e) =>
-                            void savePrincipalLabel(p, e.target.value)
+                          onBlur={(ev) =>
+                            void savePrincipalLabel(p, ev.target.value)
                           }
                           className="w-full rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
                           placeholder={`Nama principal untuk ${p}`}
@@ -853,12 +894,12 @@ export default function TargetAchievement({
                         className="py-3 px-2"
                         role="button"
                         tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                        onClick={(ev) => {
+                          ev.stopPropagation();
                           toggleWeekly(p, w);
                         }}
-                        onKeyDown={(e) =>
-                          handleKeyActivate(e, () => toggleWeekly(p, w))
+                        onKeyDown={(ev) =>
+                          handleKeyActivate(ev, () => toggleWeekly(p, w))
                         }
                         style={{ userSelect: "none", cursor: "pointer" }}
                         aria-label={`Toggle minggu ${
@@ -871,8 +912,8 @@ export default function TargetAchievement({
                             className="h-5 w-5 accent-blue-600"
                             checked={weeklyRow[w]}
                             readOnly
-                            onClick={(e) => {
-                              e.stopPropagation();
+                            onClick={(ev) => {
+                              ev.stopPropagation();
                               toggleWeekly(p, w);
                             }}
                           />
@@ -913,7 +954,7 @@ export default function TargetAchievement({
           {editMode ? (
             <input
               defaultValue={copy.fodksTitle}
-              onBlur={(e) => void saveCopy("fodksTitle", e.target.value)}
+              onBlur={(ev) => void saveCopy("fodksTitle", ev.target.value)}
               className="w-full max-w-[420px] rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
               placeholder="Judul bagian…"
             />
@@ -927,7 +968,7 @@ export default function TargetAchievement({
             type="button"
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => handleKeyActivate(e, addFodksItem)}
+            onKeyDown={(ev) => handleKeyActivate(ev, addFodksItem)}
             onClick={addFodksItem}
             className="pointer-events-auto relative z-10 select-none inline-flex items-center gap-2 px-4 py-3 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100"
             style={{ touchAction: "manipulation" }}
@@ -983,6 +1024,12 @@ export default function TargetAchievement({
           </table>
         </div>
       </div>
+
+      {showDebug && (
+        <pre className="text-xs bg-slate-50 p-3 rounded-xl border overflow-x-auto">
+          {JSON.stringify({ viewRole, overrides }, null, 2)}
+        </pre>
+      )}
     </div>
   );
 }
@@ -1004,13 +1051,13 @@ function AddPrincipalForm({
       <div className="flex flex-col sm:flex-row gap-2">
         <input
           value={key}
-          onChange={(e) => setKey(e.target.value)}
+          onChange={(ev) => setKey(ev.target.value)}
           className="rounded-2xl border-2 border-blue-200 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
           placeholder="Key unik (contoh: p_klaim-baru)"
         />
         <input
           value={label}
-          onChange={(e) => setLabel(e.target.value)}
+          onChange={(ev) => setLabel(ev.target.value)}
           className="rounded-2xl border-2 border-blue-200 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
           placeholder="Label tampilan"
         />
