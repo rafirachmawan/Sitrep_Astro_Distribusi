@@ -1,73 +1,106 @@
-// app/api/target/checks/route.ts
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { getSupabaseServer } from "@/lib/supabaseServer";
 
-export const dynamic = "force-dynamic";
-
-function ok<T>(data: T, init?: number) {
-  return NextResponse.json(data, { status: init ?? 200 });
-}
-function bad(msg: string, code = 400) {
-  return NextResponse.json({ error: msg }, { status: code });
-}
-
+// GET /api/target/checks?accountId=a@b.com&period=2025-09&altId=uidOptional
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const accountId = url.searchParams.get("accountId");
-  const period = url.searchParams.get("period");
-  const altId = url.searchParams.get("altId");
+  try {
+    const { searchParams } = new URL(req.url);
+    const accountId = searchParams.get("accountId");
+    const period = searchParams.get("period");
+    const altId = searchParams.get("altId");
 
-  if (!accountId || !period) return bad("Missing accountId/period");
+    if (!accountId || !period) {
+      return NextResponse.json(
+        { error: "Missing accountId/period" },
+        { status: 400 }
+      );
+    }
 
-  const supa = getSupabaseAdmin();
+    const supa = getSupabaseServer();
 
-  // Cari dengan accountId utama dulu, fallback ke altId jika ada
-  const { data, error } = await supa
-    .from("target_checks")
-    .select("data")
-    .eq("account_id", accountId)
-    .eq("period", period)
-    .maybeSingle();
-
-  if (error) return bad(error.message, 500);
-
-  if (!data && altId) {
-    const { data: altData, error: err2 } = await supa
+    const { data: rowMain, error: errMain } = await supa
       .from("target_checks")
-      .select("data")
-      .eq("account_id", altId)
+      .select("*")
+      .eq("account_id", accountId)
       .eq("period", period)
       .maybeSingle();
-    if (err2) return bad(err2.message, 500);
-    return ok(altData ?? { data: {} });
-  }
 
-  return ok(data ?? { data: {} });
+    if (errMain) throw errMain;
+
+    if (rowMain) {
+      return NextResponse.json({
+        klaimSelesai: rowMain.klaim_selesai ?? {},
+        weekly: rowMain.weekly ?? {},
+        fodksList: rowMain.fodks_list ?? [],
+      });
+    }
+
+    if (altId) {
+      const { data: rowAlt, error: errAlt } = await supa
+        .from("target_checks")
+        .select("*")
+        .eq("account_id", altId)
+        .eq("period", period)
+        .maybeSingle();
+
+      if (errAlt) throw errAlt;
+
+      if (rowAlt) {
+        return NextResponse.json({
+          klaimSelesai: rowAlt.klaim_selesai ?? {},
+          weekly: rowAlt.weekly ?? {},
+          fodksList: rowAlt.fodks_list ?? [],
+        });
+      }
+    }
+
+    return NextResponse.json({ klaimSelesai: {}, weekly: {}, fodksList: [] });
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: String(e?.message || e) },
+      { status: 500 }
+    );
+  }
 }
 
+// PUT /api/target/checks?accountId=a@b.com&period=2025-09
+// body: { klaimSelesai, weekly, fodksList }
 export async function PUT(req: Request) {
-  const url = new URL(req.url);
-  const accountId = url.searchParams.get("accountId");
-  const period = url.searchParams.get("period");
-  if (!accountId || !period) return bad("Missing accountId/period");
+  try {
+    const { searchParams } = new URL(req.url);
+    const accountId = searchParams.get("accountId");
+    const period = searchParams.get("period");
+    if (!accountId || !period) {
+      return NextResponse.json(
+        { error: "Missing accountId/period" },
+        { status: 400 }
+      );
+    }
 
-  const body = await req.json().catch(() => ({}));
-  const payload = {
-    klaimSelesai: body?.klaimSelesai ?? {},
-    weekly: body?.weekly ?? {},
-    fodksList: body?.fodksList ?? [],
-  };
+    const body = await req.json();
+    const klaimSelesai = body?.klaimSelesai ?? {};
+    const weekly = body?.weekly ?? {};
+    const fodksList = body?.fodksList ?? [];
 
-  const supa = getSupabaseAdmin();
-  const { error } = await supa.from("target_checks").upsert(
-    {
-      account_id: accountId,
-      period,
-      data: payload,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "account_id,period" }
-  );
-  if (error) return bad(error.message, 500);
-  return ok({ ok: true });
+    const supa = getSupabaseServer();
+    const { error } = await supa.from("target_checks").upsert(
+      {
+        account_id: accountId,
+        period,
+        klaim_selesai: klaimSelesai,
+        weekly,
+        fodks_list: fodksList,
+      },
+      { onConflict: "account_id,period" }
+    );
+
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: String(e?.message || e) },
+      { status: 500 }
+    );
+  }
 }

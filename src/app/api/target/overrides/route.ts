@@ -1,57 +1,58 @@
-// app/api/target/overrides/route.ts
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import { getSupabaseServer } from "@/lib/supabaseServer";
 
-export const dynamic = "force-dynamic";
-
-function ok<T>(data: T, init?: number) {
-  return NextResponse.json(data, { status: init ?? 200 });
-}
-function bad(msg: string, code = 400) {
-  return NextResponse.json({ error: msg }, { status: code });
-}
-
+// GET /api/target/overrides?role=sales
 export async function GET(req: Request) {
-  const url = new URL(req.url);
-  const role = url.searchParams.get("role");
-  if (!role) return bad("Missing role");
+  try {
+    const { searchParams } = new URL(req.url);
+    const role = searchParams.get("role");
+    if (!role)
+      return NextResponse.json({ error: "Missing role" }, { status: 400 });
 
-  const supa = getSupabaseAdmin();
-  const { data, error } = await supa
-    .from("target_overrides")
-    .select("overrides")
-    .eq("role", role)
-    .maybeSingle();
+    const supa = getSupabaseServer();
+    const { data, error } = await supa
+      .from("target_overrides")
+      .select("data")
+      .eq("role", role)
+      .maybeSingle();
 
-  if (error) return bad(error.message, 500);
-  return ok({ overrides: data?.overrides ?? {} });
+    if (error) throw error;
+
+    return NextResponse.json({ overrides: data?.data ?? {} });
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: String(e?.message || e) },
+      { status: 500 }
+    );
+  }
 }
 
+// PUT /api/target/overrides?role=sales
+// body: { overrides: {...} }
 export async function PUT(req: Request) {
-  const url = new URL(req.url);
-  const role = url.searchParams.get("role");
-  if (!role) return bad("Missing role");
+  try {
+    const { searchParams } = new URL(req.url);
+    const role = searchParams.get("role");
+    if (!role)
+      return NextResponse.json({ error: "Missing role" }, { status: 400 });
 
-  // Sederhana: validasi role dari header buatan sendiri
-  const xrole = req.headers.get("x-role")?.toLowerCase();
-  const allowed =
-    xrole === "superadmin" || xrole === "owner" || xrole === "root";
-  if (!allowed) return bad("Forbidden: only superadmin can write", 403);
+    const body = await req.json();
+    const overrides = body?.overrides ?? {};
+    const supa = getSupabaseServer();
 
-  const body = await req.json().catch(() => ({}));
-  const overrides = body?.overrides ?? {};
-  if (typeof overrides !== "object") return bad("Invalid overrides");
+    const { data, error } = await supa
+      .from("target_overrides")
+      .upsert({ role, data: overrides }, { onConflict: "role" })
+      .select("data")
+      .single();
 
-  const supa = getSupabaseAdmin();
-  const { error } = await supa.from("target_overrides").upsert(
-    {
-      role,
-      overrides,
-      updated_by: xrole || "unknown",
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "role" }
-  );
-  if (error) return bad(error.message, 500);
-  return ok({ ok: true });
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true, overrides: data.data });
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: String(e?.message || e) },
+      { status: 500 }
+    );
+  }
 }

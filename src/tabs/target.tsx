@@ -1,4 +1,3 @@
-// TargetAchievement.tsx
 "use client";
 
 import React, {
@@ -14,9 +13,8 @@ import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
-import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
-/* ================= OVERRIDES (server-synced + local cache ala ChecklistArea) ================= */
+/* ================= OVERRIDES (server-synced + local cache) ================= */
 type TargetOverrides = {
   copy?: {
     klaimTitle?: string;
@@ -28,7 +26,7 @@ type TargetOverrides = {
   };
   principals?: Record<string, { label?: string }>;
   extraPrincipals?: Record<string, { label: string }>;
-  /** ⬇️ deadlines ikut disimpan di server (per role) */
+  /** ⬇️ deadines ikut disimpan di server (per role) */
   deadlines?: TargetDeadlines;
 };
 
@@ -65,7 +63,7 @@ function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
   }
 }
 
-/* ===== local cache ala ChecklistArea ===== */
+/* ===== local cache (tanpa any) ===== */
 function readOverrides(role: Role): TargetOverrides {
   if (typeof window === "undefined") return {};
   try {
@@ -124,11 +122,15 @@ function removeExtraPrincipal(
 }
 
 /* ======== KUNCI PRINCIPAL & DEADLINES (fix error ts7053) ======== */
+/** ambil union key langsung dari tipe deadlines kamu */
 type PKey = Extract<keyof TargetDeadlines["klaim"], string>;
+/** array principal base bertipe literal union */
 const BASE_P = PRINCIPALS as readonly string[] as readonly PKey[];
+/** type-guard: apakah string termasuk principal base */
 function isBasePrincipal(k: string): k is PKey {
   return (BASE_P as readonly string[]).includes(k);
 }
+/** map default berisi "" utk semua principal base */
 function blankPrincipalMap(): Record<PKey, string> {
   const acc = {} as Record<PKey, string>;
   for (const k of BASE_P) acc[k] = "";
@@ -290,7 +292,6 @@ export default function TargetAchievement({
 }) {
   const auth = useAuth() as MinimalAuth;
   const role = (auth.role as Role) || "admin";
-  const supabase = useMemo(() => getSupabaseBrowser(), []);
 
   // DETEKSI superadmin yang lebih longgar
   const isSuper = useMemo(() => {
@@ -305,12 +306,20 @@ export default function TargetAchievement({
   const uid = auth.user?.id || null;
   const email = auth.user?.email || null;
 
+  // Opsional: paksa accountId dari localStorage untuk debugging
+  const FORCE_ACCOUNT_ID =
+    typeof window !== "undefined"
+      ? localStorage.getItem("sitrep-force-account-id")
+      : null;
+
   // Primary accountId
   const accountId: string | null =
-    STORAGE_MODE === "byUser" ? email || uid || null : `role:${role}`;
+    FORCE_ACCOUNT_ID ||
+    (STORAGE_MODE === "byUser" ? email || uid || null : `role:${role}`);
 
   // Alt ID untuk kompatibilitas (mis. data lama tersimpan dengan UID)
   const altId: string | null = (() => {
+    if (FORCE_ACCOUNT_ID) return null;
     if (!email || !uid) return null;
     return accountId === email ? uid : email;
   })();
@@ -335,31 +344,38 @@ export default function TargetAchievement({
   const [lastSync, setLastSync] = useState<string>("—");
   const [saveError, setSaveError] = useState<string>("");
 
-  /** ✅ Pola ala ChecklistArea: pakai localStorage + 'rev' */
-  const [rev, setRev] = useState(0);
+  /** ✅ Simpan overrides di state (tanpa 'rev') */
+  const [overrides, setOverrides] = useState<TargetOverrides>({});
 
-  // Ambil overrides dari localStorage setiap rev berubah
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const overrides = useMemo(() => readOverrides(viewRole), [viewRole, rev]);
+  // helper: refetch overrides utk role tertentu dan tulis ke local cache
+  const refreshOverrides = useCallback(async (r: Role) => {
+    const remote = await fetchOverridesFromServer(r);
+    writeOverrides(r, remote);
+    setOverrides(remote);
+    setLastSync(new Date().toLocaleString());
+    return remote;
+  }, []);
 
-  // Saat role berubah: fetch dari server → tulis ke local → bump rev
+  /* ==== sinkronisasi awal & saat tab kembali aktif ==== */
   useEffect(() => {
-    let alive = true;
+    setOverrides(readOverrides(viewRole)); // baca cache dulu biar cepat render
     (async () => {
       try {
-        const remote = await fetchOverridesFromServer(viewRole);
-        if (!alive) return;
-        writeOverrides(viewRole, remote);
-        setLastSync(new Date().toLocaleString());
-        setRev((x) => x + 1);
-      } catch (e) {
-        console.warn("Gagal memuat target overrides:", e);
+        await refreshOverrides(viewRole);
+      } catch {
+        // diamkan; UI tetap jalan dgn cache
       }
     })();
-    return () => {
-      alive = false;
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        void refreshOverrides(viewRole);
+      }
     };
-  }, [viewRole]);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [viewRole, refreshOverrides]);
 
   const copy = {
     klaimTitle: overrides.copy?.klaimTitle ?? "Penyelesaian Klaim Bulan Ini",
@@ -385,20 +401,18 @@ export default function TargetAchievement({
     overrides.extraPrincipals?.[p]?.label ??
     p;
 
-  /* === save helpers: (1) tulis local, (2) PUT server, (3) bump rev === */
+  /* === save helpers: optimistic update + server, lalu refetch === */
   const doSave = async (next: TargetOverrides) => {
     setSaveError("");
-    writeOverrides(viewRole, next);
-    setRev((x) => x + 1);
+    writeOverrides(viewRole, next); // optimistik
+    setOverrides(next);
     try {
       await saveOverridesToServer(viewRole, next);
-      // optional: refetch agar pasti sama persis dengan server
-      const fresh = await fetchOverridesFromServer(viewRole);
-      writeOverrides(viewRole, fresh);
-      setLastSync(new Date().toLocaleString());
-      setRev((x) => x + 1);
+      await refreshOverrides(viewRole);
     } catch {
       setSaveError("Gagal menyimpan ke server.");
+      // rollback ke server state terbaru
+      await refreshOverrides(viewRole);
     }
   };
 
@@ -556,7 +570,6 @@ export default function TargetAchievement({
     const next = patchDeadlines(cur, scope, value, p);
     await doSave(next);
 
-    // update parent (opsional, supaya state di halaman ini konsisten)
     onChange({
       ...data,
       deadlines: next.deadlines || data.deadlines,
@@ -605,150 +618,73 @@ export default function TargetAchievement({
     (typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("debug") === "1");
 
-  /* ===================== Realtime Subscriptions + Polling Fallback ===================== */
-
-  // 1) Realtime untuk OVERRIDES per role (target_overrides.role = viewRole)
+  /* ====== Realtime Subscriptions + polling fallback ====== */
   useEffect(() => {
-    const ch = supabase
-      .channel(`targets:${viewRole}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "target_overrides", // ganti bila nama tabel beda
-          filter: `role=eq.${viewRole}`,
-        },
-        async (
-          _payload: RealtimePostgresChangesPayload<Record<string, unknown>>
-        ) => {
-          try {
-            const remote = await fetchOverridesFromServer(viewRole);
-            writeOverrides(viewRole, remote);
-            setLastSync(new Date().toLocaleString());
-            setRev((x) => x + 1);
-          } catch (e) {
-            console.warn("realtime overrides refresh error:", e);
-          }
+    const supa = getSupabaseBrowser();
+    const channelName = `target-sync:${viewRole}:${
+      accountId || "anon"
+    }:${period}`;
+    const ch = supa.channel(channelName);
+
+    // 1) target_overrides (per role)
+    ch.on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "target_overrides",
+        filter: `role=eq.${viewRole}`,
+      },
+      () => {
+        void refreshOverrides(viewRole);
+      }
+    );
+
+    // 2) target_checks — subscribe semua, filter di handler (aman & sederhana)
+    ch.on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "target_checks",
+      },
+      (payload) => {
+        const row = (payload.new || payload.old) as
+          | {
+              account_id?: string;
+              period?: string;
+            }
+          | undefined;
+
+        if (!row) return;
+        const matchAccount =
+          row.account_id === accountId ||
+          (altId ? row.account_id === altId : false);
+        const matchPeriod = row.period === period;
+
+        if (matchAccount && matchPeriod) {
+          void loadFromServer();
         }
-      )
-      .subscribe();
+      }
+    );
+
+    ch.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        // optional: console.log("Realtime subscribed:", channelName);
+      }
+    });
+
+    // Fallback polling tiap 10 detik (jaga-jaga)
+    const interval = window.setInterval(() => {
+      void refreshOverrides(viewRole);
+      void loadFromServer();
+    }, 10000);
 
     return () => {
-      supabase.removeChannel(ch);
+      supa.removeChannel(ch);
+      window.clearInterval(interval);
     };
-  }, [supabase, viewRole]);
-
-  // helper ambil period dari payload tanpa pakai any
-  const getChangedPeriod = (
-    payload: RealtimePostgresChangesPayload<Record<string, unknown>>
-  ): string | undefined => {
-    const row = (payload.new ?? payload.old) as Record<string, unknown> | null;
-    const p = row?.period;
-    return typeof p === "string" ? p : undefined;
-  };
-
-  // 2) Realtime untuk CHECKS (target_checks.account_id = accountId/altId)
-  useEffect(() => {
-    if (!accountId) return;
-
-    const onChange = async (
-      payload: RealtimePostgresChangesPayload<Record<string, unknown>>
-    ) => {
-      const changed = getChangedPeriod(payload);
-      if (!changed || changed === period) {
-        await loadFromServer();
-      }
-    };
-
-    const chMain = supabase
-      .channel(`checks:${accountId}:${period}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "target_checks", // ganti bila nama tabel beda
-          filter: `account_id=eq.${accountId}`,
-        },
-        onChange
-      )
-      .subscribe();
-
-    let chAlt: ReturnType<typeof supabase.channel> | null = null;
-
-    if (altId) {
-      chAlt = supabase
-        .channel(`checks:${altId}:${period}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "target_checks",
-            filter: `account_id=eq.${altId}`,
-          },
-          onChange
-        )
-        .subscribe();
-    }
-
-    return () => {
-      supabase.removeChannel(chMain);
-      if (chAlt) supabase.removeChannel(chAlt);
-    };
-  }, [supabase, accountId, altId, period, loadFromServer]);
-
-  // 3) Optional: refresh saat tab jadi aktif
-  useEffect(() => {
-    const onVis = () => {
-      if (document.visibilityState === "visible") {
-        fetchOverridesFromServer(viewRole)
-          .then((remote) => {
-            writeOverrides(viewRole, remote);
-            setLastSync(new Date().toLocaleString());
-            setRev((x) => x + 1);
-          })
-          .catch(() => {});
-        void loadFromServer();
-      }
-    };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
-  }, [viewRole, loadFromServer]);
-
-  // 4) POLLING FALLBACK (auto-refresh tiap 10 detik supaya tetap sync lintas device meski Realtime off)
-  useEffect(() => {
-    let alive = true;
-    const POLL_MS = 10000; // 10 detik
-    const tick = async () => {
-      try {
-        const remote = await fetchOverridesFromServer(viewRole);
-        if (!alive) return;
-        // hanya bump rev bila ada perbedaan untuk mengurangi re-render
-        const prev = readOverrides(viewRole);
-        const prevStr = JSON.stringify(prev);
-        const nextStr = JSON.stringify(remote);
-        if (prevStr !== nextStr) {
-          writeOverrides(viewRole, remote);
-          setLastSync(new Date().toLocaleString());
-          setRev((x) => x + 1);
-        }
-        if (accountId) {
-          await loadFromServer();
-        }
-      } catch {
-        // diamkan
-      }
-    };
-    // langsung jalan sekali supaya cepat sync
-    tick();
-    const id = window.setInterval(tick, POLL_MS);
-    return () => {
-      alive = false;
-      window.clearInterval(id);
-    };
-  }, [viewRole, accountId, loadFromServer]);
+  }, [viewRole, accountId, altId, period, refreshOverrides, loadFromServer]);
 
   /* =================== RENDER =================== */
   return (
@@ -831,12 +767,7 @@ export default function TargetAchievement({
                 </span>
                 <button
                   type="button"
-                  onClick={async () => {
-                    const remote = await fetchOverridesFromServer(viewRole);
-                    writeOverrides(viewRole, remote);
-                    setLastSync(new Date().toLocaleString());
-                    setRev((x) => x + 1);
-                  }}
+                  onClick={() => void refreshOverrides(viewRole)}
                   className="text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
                   title="Paksa refresh dari server"
                 >
