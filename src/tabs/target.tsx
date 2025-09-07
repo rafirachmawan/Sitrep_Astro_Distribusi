@@ -12,9 +12,8 @@ import type { TargetState, TargetDeadlines } from "@/lib/types";
 import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
-import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
-/* ================= OVERRIDES (server-synced) ================= */
+/* ================= OVERRIDES (server-synced + local cache ala ChecklistArea) ================= */
 type TargetOverrides = {
   copy?: {
     klaimTitle?: string;
@@ -26,9 +25,11 @@ type TargetOverrides = {
   };
   principals?: Record<string, { label?: string }>;
   extraPrincipals?: Record<string, { label: string }>;
+  /** ⬇️ deadlines ikut disimpan di server (per role) */
   deadlines?: TargetDeadlines;
 };
 
+const OV_KEY = "sitrep-target-copy-v2";
 const ROLE_PREF_KEY = "sitrep-target-role-pref";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
 
@@ -61,12 +62,23 @@ function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
   }
 }
 
-/* ===== cache local DINONAKTIFKAN (no-op) supaya lintas device selalu sama ===== */
-function readOverrides(_role: Role): TargetOverrides {
-  return {};
+/* ===== local cache ala ChecklistArea ===== */
+function readOverrides(role: Role): TargetOverrides {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(`${OV_KEY}:${role}`);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    return (
+      parsed && typeof parsed === "object" ? parsed : {}
+    ) as TargetOverrides;
+  } catch {
+    return {};
+  }
 }
-function writeOverrides(_role: Role, _v: TargetOverrides) {
-  // no-op
+function writeOverrides(role: Role, v: TargetOverrides) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(`${OV_KEY}:${role}`, JSON.stringify(v));
 }
 
 type CopyShape = NonNullable<TargetOverrides["copy"]>;
@@ -120,6 +132,7 @@ function blankPrincipalMap(): Record<PKey, string> {
   return acc;
 }
 
+/** patch deadline tipe-safe */
 function patchDeadlines(
   src: TargetOverrides,
   scope: keyof TargetDeadlines,
@@ -161,19 +174,10 @@ async function fetchOverridesFromServer(role: Role): Promise<TargetOverrides> {
   const json = (await res.json()) as { overrides?: TargetOverrides };
   return json.overrides ?? {};
 }
-
-/** PUT overrides: kirim header x-role utk authorize superadmin */
-async function saveOverridesToServer(
-  role: Role,
-  overrides: TargetOverrides,
-  xRole: string
-) {
+async function saveOverridesToServer(role: Role, overrides: TargetOverrides) {
   const res = await fetch(`/api/target/overrides?role=${role}`, {
     method: "PUT",
-    headers: {
-      "Content-Type": "application/json",
-      "x-role": xRole,
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ overrides }),
   });
   if (!res.ok) throw new Error(`PUT /target/overrides ${res.status}`);
@@ -327,36 +331,32 @@ export default function TargetAchievement({
   const [lastSync, setLastSync] = useState<string>("—");
   const [saveError, setSaveError] = useState<string>("");
 
-  /** ✅ Simpan overrides di state (server = source of truth) */
-  const [overrides, setOverrides] = useState<TargetOverrides>({});
+  /** ✅ Pola ala ChecklistArea: pakai localStorage + 'rev' */
+  const [rev, setRev] = useState(0);
 
-  // refetch overrides utk role tertentu
-  const refreshOverrides = useCallback(async (r: Role) => {
-    const remote = await fetchOverridesFromServer(r);
-    setOverrides(remote);
-    setLastSync(new Date().toLocaleString());
-    return remote;
-  }, []);
+  // Ambil overrides dari localStorage setiap rev berubah
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const overrides = useMemo(() => readOverrides(viewRole), [viewRole, rev]);
 
-  /* ==== sinkronisasi awal & saat tab kembali aktif ==== */
+  // Saat role berubah: fetch dari server → tulis ke local → bump rev
   useEffect(() => {
+    let alive = true;
     (async () => {
       try {
-        await refreshOverrides(viewRole);
-      } catch {
-        // biarkan UI jalan, nanti bisa klik Refresh
+        const remote = await fetchOverridesFromServer(viewRole);
+        if (!alive) return;
+        writeOverrides(viewRole, remote);
+        setLastSync(new Date().toLocaleString());
+        setRev((x) => x + 1);
+      } catch (e) {
+        // diamkan; fallback tetap ke localStorage
+        console.warn("Gagal memuat target overrides:", e);
       }
     })();
-    const onVis = () => {
-      if (document.visibilityState === "visible") {
-        void refreshOverrides(viewRole);
-      }
-    };
-    document.addEventListener("visibilitychange", onVis);
     return () => {
-      document.removeEventListener("visibilitychange", onVis);
+      alive = false;
     };
-  }, [viewRole, refreshOverrides]);
+  }, [viewRole]);
 
   const copy = {
     klaimTitle: overrides.copy?.klaimTitle ?? "Penyelesaian Klaim Bulan Ini",
@@ -382,29 +382,29 @@ export default function TargetAchievement({
     overrides.extraPrincipals?.[p]?.label ??
     p;
 
-  /* === save helpers: optimistic di state + PUT ke server, lalu refetch === */
+  /* === save helpers: (1) tulis local, (2) PUT server, (3) bump rev === */
   const doSave = async (next: TargetOverrides) => {
     setSaveError("");
-    setOverrides(next); // optimistik di memori
+    writeOverrides(viewRole, next);
+    setRev((x) => x + 1);
     try {
-      await saveOverridesToServer(
-        viewRole,
-        next,
-        isSuper ? "superadmin" : String(role)
-      );
-      await refreshOverrides(viewRole);
+      await saveOverridesToServer(viewRole, next);
+      // optional: refetch agar pasti sama persis dengan server
+      const fresh = await fetchOverridesFromServer(viewRole);
+      writeOverrides(viewRole, fresh);
+      setLastSync(new Date().toLocaleString());
+      setRev((x) => x + 1);
     } catch {
       setSaveError("Gagal menyimpan ke server.");
-      await refreshOverrides(viewRole);
     }
   };
 
   const saveCopy = async (k: CopyKeys, v: string) => {
-    const cur = overrides;
+    const cur = readOverrides(viewRole);
     await doSave(patchCopy(cur, k, v));
   };
   const savePrincipalLabel = async (p: string, v: string) => {
-    const cur = overrides;
+    const cur = readOverrides(viewRole);
     await doSave(patchPrincipalLabel(cur, p, v));
   };
   const resetOverrides = async () => {
@@ -427,7 +427,7 @@ export default function TargetAchievement({
   );
   const [fodksListLocal, setFodksListLocal] = useState<FodksItem[]>([]);
 
-  // sinkronkan ke parent
+  // sinkronkan ke parent (untuk konsistensi antar section)
   useEffect(() => {
     onChange({
       ...data,
@@ -519,7 +519,7 @@ export default function TargetAchievement({
       alert("Label tidak boleh kosong");
       return;
     }
-    const cur = overrides;
+    const cur = readOverrides(viewRole);
     await doSave(addExtraPrincipal(cur, k, lbl));
     setWeeklyMap((prev) => ({
       ...prev,
@@ -531,7 +531,7 @@ export default function TargetAchievement({
   const removePrincipal = async (key: string) => {
     if (!isSuper) return;
     if (!confirm(`Hapus principal ${key}?`)) return;
-    const cur = overrides;
+    const cur = readOverrides(viewRole);
     await doSave(removeExtraPrincipal(cur, key));
   };
 
@@ -549,9 +549,11 @@ export default function TargetAchievement({
   type DeadlineScope = keyof TargetDeadlines;
   const setDeadline = async (scope: DeadlineScope, value: string, p?: PKey) => {
     if (!isSuper) return;
-    const cur = overrides;
+    const cur = readOverrides(viewRole);
     const next = patchDeadlines(cur, scope, value, p);
     await doSave(next);
+
+    // update parent (opsional, supaya state di halaman ini konsisten)
     onChange({
       ...data,
       deadlines: next.deadlines || data.deadlines,
@@ -599,57 +601,6 @@ export default function TargetAchievement({
     isSuper ||
     (typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("debug") === "1");
-
-  /* ===== Supabase Realtime: auto-sync lintas device ===== */
-  useEffect(() => {
-    const supa = getSupabaseBrowser();
-
-    // Realtime perubahan OVERRIDES untuk role yang sedang dilihat
-    const chOverrides = supa
-      .channel(`ov-${viewRole}`)
-      .on(
-        "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "target_overrides",
-          filter: `role=eq.${viewRole}`,
-        },
-        async () => {
-          try {
-            await refreshOverrides(viewRole);
-          } catch {}
-        }
-      )
-      .subscribe();
-
-    // Realtime perubahan CHECKS untuk akun & periode ini
-    let chChecks: ReturnType<typeof supa.channel> | null = null;
-    if (accountId) {
-      chChecks = supa
-        .channel(`checks-${accountId}-${period}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema: "public",
-            table: "target_checks",
-            filter: `account_id=eq.${accountId}`,
-          },
-          async () => {
-            try {
-              await loadFromServer();
-            } catch {}
-          }
-        )
-        .subscribe();
-    }
-
-    return () => {
-      supa.removeChannel(chOverrides);
-      if (chChecks) supa.removeChannel(chChecks);
-    };
-  }, [viewRole, accountId, period, refreshOverrides, loadFromServer]);
 
   /* =================== RENDER =================== */
   return (
@@ -732,7 +683,13 @@ export default function TargetAchievement({
                 </span>
                 <button
                   type="button"
-                  onClick={() => void refreshOverrides(viewRole)}
+                  onClick={async () => {
+                    // tombol Refresh ala ChecklistArea
+                    const remote = await fetchOverridesFromServer(viewRole);
+                    writeOverrides(viewRole, remote);
+                    setLastSync(new Date().toLocaleString());
+                    setRev((x) => x + 1);
+                  }}
                   className="text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
                   title="Paksa refresh dari server"
                 >
