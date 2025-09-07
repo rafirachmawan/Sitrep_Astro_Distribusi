@@ -1,4 +1,4 @@
-// app/.../TargetAchievement.tsx (atau lokasi komponenmu)
+// TargetAchievement.tsx
 "use client";
 
 import React, {
@@ -605,9 +605,9 @@ export default function TargetAchievement({
     (typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("debug") === "1");
 
-  /* ===================== Realtime Subscriptions ===================== */
+  /* ===================== Realtime Subscriptions + Polling Fallback ===================== */
 
-  // 3a) Realtime untuk OVERRIDES per role (target_overrides.role = viewRole)
+  // 1) Realtime untuk OVERRIDES per role (target_overrides.role = viewRole)
   useEffect(() => {
     const ch = supabase
       .channel(`targets:${viewRole}`)
@@ -616,7 +616,7 @@ export default function TargetAchievement({
         {
           event: "*",
           schema: "public",
-          table: "target_overrides", // ganti jika tabelmu beda
+          table: "target_overrides", // ganti bila nama tabel beda
           filter: `role=eq.${viewRole}`,
         },
         async (
@@ -648,7 +648,7 @@ export default function TargetAchievement({
     return typeof p === "string" ? p : undefined;
   };
 
-  // 3b) Realtime untuk CHECKS (target_checks.account_id = accountId/altId)
+  // 2) Realtime untuk CHECKS (target_checks.account_id = accountId/altId)
   useEffect(() => {
     if (!accountId) return;
 
@@ -668,7 +668,7 @@ export default function TargetAchievement({
         {
           event: "*",
           schema: "public",
-          table: "target_checks", // ganti jika tabelmu beda
+          table: "target_checks", // ganti bila nama tabel beda
           filter: `account_id=eq.${accountId}`,
         },
         onChange
@@ -699,7 +699,7 @@ export default function TargetAchievement({
     };
   }, [supabase, accountId, altId, period, loadFromServer]);
 
-  // 3c) Optional: refresh saat tab jadi aktif
+  // 3) Optional: refresh saat tab jadi aktif
   useEffect(() => {
     const onVis = () => {
       if (document.visibilityState === "visible") {
@@ -716,6 +716,39 @@ export default function TargetAchievement({
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [viewRole, loadFromServer]);
+
+  // 4) POLLING FALLBACK (auto-refresh tiap 10 detik supaya tetap sync lintas device meski Realtime off)
+  useEffect(() => {
+    let alive = true;
+    const POLL_MS = 10000; // 10 detik
+    const tick = async () => {
+      try {
+        const remote = await fetchOverridesFromServer(viewRole);
+        if (!alive) return;
+        // hanya bump rev bila ada perbedaan untuk mengurangi re-render
+        const prev = readOverrides(viewRole);
+        const prevStr = JSON.stringify(prev);
+        const nextStr = JSON.stringify(remote);
+        if (prevStr !== nextStr) {
+          writeOverrides(viewRole, remote);
+          setLastSync(new Date().toLocaleString());
+          setRev((x) => x + 1);
+        }
+        if (accountId) {
+          await loadFromServer();
+        }
+      } catch {
+        // diamkan
+      }
+    };
+    // langsung jalan sekali supaya cepat sync
+    tick();
+    const id = window.setInterval(tick, POLL_MS);
+    return () => {
+      alive = false;
+      window.clearInterval(id);
+    };
+  }, [viewRole, accountId, loadFromServer]);
 
   /* =================== RENDER =================== */
   return (
