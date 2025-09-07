@@ -14,7 +14,7 @@ import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
 import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
-/* ================= OVERRIDES (server-synced + local cache) ================= */
+/* ================= OVERRIDES (server-synced) ================= */
 type TargetOverrides = {
   copy?: {
     klaimTitle?: string;
@@ -26,11 +26,9 @@ type TargetOverrides = {
   };
   principals?: Record<string, { label?: string }>;
   extraPrincipals?: Record<string, { label: string }>;
-  /** ⬇️ deadlines ikut disimpan di server (per role) */
   deadlines?: TargetDeadlines;
 };
 
-const OV_KEY = "sitrep-target-copy-v2";
 const ROLE_PREF_KEY = "sitrep-target-role-pref";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
 
@@ -63,23 +61,12 @@ function handleKeyActivate(e: React.KeyboardEvent, fn: () => void) {
   }
 }
 
-/* ===== local cache (tanpa any) ===== */
-function readOverrides(role: Role): TargetOverrides {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = localStorage.getItem(`${OV_KEY}:${role}`);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    return (
-      parsed && typeof parsed === "object" ? parsed : {}
-    ) as TargetOverrides;
-  } catch {
-    return {};
-  }
+/* ===== cache local DINONAKTIFKAN (no-op) supaya lintas device selalu sama ===== */
+function readOverrides(_role: Role): TargetOverrides {
+  return {};
 }
-function writeOverrides(role: Role, v: TargetOverrides) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(`${OV_KEY}:${role}`, JSON.stringify(v));
+function writeOverrides(_role: Role, _v: TargetOverrides) {
+  // no-op
 }
 
 type CopyShape = NonNullable<TargetOverrides["copy"]>;
@@ -122,22 +109,17 @@ function removeExtraPrincipal(
 }
 
 /* ======== KUNCI PRINCIPAL & DEADLINES (fix error ts7053) ======== */
-/** ambil union key langsung dari tipe deadlines kamu */
 type PKey = Extract<keyof TargetDeadlines["klaim"], string>;
-/** array principal base bertipe literal union */
 const BASE_P = PRINCIPALS as readonly string[] as readonly PKey[];
-/** type-guard: apakah string termasuk principal base */
 function isBasePrincipal(k: string): k is PKey {
   return (BASE_P as readonly string[]).includes(k);
 }
-/** map default berisi "" utk semua principal base */
 function blankPrincipalMap(): Record<PKey, string> {
   const acc = {} as Record<PKey, string>;
   for (const k of BASE_P) acc[k] = "";
   return acc;
 }
 
-/** patch deadline tipe-safe */
 function patchDeadlines(
   src: TargetOverrides,
   scope: keyof TargetDeadlines,
@@ -180,7 +162,7 @@ async function fetchOverridesFromServer(role: Role): Promise<TargetOverrides> {
   return json.overrides ?? {};
 }
 
-/** 🔁 versi PUT baru: sertakan header x-role */
+/** PUT overrides: kirim header x-role utk authorize superadmin */
 async function saveOverridesToServer(
   role: Role,
   overrides: TargetOverrides,
@@ -190,7 +172,7 @@ async function saveOverridesToServer(
     method: "PUT",
     headers: {
       "Content-Type": "application/json",
-      "x-role": xRole, // penting: validasi superadmin di server
+      "x-role": xRole,
     },
     body: JSON.stringify({ overrides }),
   });
@@ -315,20 +297,12 @@ export default function TargetAchievement({
   const uid = auth.user?.id || null;
   const email = auth.user?.email || null;
 
-  // Opsional: paksa accountId dari localStorage untuk debugging
-  const FORCE_ACCOUNT_ID =
-    typeof window !== "undefined"
-      ? localStorage.getItem("sitrep-force-account-id")
-      : null;
-
   // Primary accountId
   const accountId: string | null =
-    FORCE_ACCOUNT_ID ||
-    (STORAGE_MODE === "byUser" ? email || uid || null : `role:${role}`);
+    STORAGE_MODE === "byUser" ? email || uid || null : `role:${role}`;
 
   // Alt ID untuk kompatibilitas (mis. data lama tersimpan dengan UID)
   const altId: string | null = (() => {
-    if (FORCE_ACCOUNT_ID) return null;
     if (!email || !uid) return null;
     return accountId === email ? uid : email;
   })();
@@ -353,13 +327,12 @@ export default function TargetAchievement({
   const [lastSync, setLastSync] = useState<string>("—");
   const [saveError, setSaveError] = useState<string>("");
 
-  /** ✅ Simpan overrides di state (tanpa 'rev') */
+  /** ✅ Simpan overrides di state (server = source of truth) */
   const [overrides, setOverrides] = useState<TargetOverrides>({});
 
-  // helper: refetch overrides utk role tertentu dan tulis ke local cache
+  // refetch overrides utk role tertentu
   const refreshOverrides = useCallback(async (r: Role) => {
     const remote = await fetchOverridesFromServer(r);
-    writeOverrides(r, remote);
     setOverrides(remote);
     setLastSync(new Date().toLocaleString());
     return remote;
@@ -367,13 +340,11 @@ export default function TargetAchievement({
 
   /* ==== sinkronisasi awal & saat tab kembali aktif ==== */
   useEffect(() => {
-    // baca cache dulu biar cepat render
-    setOverrides(readOverrides(viewRole));
     (async () => {
       try {
         await refreshOverrides(viewRole);
       } catch {
-        // diamkan; UI tetap jalan dgn cache
+        // biarkan UI jalan, nanti bisa klik Refresh
       }
     })();
     const onVis = () => {
@@ -411,11 +382,10 @@ export default function TargetAchievement({
     overrides.extraPrincipals?.[p]?.label ??
     p;
 
-  /* === save helpers: optimistic update + server, lalu refetch === */
+  /* === save helpers: optimistic di state + PUT ke server, lalu refetch === */
   const doSave = async (next: TargetOverrides) => {
     setSaveError("");
-    writeOverrides(viewRole, next); // optimistik
-    setOverrides(next);
+    setOverrides(next); // optimistik di memori
     try {
       await saveOverridesToServer(
         viewRole,
@@ -425,17 +395,16 @@ export default function TargetAchievement({
       await refreshOverrides(viewRole);
     } catch {
       setSaveError("Gagal menyimpan ke server.");
-      // rollback ke server state terbaru
       await refreshOverrides(viewRole);
     }
   };
 
   const saveCopy = async (k: CopyKeys, v: string) => {
-    const cur = readOverrides(viewRole);
+    const cur = overrides;
     await doSave(patchCopy(cur, k, v));
   };
   const savePrincipalLabel = async (p: string, v: string) => {
-    const cur = readOverrides(viewRole);
+    const cur = overrides;
     await doSave(patchPrincipalLabel(cur, p, v));
   };
   const resetOverrides = async () => {
@@ -458,7 +427,7 @@ export default function TargetAchievement({
   );
   const [fodksListLocal, setFodksListLocal] = useState<FodksItem[]>([]);
 
-  // sinkronkan ke parent (untuk konsistensi antar section)
+  // sinkronkan ke parent
   useEffect(() => {
     onChange({
       ...data,
@@ -550,7 +519,7 @@ export default function TargetAchievement({
       alert("Label tidak boleh kosong");
       return;
     }
-    const cur = readOverrides(viewRole);
+    const cur = overrides;
     await doSave(addExtraPrincipal(cur, k, lbl));
     setWeeklyMap((prev) => ({
       ...prev,
@@ -562,7 +531,7 @@ export default function TargetAchievement({
   const removePrincipal = async (key: string) => {
     if (!isSuper) return;
     if (!confirm(`Hapus principal ${key}?`)) return;
-    const cur = readOverrides(viewRole);
+    const cur = overrides;
     await doSave(removeExtraPrincipal(cur, key));
   };
 
@@ -580,11 +549,9 @@ export default function TargetAchievement({
   type DeadlineScope = keyof TargetDeadlines;
   const setDeadline = async (scope: DeadlineScope, value: string, p?: PKey) => {
     if (!isSuper) return;
-    const cur = readOverrides(viewRole);
+    const cur = overrides;
     const next = patchDeadlines(cur, scope, value, p);
     await doSave(next);
-
-    // update parent (opsional, supaya state di halaman ini konsisten)
     onChange({
       ...data,
       deadlines: next.deadlines || data.deadlines,
@@ -667,7 +634,6 @@ export default function TargetAchievement({
             event: "*",
             schema: "public",
             table: "target_checks",
-            // bisa pakai filter period juga kalau mau lebih spesifik:
             filter: `account_id=eq.${accountId}`,
           },
           async () => {
