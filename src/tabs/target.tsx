@@ -12,6 +12,7 @@ import type { TargetState, TargetDeadlines } from "@/lib/types";
 import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
+import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
 /* ================= OVERRIDES (server-synced + local cache) ================= */
 type TargetOverrides = {
@@ -25,7 +26,7 @@ type TargetOverrides = {
   };
   principals?: Record<string, { label?: string }>;
   extraPrincipals?: Record<string, { label: string }>;
-  /** ⬇️ deadines ikut disimpan di server (per role) */
+  /** ⬇️ deadlines ikut disimpan di server (per role) */
   deadlines?: TargetDeadlines;
 };
 
@@ -178,10 +179,19 @@ async function fetchOverridesFromServer(role: Role): Promise<TargetOverrides> {
   const json = (await res.json()) as { overrides?: TargetOverrides };
   return json.overrides ?? {};
 }
-async function saveOverridesToServer(role: Role, overrides: TargetOverrides) {
+
+/** 🔁 versi PUT baru: sertakan header x-role */
+async function saveOverridesToServer(
+  role: Role,
+  overrides: TargetOverrides,
+  xRole: string
+) {
   const res = await fetch(`/api/target/overrides?role=${role}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-role": xRole, // penting: validasi superadmin di server
+    },
     body: JSON.stringify({ overrides }),
   });
   if (!res.ok) throw new Error(`PUT /target/overrides ${res.status}`);
@@ -407,7 +417,11 @@ export default function TargetAchievement({
     writeOverrides(viewRole, next); // optimistik
     setOverrides(next);
     try {
-      await saveOverridesToServer(viewRole, next);
+      await saveOverridesToServer(
+        viewRole,
+        next,
+        isSuper ? "superadmin" : String(role)
+      );
       await refreshOverrides(viewRole);
     } catch {
       setSaveError("Gagal menyimpan ke server.");
@@ -618,6 +632,58 @@ export default function TargetAchievement({
     isSuper ||
     (typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("debug") === "1");
+
+  /* ===== Supabase Realtime: auto-sync lintas device ===== */
+  useEffect(() => {
+    const supa = getSupabaseBrowser();
+
+    // Realtime perubahan OVERRIDES untuk role yang sedang dilihat
+    const chOverrides = supa
+      .channel(`ov-${viewRole}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "target_overrides",
+          filter: `role=eq.${viewRole}`,
+        },
+        async () => {
+          try {
+            await refreshOverrides(viewRole);
+          } catch {}
+        }
+      )
+      .subscribe();
+
+    // Realtime perubahan CHECKS untuk akun & periode ini
+    let chChecks: ReturnType<typeof supa.channel> | null = null;
+    if (accountId) {
+      chChecks = supa
+        .channel(`checks-${accountId}-${period}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "target_checks",
+            // bisa pakai filter period juga kalau mau lebih spesifik:
+            filter: `account_id=eq.${accountId}`,
+          },
+          async () => {
+            try {
+              await loadFromServer();
+            } catch {}
+          }
+        )
+        .subscribe();
+    }
+
+    return () => {
+      supa.removeChannel(chOverrides);
+      if (chChecks) supa.removeChannel(chChecks);
+    };
+  }, [viewRole, accountId, period, refreshOverrides, loadFromServer]);
 
   /* =================== RENDER =================== */
   return (
