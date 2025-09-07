@@ -1,4 +1,8 @@
+// lib/supabaseBrowser.ts
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+// Jika kamu punya tipe Database hasil codegen, gunakan:
+// import type { Database } from "@/lib/database.types";
+// let _client: SupabaseClient<Database> | null = null;
 
 let _client: SupabaseClient | null = null;
 

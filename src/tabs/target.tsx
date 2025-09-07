@@ -1,3 +1,4 @@
+// app/.../TargetAchievement.tsx (atau lokasi komponenmu)
 "use client";
 
 import React, {
@@ -12,6 +13,8 @@ import type { TargetState, TargetDeadlines } from "@/lib/types";
 import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
+import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
+import type { RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 
 /* ================= OVERRIDES (server-synced + local cache ala ChecklistArea) ================= */
 type TargetOverrides = {
@@ -287,6 +290,7 @@ export default function TargetAchievement({
 }) {
   const auth = useAuth() as MinimalAuth;
   const role = (auth.role as Role) || "admin";
+  const supabase = useMemo(() => getSupabaseBrowser(), []);
 
   // DETEKSI superadmin yang lebih longgar
   const isSuper = useMemo(() => {
@@ -349,7 +353,6 @@ export default function TargetAchievement({
         setLastSync(new Date().toLocaleString());
         setRev((x) => x + 1);
       } catch (e) {
-        // diamkan; fallback tetap ke localStorage
         console.warn("Gagal memuat target overrides:", e);
       }
     })();
@@ -602,6 +605,118 @@ export default function TargetAchievement({
     (typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("debug") === "1");
 
+  /* ===================== Realtime Subscriptions ===================== */
+
+  // 3a) Realtime untuk OVERRIDES per role (target_overrides.role = viewRole)
+  useEffect(() => {
+    const ch = supabase
+      .channel(`targets:${viewRole}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "target_overrides", // ganti jika tabelmu beda
+          filter: `role=eq.${viewRole}`,
+        },
+        async (
+          _payload: RealtimePostgresChangesPayload<Record<string, unknown>>
+        ) => {
+          try {
+            const remote = await fetchOverridesFromServer(viewRole);
+            writeOverrides(viewRole, remote);
+            setLastSync(new Date().toLocaleString());
+            setRev((x) => x + 1);
+          } catch (e) {
+            console.warn("realtime overrides refresh error:", e);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [supabase, viewRole]);
+
+  // helper ambil period dari payload tanpa pakai any
+  const getChangedPeriod = (
+    payload: RealtimePostgresChangesPayload<Record<string, unknown>>
+  ): string | undefined => {
+    const row = (payload.new ?? payload.old) as Record<string, unknown> | null;
+    const p = row?.period;
+    return typeof p === "string" ? p : undefined;
+  };
+
+  // 3b) Realtime untuk CHECKS (target_checks.account_id = accountId/altId)
+  useEffect(() => {
+    if (!accountId) return;
+
+    const onChange = async (
+      payload: RealtimePostgresChangesPayload<Record<string, unknown>>
+    ) => {
+      const changed = getChangedPeriod(payload);
+      if (!changed || changed === period) {
+        await loadFromServer();
+      }
+    };
+
+    const chMain = supabase
+      .channel(`checks:${accountId}:${period}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "target_checks", // ganti jika tabelmu beda
+          filter: `account_id=eq.${accountId}`,
+        },
+        onChange
+      )
+      .subscribe();
+
+    let chAlt: ReturnType<typeof supabase.channel> | null = null;
+
+    if (altId) {
+      chAlt = supabase
+        .channel(`checks:${altId}:${period}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "target_checks",
+            filter: `account_id=eq.${altId}`,
+          },
+          onChange
+        )
+        .subscribe();
+    }
+
+    return () => {
+      supabase.removeChannel(chMain);
+      if (chAlt) supabase.removeChannel(chAlt);
+    };
+  }, [supabase, accountId, altId, period, loadFromServer]);
+
+  // 3c) Optional: refresh saat tab jadi aktif
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible") {
+        fetchOverridesFromServer(viewRole)
+          .then((remote) => {
+            writeOverrides(viewRole, remote);
+            setLastSync(new Date().toLocaleString());
+            setRev((x) => x + 1);
+          })
+          .catch(() => {});
+        void loadFromServer();
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [viewRole, loadFromServer]);
+
   /* =================== RENDER =================== */
   return (
     <div className="space-y-6">
@@ -684,7 +799,6 @@ export default function TargetAchievement({
                 <button
                   type="button"
                   onClick={async () => {
-                    // tombol Refresh ala ChecklistArea
                     const remote = await fetchOverridesFromServer(viewRole);
                     writeOverrides(viewRole, remote);
                     setLastSync(new Date().toLocaleString());
