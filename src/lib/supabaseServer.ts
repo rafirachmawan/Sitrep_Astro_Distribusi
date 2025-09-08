@@ -1,23 +1,32 @@
-// lib/supabaseServer.ts
+// src/lib/supabaseServer.ts
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-let _server: SupabaseClient | null = null;
+/**
+ * Client Supabase berbasis service-role untuk server (Next.js API routes / server actions).
+ * Jangan pernah expose SERVICE_ROLE ke client/browser.
+ */
+let _serverClient: SupabaseClient | null = null;
 
-/** HANYA dipakai di server/API route. Aman: pakai SERVICE ROLE */
 export function getSupabaseServer(): SupabaseClient {
-  if (_server) return _server;
+  if (_serverClient) return _serverClient;
 
-  // (Opsional) cegah dipanggil di browser
-  // if (typeof window !== "undefined") {
-  //   throw new Error("getSupabaseServer() hanya untuk server/API route.");
-  // }
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-  const service = process.env.SUPABASE_SERVICE_ROLE!;
+  if (!url || !serviceKey) {
+    throw new Error(
+      "Missing SUPABASE envs. Pastikan NEXT_PUBLIC_SUPABASE_URL dan SUPABASE_SERVICE_ROLE terisi."
+    );
+  }
 
-  _server = createClient(url, service, {
-    auth: { persistSession: false },
+  _serverClient = createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
   });
-
-  return _server;
+  return _serverClient;
 }
+
+/**
+ * Alias kompatibel untuk kode lama yang mengimpor { supabaseAdmin } sebagai instance client.
+ * Boleh dipakai langsung: supabaseAdmin.from("table")...
+ */
+export const supabaseAdmin: SupabaseClient = getSupabaseServer();

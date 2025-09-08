@@ -1,7 +1,6 @@
 // lib/supabaseBrowser.ts
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-/** Browser client – JANGAN taruh service role di sini */
 let _client: SupabaseClient | null = null;
 
 export function getSupabaseBrowser(): SupabaseClient {
