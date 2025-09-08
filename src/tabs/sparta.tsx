@@ -7,7 +7,7 @@ import {
   Plus,
   Trash2,
   Wrench,
-  Search,
+  History,
 } from "lucide-react";
 import type { SpartaState } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
@@ -41,25 +41,15 @@ type ProjectDef = {
   targetRole: TargetRole;
 };
 
-/* ===== Riwayat (payload yang disimpan di server) ===== */
-type HistoryPayload = {
-  period: string;
-  accountId: string;
-  role?: string | null;
-  savedBy?: string | null;
-  projectsProgress: Record<string, ProjectProgress>;
-};
-
-type HistoryRow = {
+type HistoryItem = {
   id: string;
-  created_at: string; // ISO
   account_id: string;
-  role: string | null;
-  period: string | null;
-  payload: HistoryPayload;
+  period: string;
+  payload: { projectsProgress?: Record<string, ProjectProgress> } | null;
+  created_at: string;
 };
 
-/* -------------------------- Catalog (superadmin) -------------------------- */
+/* -------------------------- Catalog (local) -------------------------- */
 const CATALOG_KEY = "sitrep-sparta-catalog-v3";
 const TARGET_ROLES: TargetRole[] = ["admin", "sales", "gudang"];
 
@@ -162,16 +152,16 @@ function currentPeriod() {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
-function todayYMD() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(
+function firstDayOfMonth(d = new Date()) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+}
+function lastDayOfMonth(d = new Date()) {
+  const nextMonth = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+  const last = new Date(+nextMonth - 1);
+  return `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(
     2,
     "0"
-  )}-${String(d.getDate()).padStart(2, "0")}`;
-}
-function firstDayThisMonthYMD() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
+  )}-${String(last.getDate()).padStart(2, "0")}`;
 }
 
 /* -------------------------- Component -------------------------- */
@@ -182,10 +172,9 @@ export default function SpartaTracking({
   data: SpartaState;
   onChange: (v: SpartaState) => void;
 }) {
-  const { role, user, name } = useAuth() as {
+  const { role, user } = useAuth() as {
     role?: Role;
     user?: { id?: string; email?: string };
-    name?: string;
   };
   const isSuper = role === "superadmin";
 
@@ -203,7 +192,7 @@ export default function SpartaTracking({
 
   const period = useMemo(currentPeriod, []);
 
-  // Catalog global (dikelola superadmin)
+  // Catalog global (dikelola superadmin, sementara disimpan local)
   const [catalog, setCatalog] = useState<ProjectDef[]>(readCatalog);
   useEffect(() => writeCatalog(catalog), [catalog]);
 
@@ -213,7 +202,6 @@ export default function SpartaTracking({
   // ====== STATE PROGRESS PER USER (local + sinkron parent) ======
   const localProgress =
     (data as SpartaStateWithProgress).projectsProgress ?? {};
-
   const [progressMap, setProgressMap] =
     useState<Record<string, ProjectProgress>>(localProgress);
 
@@ -383,63 +371,77 @@ export default function SpartaTracking({
       const res = await fetch(url, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          projectsProgress: progressMap,
-          meta: {
-            period,
-            accountId,
-            role: role || null,
-            savedBy: name || email || uid || null,
-          } as HistoryPayload,
-        }),
+        body: JSON.stringify({ projectsProgress: progressMap }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 1200);
       await loadFromServer();
-      await fetchHistory(); // langsung refresh riwayat
+      await loadHistory(); // refresh riwayat setelah simpan
     } catch (e) {
       console.error("PUT /api/sparta/progress", e);
       setSaveStatus("error");
     }
   };
 
-  /* ====== RIWAYAT (range tanggal + list) ====== */
-  const [from, setFrom] = useState<string>(firstDayThisMonthYMD());
-  const [to, setTo] = useState<string>(todayYMD());
-  const [history, setHistory] = useState<HistoryRow[]>([]);
-  const [hisStatus, setHisStatus] = useState<
+  /* ====== RIWAYAT SIMPAN (range tanggal) ====== */
+  const [fromDate, setFromDate] = useState(firstDayOfMonth());
+  const [toDate, setToDate] = useState(lastDayOfMonth());
+  const [historyAccountId, setHistoryAccountId] = useState<string>(
+    accountId || ""
+  );
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [histStatus, setHistStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
   >("idle");
 
-  const fetchHistory = useCallback(async () => {
+  const loadHistory = useCallback(async () => {
     try {
-      setHisStatus("loading");
-      const q = new URLSearchParams();
-      if (from) q.set("from", from);
-      if (to) q.set("to", to);
-      if (!isSuper) {
-        if (accountId) q.set("accountId", accountId);
-      } else {
-        q.set("scope", "all");
-        if (viewRole !== "semua") q.set("role", viewRole);
+      setHistStatus("loading");
+      const params = new URLSearchParams();
+      if (fromDate) params.set("from", fromDate);
+      if (toDate) params.set("to", toDate);
+      if (isSuper) {
+        // superadmin bisa kosongkan accountId untuk lihat semua
+        if (historyAccountId.trim())
+          params.set("accountId", historyAccountId.trim());
+      } else if (accountId) {
+        params.set("accountId", accountId);
       }
-      const res = await fetch(`/api/sparta/history?${q.toString()}`, {
+
+      const url = `/api/sparta/history?${params.toString()}`;
+      const res = await fetch(url, {
         headers: { Accept: "application/json" },
+        cache: "no-store",
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = (await res.json()) as { items: HistoryRow[] };
+      const json = (await res.json()) as { items?: HistoryItem[] };
       setHistory(json.items || []);
-      setHisStatus("loaded");
+      setHistStatus("loaded");
     } catch (e) {
       console.error("GET /api/sparta/history", e);
-      setHisStatus("error");
+      setHistStatus("error");
     }
-  }, [from, to, isSuper, accountId, viewRole]);
+  }, [fromDate, toDate, historyAccountId, isSuper, accountId]);
 
   useEffect(() => {
-    void fetchHistory();
-  }, [fetchHistory]);
+    // muat awal
+    loadHistory();
+  }, [loadHistory]);
+
+  // ringkas payload untuk tampilan card
+  const summarizePayload = (payload: HistoryItem["payload"]) => {
+    const pp = payload?.projectsProgress || {};
+    let totalSteps = 0;
+    let doneSteps = 0;
+    Object.values(pp).forEach((p) => {
+      const steps = Array.isArray(p.steps) ? p.steps : [];
+      totalSteps += steps.length;
+      doneSteps += steps.filter(Boolean).length;
+    });
+    const pct = totalSteps ? Math.round((doneSteps / totalSteps) * 100) : 0;
+    return { totalSteps, doneSteps, pct };
+  };
 
   return (
     <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
@@ -792,128 +794,98 @@ export default function SpartaTracking({
         )}
       </div>
 
-      {/* ===== Riwayat Simpan (Search by date range) ===== */}
-      <div className="px-3 sm:px-6 pb-6">
-        <div className="mt-6 rounded-2xl border bg-white overflow-hidden">
-          <div className="px-3 sm:px-4 py-3 border-b bg-slate-50 flex items-center justify-between">
-            <div className="font-semibold text-slate-800">Riwayat Simpan</div>
-            <div className="flex items-center gap-2">
-              <input
-                type="date"
-                value={from}
-                onChange={(e) => setFrom(e.target.value)}
-                className="rounded-md border-slate-300 text-sm"
-                title="Dari tanggal"
-              />
-              <span className="text-slate-500 text-sm">s/d</span>
-              <input
-                type="date"
-                value={to}
-                onChange={(e) => setTo(e.target.value)}
-                className="rounded-md border-slate-300 text-sm"
-                title="Sampai tanggal"
-              />
-              <button
-                onClick={() => void fetchHistory()}
-                className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md border hover:bg-slate-50"
-                title="Cari berdasarkan rentang tanggal"
-              >
-                <Search className="h-4 w-4" /> Cari
-              </button>
-            </div>
-          </div>
-
-          <div className="p-3 sm:p-4">
-            {hisStatus === "loading" && (
-              <div className="text-sm text-slate-600">Memuat riwayat…</div>
-            )}
-            {hisStatus === "error" && (
-              <div className="text-sm text-rose-600">
-                Gagal memuat riwayat. Coba lagi.
-              </div>
-            )}
-            {hisStatus === "loaded" && history.length === 0 && (
-              <div className="text-sm text-slate-600">
-                Tidak ada data pada rentang ini.
-              </div>
-            )}
-
-            {history.length > 0 && (
-              <div className="space-y-3">
-                {history.map((row) => {
-                  // Ringkasan persentase per proyek dari snapshot
-                  const entries = Object.entries(
-                    row.payload.projectsProgress || {}
-                  );
-                  return (
-                    <div
-                      key={row.id}
-                      className="rounded-xl border p-3 bg-white space-y-2"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="text-sm text-slate-700">
-                          <span className="font-medium">
-                            {new Date(row.created_at).toLocaleString("id-ID")}
-                          </span>{" "}
-                          • akun:{" "}
-                          <span className="text-slate-600">
-                            {row.account_id}
-                          </span>{" "}
-                          • role:{" "}
-                          <span className="text-slate-600">
-                            {row.role || "-"}
-                          </span>{" "}
-                          • period:{" "}
-                          <span className="text-slate-600">
-                            {row.period || "-"}
-                          </span>
-                        </div>
-                        {row.payload.savedBy && (
-                          <div className="text-xs text-slate-500">
-                            disimpan oleh: {row.payload.savedBy}
-                          </div>
-                        )}
-                      </div>
-
-                      {entries.length === 0 ? (
-                        <div className="text-sm text-slate-600">
-                          (Snapshot kosong)
-                        </div>
-                      ) : (
-                        <div className="grid gap-2">
-                          {entries.map(([projId, prog]) => {
-                            const done = prog.steps.filter(Boolean).length;
-                            const total = Math.max(1, prog.steps.length);
-                            const pct = Math.round((done / total) * 100);
-                            return (
-                              <div
-                                key={projId}
-                                className="flex items-center gap-3"
-                              >
-                                <div className="w-28 text-xs font-medium text-slate-700">
-                                  {projId}
-                                </div>
-                                <div className="h-2 w-full bg-slate-100 rounded-full overflow-hidden">
-                                  <div
-                                    className="h-full bg-blue-600 rounded-full"
-                                    style={{ width: `${pct}%` }}
-                                  />
-                                </div>
-                                <div className="w-14 text-right text-xs text-slate-700">
-                                  {pct}%
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+      {/* ======== Riwayat Simpan ======== */}
+      <div className="px-3 sm:px-6 py-4 border-t bg-slate-50">
+        <div className="flex items-center gap-2 mb-3">
+          <History className="h-5 w-5 text-slate-600" />
+          <div className="font-semibold text-slate-800">Riwayat Simpan</div>
+          {histStatus === "loading" && (
+            <span className="text-xs text-slate-500">Memuat…</span>
+          )}
+          {histStatus === "error" && (
+            <span className="text-xs text-rose-600">Gagal memuat</span>
+          )}
         </div>
+
+        <div className="flex flex-wrap items-end gap-2 mb-3">
+          <div className="flex flex-col">
+            <label className="text-xs text-slate-600">Dari</label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="rounded-md border-slate-300 text-sm"
+            />
+          </div>
+          <div className="flex flex-col">
+            <label className="text-xs text-slate-600">Sampai</label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="rounded-md border-slate-300 text-sm"
+            />
+          </div>
+
+          {isSuper && (
+            <div className="flex flex-col">
+              <label className="text-xs text-slate-600">
+                Account ID (opsional)
+              </label>
+              <input
+                value={historyAccountId}
+                onChange={(e) => setHistoryAccountId(e.target.value)}
+                placeholder="email/uid — kosongkan utk semua akun"
+                className="rounded-md border-slate-300 text-sm px-2 py-1.5 min-w-[240px]"
+              />
+            </div>
+          )}
+
+          <button
+            onClick={loadHistory}
+            className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700"
+          >
+            Tampilkan
+          </button>
+        </div>
+
+        {history.length === 0 ? (
+          <div className="text-sm text-slate-600">
+            Belum ada riwayat pada rentang ini.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {history.map((h) => {
+              const s = summarizePayload(h.payload);
+              const when = new Date(h.created_at).toLocaleString();
+              return (
+                <div
+                  key={h.id}
+                  className="rounded-lg border bg-white p-3 text-sm"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                      <div className="font-medium text-slate-800">{when}</div>
+                      <div className="text-slate-500">•</div>
+                      <div className="text-slate-600">
+                        Period: <span className="font-medium">{h.period}</span>
+                      </div>
+                      <div className="text-slate-500">•</div>
+                      <div className="text-slate-600">
+                        Akun:{" "}
+                        <span className="font-medium">{h.account_id}</span>
+                      </div>
+                    </div>
+                    <div className="text-slate-700">
+                      Steps: <span className="font-medium">{s.doneSteps}</span>{" "}
+                      / {s.totalSteps} • {s.pct}%
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,66 +1,49 @@
+// app/api/sparta/history/route.ts
 import { NextResponse } from "next/server";
 import { getSupabaseServer } from "@/lib/supabaseServer";
 
-/** JSON aman tanpa any */
-type Json = string | number | boolean | null | { [key: string]: Json } | Json[];
+/** Konversi "YYYY-MM-DD" -> Date (local) */
+function parseYmd(ymd?: string | null): Date | null {
+  if (!ymd) return null;
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+}
 
-type HistoryRow = {
-  id: string;
-  created_at: string;
-  account_id: string;
-  role: string | null;
-  period: string | null;
-  payload: Json;
-};
-
-// GET /api/sparta/history?from=YYYY-MM-DD&to=YYYY-MM-DD&accountId=... (user biasa)
-// GET /api/sparta/history?from=...&to=...&scope=all[&role=sales] (super)
+/** GET /api/sparta/history?from=YYYY-MM-DD&to=YYYY-MM-DD&accountId=optional&limit=optional */
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const from = searchParams.get("from");
-    const to = searchParams.get("to");
-    const scope = searchParams.get("scope"); // "all" jika super
-    const role = searchParams.get("role"); // filter optional untuk super
-    const accountId = searchParams.get("accountId"); // wajib jika bukan super
+    const fromStr = searchParams.get("from"); // YYYY-MM-DD
+    const toStr = searchParams.get("to"); // YYYY-MM-DD
+    const accountId = searchParams.get("accountId"); // optional (superadmin bisa kosong=lihat semua)
+    const limit = Number(searchParams.get("limit") || 200);
 
-    if (!from || !to) {
-      return NextResponse.json({ error: "Missing from/to date" } as const, {
-        status: 400,
-      });
-    }
-
-    // Normalisasi batas waktu (00:00 s/d 23:59:59)
-    const fromISO = `${from}T00:00:00.000Z`;
-    const toISO = `${to}T23:59:59.999Z`;
+    const fromDate = parseYmd(fromStr);
+    const toDateInc = (() => {
+      const d = parseYmd(toStr);
+      if (!d) return null;
+      // inclusive-to: geser ke awal hari berikutnya untuk filter lt
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+    })();
 
     const supa = getSupabaseServer();
-
     let q = supa
       .from("sparta_history")
-      .select("id,created_at,account_id,role,period,payload")
-      .gte("created_at", fromISO)
-      .lte("created_at", toISO)
-      .order("created_at", { ascending: false });
+      .select("id, account_id, period, payload, created_at")
+      .order("created_at", { ascending: false })
+      .limit(limit);
 
-    if (scope !== "all") {
-      if (!accountId) {
-        return NextResponse.json(
-          { error: "accountId required for non-super scope" } as const,
-          { status: 400 }
-        );
-      }
-      q = q.eq("account_id", accountId);
-    } else if (role) {
-      q = q.eq("role", role);
-    }
+    if (accountId) q = q.eq("account_id", accountId);
+    if (fromDate) q = q.gte("created_at", fromDate.toISOString());
+    if (toDateInc) q = q.lt("created_at", toDateInc.toISOString());
 
-    const { data, error } = await q.returns<HistoryRow[]>();
+    const { data, error } = await q;
     if (error) throw error;
 
-    return NextResponse.json({ items: (data || []) as HistoryRow[] } as const);
+    return NextResponse.json({ items: data || [] } as const);
   } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    return NextResponse.json({ error: message } as const, { status: 500 });
+    const msg = e instanceof Error ? e.message : String(e);
+    return NextResponse.json({ error: msg } as const, { status: 500 });
   }
 }
