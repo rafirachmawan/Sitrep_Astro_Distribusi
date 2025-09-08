@@ -7,12 +7,11 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Target as TargetIcon, Plus, Trash2 } from "lucide-react";
+import { Target as TargetIcon, Plus, Trash2, Lock } from "lucide-react";
 import type { TargetState, TargetDeadlines } from "@/lib/types";
 import { PRINCIPALS } from "@/lib/types";
 import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
-import { getSupabaseBrowser } from "@/lib/supabaseBrowser";
 
 /* ================= OVERRIDES (server-synced + local cache) ================= */
 type TargetOverrides = {
@@ -26,7 +25,7 @@ type TargetOverrides = {
   };
   principals?: Record<string, { label?: string }>;
   extraPrincipals?: Record<string, { label: string }>;
-  /** ⬇️ deadines ikut disimpan di server (per role) */
+  /** ⬇️ deadlines ikut disimpan di server (per role) */
   deadlines?: TargetDeadlines;
 };
 
@@ -121,8 +120,8 @@ function removeExtraPrincipal(
   return { ...src, extraPrincipals: extras };
 }
 
-/* ======== KUNCI PRINCIPAL & DEADLINES (fix error ts7053) ======== */
-/** ambil union key langsung dari tipe deadlines kamu */
+/* ======== KUNCI PRINCIPAL & DEADLINES (fix TS) ======== */
+/** key union dari TargetDeadlines["klaim"] */
 type PKey = Extract<keyof TargetDeadlines["klaim"], string>;
 /** array principal base bertipe literal union */
 const BASE_P = PRINCIPALS as readonly string[] as readonly PKey[];
@@ -130,37 +129,43 @@ const BASE_P = PRINCIPALS as readonly string[] as readonly PKey[];
 function isBasePrincipal(k: string): k is PKey {
   return (BASE_P as readonly string[]).includes(k);
 }
-/** map default berisi "" utk semua principal base */
+/** isi semua key union base dengan "" */
 function blankPrincipalMap(): Record<PKey, string> {
   const acc = {} as Record<PKey, string>;
   for (const k of BASE_P) acc[k] = "";
   return acc;
 }
 
-/** patch deadline tipe-safe */
+/** helper map aman utk obj -> Record<string,string> */
+function toMap(obj: unknown): Record<string, string> {
+  return obj && typeof obj === "object" ? (obj as Record<string, string>) : {};
+}
+
+/** patch deadline fleksibel (support principal custom) */
+type DeadlineScope = keyof TargetDeadlines;
 function patchDeadlines(
   src: TargetOverrides,
-  scope: keyof TargetDeadlines,
+  scope: DeadlineScope,
   value: string,
-  p?: PKey
+  p?: string
 ): TargetOverrides {
   const cur: TargetDeadlines = {
     klaim: {
       ...blankPrincipalMap(),
-      ...(src.deadlines?.klaim ?? {}),
+      ...(src.deadlines?.klaim ?? ({} as Record<PKey, string>)),
     } as Record<PKey, string>,
     weekly: {
       ...blankPrincipalMap(),
-      ...(src.deadlines?.weekly ?? {}),
+      ...(src.deadlines?.weekly ?? ({} as Record<PKey, string>)),
     } as Record<PKey, string>,
     targetSelesai: src.deadlines?.targetSelesai ?? "",
     fodks: src.deadlines?.fodks ?? "",
   };
 
   if (scope === "klaim" && p) {
-    (cur.klaim as Record<PKey, string>)[p] = value;
+    (cur.klaim as Record<string, string>)[p] = value; // dukung key custom
   } else if (scope === "weekly" && p) {
-    (cur.weekly as Record<PKey, string>)[p] = value;
+    (cur.weekly as Record<string, string>)[p] = value; // dukung key custom
   } else if (scope === "targetSelesai") {
     cur.targetSelesai = value;
   } else if (scope === "fodks") {
@@ -358,7 +363,8 @@ export default function TargetAchievement({
 
   /* ==== sinkronisasi awal & saat tab kembali aktif ==== */
   useEffect(() => {
-    setOverrides(readOverrides(viewRole)); // baca cache dulu biar cepat render
+    // baca cache dulu biar cepat render
+    setOverrides(readOverrides(viewRole));
     (async () => {
       try {
         await refreshOverrides(viewRole);
@@ -538,6 +544,8 @@ export default function TargetAchievement({
     }
     const cur = readOverrides(viewRole);
     await doSave(addExtraPrincipal(cur, k, lbl));
+
+    // inisialisasi state check untuk principal baru
     setWeeklyMap((prev) => ({
       ...prev,
       [k]: prev[k] ?? [false, false, false, false],
@@ -563,25 +571,27 @@ export default function TargetAchievement({
     });
 
   /* ===== deadline (superadmin, persist ke server via overrides) ===== */
-  type DeadlineScope = keyof TargetDeadlines;
-  const setDeadline = async (scope: DeadlineScope, value: string, p?: PKey) => {
+  const setDeadline = async (
+    scope: DeadlineScope,
+    value: string,
+    p?: string
+  ) => {
     if (!isSuper) return;
     const cur = readOverrides(viewRole);
     const next = patchDeadlines(cur, scope, value, p);
     await doSave(next);
 
+    // update parent (opsional, supaya state di halaman ini konsisten)
     onChange({
       ...data,
       deadlines: next.deadlines || data.deadlines,
     });
   };
 
-  const getDeadline = (scope: DeadlineScope, p?: PKey): string => {
+  const getDeadline = (scope: DeadlineScope, p?: string): string => {
     const d = overrides.deadlines;
-    if (scope === "klaim" && p)
-      return (d?.klaim as Record<PKey, string> | undefined)?.[p] ?? "";
-    if (scope === "weekly" && p)
-      return (d?.weekly as Record<PKey, string> | undefined)?.[p] ?? "";
+    if (scope === "klaim" && p) return toMap(d?.klaim)[p] ?? "";
+    if (scope === "weekly" && p) return toMap(d?.weekly)[p] ?? "";
     if (scope === "targetSelesai") return d?.targetSelesai ?? "";
     if (scope === "fodks") return d?.fodks ?? "";
     return "";
@@ -617,74 +627,6 @@ export default function TargetAchievement({
     isSuper ||
     (typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("debug") === "1");
-
-  /* ====== Realtime Subscriptions + polling fallback ====== */
-  useEffect(() => {
-    const supa = getSupabaseBrowser();
-    const channelName = `target-sync:${viewRole}:${
-      accountId || "anon"
-    }:${period}`;
-    const ch = supa.channel(channelName);
-
-    // 1) target_overrides (per role)
-    ch.on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "target_overrides",
-        filter: `role=eq.${viewRole}`,
-      },
-      () => {
-        void refreshOverrides(viewRole);
-      }
-    );
-
-    // 2) target_checks — subscribe semua, filter di handler (aman & sederhana)
-    ch.on(
-      "postgres_changes",
-      {
-        event: "*",
-        schema: "public",
-        table: "target_checks",
-      },
-      (payload) => {
-        const row = (payload.new || payload.old) as
-          | {
-              account_id?: string;
-              period?: string;
-            }
-          | undefined;
-
-        if (!row) return;
-        const matchAccount =
-          row.account_id === accountId ||
-          (altId ? row.account_id === altId : false);
-        const matchPeriod = row.period === period;
-
-        if (matchAccount && matchPeriod) {
-          void loadFromServer();
-        }
-      }
-    );
-
-    ch.subscribe((status) => {
-      if (status === "SUBSCRIBED") {
-        // optional: console.log("Realtime subscribed:", channelName);
-      }
-    });
-
-    // Fallback polling tiap 10 detik (jaga-jaga)
-    const interval = window.setInterval(() => {
-      void refreshOverrides(viewRole);
-      void loadFromServer();
-    }, 10000);
-
-    return () => {
-      supa.removeChannel(ch);
-      window.clearInterval(interval);
-    };
-  }, [viewRole, accountId, altId, period, refreshOverrides, loadFromServer]);
 
   /* =================== RENDER =================== */
   return (
@@ -807,7 +749,14 @@ export default function TargetAchievement({
               <thead className="bg-slate-50 text-slate-600">
                 <tr>
                   <th className="text-left py-2 px-2">Jenis</th>
-                  <th className="text-left py-2 px-2">{copy.deadlineLabel}</th>
+                  <th className="text-left py-2 px-2">
+                    {copy.deadlineLabel}
+                    {!isSuper && (
+                      <span className="block text-[11px] text-slate-400 font-normal">
+                        Diatur oleh superadmin
+                      </span>
+                    )}
+                  </th>
                   <th className="text-left py-2 px-2">Selesai</th>
                   {isSuper && editMode ? (
                     <th className="py-2 px-2">Aksi</th>
@@ -818,6 +767,7 @@ export default function TargetAchievement({
                 {allPrincipals.map((p) => {
                   const checked = klaimMap[p] || false;
                   const isBase = isBasePrincipal(p);
+                  const dateVal = getDeadline("klaim", p);
                   return (
                     <tr key={p}>
                       <td className="py-3 px-2 font-medium text-slate-800">
@@ -836,20 +786,26 @@ export default function TargetAchievement({
                       </td>
 
                       <td className="py-3 px-2">
-                        <input
-                          type="date"
-                          disabled={!isSuper || !isBase}
-                          className={`w-full rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500 ${
-                            !isSuper || !isBase
-                              ? "opacity-60 cursor-not-allowed bg-slate-50 text-slate-500"
-                              : ""
-                          }`}
-                          value={isBase ? getDeadline("klaim", p) : ""}
-                          onChange={(ev) =>
-                            isBase &&
-                            void setDeadline("klaim", ev.target.value, p)
-                          }
-                        />
+                        {isSuper ? (
+                          <input
+                            type="date"
+                            className="w-full rounded-2xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                            value={dateVal}
+                            onChange={(ev) =>
+                              void setDeadline("klaim", ev.target.value, p)
+                            }
+                            title={
+                              isBase
+                                ? "Deadline principal base"
+                                : "Deadline principal custom"
+                            }
+                          />
+                        ) : (
+                          <div className="w-full rounded-2xl border-2 border-slate-200 bg-slate-50 text-sm px-3 py-2 text-center text-slate-600 flex items-center justify-center gap-2 select-none">
+                            <Lock className="h-4 w-4 text-slate-400" />
+                            <span>{dateVal || "—"}</span>
+                          </div>
+                        )}
                       </td>
 
                       <td
@@ -890,6 +846,7 @@ export default function TargetAchievement({
                               type="button"
                               onClick={() => void removePrincipal(p)}
                               className="px-2 py-1 rounded-md bg-rose-600 text-white"
+                              title="Hapus principal custom ini"
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
