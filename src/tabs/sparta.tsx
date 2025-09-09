@@ -538,7 +538,7 @@ export default function SpartaTracking({
       } else if (accountId) {
         params.set("accountId", accountId);
       }
-      // NOTE: pastikan API /api/sparta/kendala support query dari, sampai, accountId tanpa projectId
+      // NOTE: API /api/sparta/kendala harus support query by range tanpa projectId
       const url = `/api/sparta/kendala?${params.toString()}`;
       const res = await fetch(url, {
         headers: { Accept: "application/json" },
