@@ -20,7 +20,7 @@ export type ProjectProgress = {
   steps: boolean[];
   progressText: string;
   nextAction: string;
-  kendala: string;
+  kendala: string; // teks draf sebelum di-save ke log
 };
 
 type SpartaStateWithProgress = SpartaState & {
@@ -50,6 +50,14 @@ type HistoryItem = {
   created_at: string;
 };
 
+type KendalaLog = {
+  id: string; // uuid
+  account_id: string;
+  project_id: string;
+  note: string;
+  created_at: string; // ISO
+};
+
 /* -------------------------- Catalog (server-synced) -------------------------- */
 const TARGET_ROLES: TargetRole[] = ["admin", "sales", "gudang"];
 
@@ -67,7 +75,6 @@ function normalizeProject(p: Partial<ProjectDef>): ProjectDef {
     position: typeof p.position === "number" ? p.position : 0,
   };
 }
-
 function reindex(items: ProjectDef[]) {
   return items.map((p, i) => ({ ...p, position: i }));
 }
@@ -167,7 +174,6 @@ export default function SpartaTracking({
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = (await res.json()) as { items?: ProjectDef[] };
       const items = (json.items || []).map(normalizeProject);
-      // pastikan urut by position
       items.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
       setCatalog(items);
       setCatalogStatus("loaded");
@@ -177,7 +183,6 @@ export default function SpartaTracking({
       setCatalogStatus("error");
     }
   }, []);
-
   useEffect(() => {
     loadCatalog();
   }, [loadCatalog]);
@@ -186,7 +191,6 @@ export default function SpartaTracking({
   const [publishStatus, setPublishStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
-
   const publishCatalog = async () => {
     try {
       setPublishStatus("saving");
@@ -340,6 +344,94 @@ export default function SpartaTracking({
     return [...src].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   }, [catalog, isSuper, viewRole, role]);
 
+  /* ====== KENDALA LOGS (Supabase) ====== */
+  const [kendalaMap, setKendalaMap] = useState<Record<string, KendalaLog[]>>(
+    {}
+  );
+  const [kendalaBusy, setKendalaBusy] = useState<Record<string, boolean>>({}); // per project saving
+  const [kendalaLoadBusy, setKendalaLoadBusy] = useState<
+    Record<string, boolean>
+  >({}); // per project loading
+
+  const loadKendala = useCallback(
+    async (projectId: string) => {
+      if (!accountId) return;
+      try {
+        setKendalaLoadBusy((b) => ({ ...b, [projectId]: true }));
+        const params = new URLSearchParams();
+        params.set("accountId", accountId);
+        params.set("projectId", projectId);
+        const res = await fetch(`/api/sparta/kendala?${params.toString()}`, {
+          headers: { Accept: "application/json" },
+          cache: "no-store",
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json = (await res.json()) as { items?: KendalaLog[] };
+        setKendalaMap((m) => ({ ...m, [projectId]: json.items || [] }));
+      } catch (e) {
+        console.error("GET /api/sparta/kendala", e);
+        setKendalaMap((m) => ({ ...m, [projectId]: [] }));
+      } finally {
+        setKendalaLoadBusy((b) => ({ ...b, [projectId]: false }));
+      }
+    },
+    [accountId]
+  );
+
+  // Load kendala untuk semua proyek yang terlihat saat berubah
+  useEffect(() => {
+    if (!accountId) return;
+    visibleCatalog.forEach((p) => {
+      // jika belum pernah load, load
+      if (!kendalaMap[p.id]) {
+        void loadKendala(p.id);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleCatalog.map((p) => p.id).join("|"), accountId]);
+
+  const saveKendala = async (projectId: string, note: string) => {
+    if (!accountId) return;
+    if (!note.trim()) return;
+    try {
+      setKendalaBusy((b) => ({ ...b, [projectId]: true }));
+      const res = await fetch("/api/sparta/kendala", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accountId, projectId, note }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // refresh list
+      await loadKendala(projectId);
+      // kosongkan draf kendala pada progressMap
+      setProgress(projectId, { kendala: "" });
+    } catch (e) {
+      console.error("POST /api/sparta/kendala", e);
+    } finally {
+      setKendalaBusy((b) => ({ ...b, [projectId]: false }));
+    }
+  };
+
+  const deleteKendala = async (projectId: string, id: string) => {
+    if (!accountId) return;
+    if (!confirm("Hapus catatan kendala ini?")) return;
+    try {
+      setKendalaBusy((b) => ({ ...b, [projectId]: true }));
+      const params = new URLSearchParams();
+      params.set("id", id);
+      params.set("accountId", accountId);
+      const res = await fetch(`/api/sparta/kendala?${params.toString()}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      await loadKendala(projectId);
+    } catch (e) {
+      console.error("DELETE /api/sparta/kendala", e);
+    } finally {
+      setKendalaBusy((b) => ({ ...b, [projectId]: false }));
+    }
+  };
+
   /* ====== LOAD / SAVE KE SERVER (progress per akun) ====== */
   const [loadStatus, setLoadStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
@@ -368,7 +460,6 @@ export default function SpartaTracking({
       setLoadStatus("error");
     }
   }, [accountId, altId, period]);
-
   useEffect(() => {
     loadFromServer();
   }, [loadFromServer]);
@@ -390,7 +481,7 @@ export default function SpartaTracking({
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 1200);
       await loadFromServer();
-      await loadHistory(); // refresh riwayat setelah simpan
+      await loadHistory();
     } catch (e) {
       console.error("PUT /api/sparta/progress", e);
       setSaveStatus("error");
@@ -415,7 +506,6 @@ export default function SpartaTracking({
       if (fromDate) params.set("from", fromDate);
       if (toDate) params.set("to", toDate);
       if (isSuper) {
-        // superadmin bisa kosongkan accountId untuk lihat semua
         if (historyAccountId.trim())
           params.set("accountId", historyAccountId.trim());
       } else if (accountId) {
@@ -436,9 +526,7 @@ export default function SpartaTracking({
       setHistStatus("error");
     }
   }, [fromDate, toDate, historyAccountId, isSuper, accountId]);
-
   useEffect(() => {
-    // muat awal
     loadHistory();
   }, [loadHistory]);
 
@@ -598,6 +686,10 @@ export default function SpartaTracking({
             );
             const formattedDeadline = formatDeadlineWithDay(proj.deadline);
             const weekday = weekdayNameId(proj.deadline);
+
+            const logs = kendalaMap[proj.id] || [];
+            const busy = kendalaBusy[proj.id];
+            const loadingLogs = kendalaLoadBusy[proj.id];
 
             return (
               <div
@@ -830,15 +922,77 @@ export default function SpartaTracking({
                         <div className="text-sm font-medium text-slate-700 mb-1">
                           Kendala
                         </div>
-                        <textarea
-                          rows={2}
-                          value={prog.kendala}
-                          onChange={(e) =>
-                            setProgress(proj.id, { kendala: e.target.value })
-                          }
-                          placeholder="Contoh: kendala koordinasi…"
-                          className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
-                        />
+                        <div className="flex gap-2">
+                          <textarea
+                            rows={2}
+                            value={prog.kendala}
+                            onChange={(e) =>
+                              setProgress(proj.id, { kendala: e.target.value })
+                            }
+                            placeholder="Contoh: kendala koordinasi…"
+                            className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                          />
+                          <button
+                            onClick={() => saveKendala(proj.id, prog.kendala)}
+                            disabled={
+                              busy || !accountId || !prog.kendala.trim()
+                            }
+                            className={
+                              "shrink-0 h-[40px] self-end px-3 py-2 rounded-md text-sm " +
+                              (busy || !accountId || !prog.kendala.trim()
+                                ? "bg-blue-300 text-white cursor-not-allowed"
+                                : "bg-blue-600 text-white hover:bg-blue-700")
+                            }
+                            title="Simpan catatan kendala (terekam per tanggal)"
+                          >
+                            Simpan
+                          </button>
+                        </div>
+
+                        {/* List kendala */}
+                        <div className="mt-2">
+                          <div className="text-xs text-slate-500 mb-1">
+                            Catatan Kendala {loadingLogs ? "• memuat…" : ""}
+                          </div>
+                          {logs.length === 0 ? (
+                            <div className="text-sm text-slate-500">
+                              Belum ada catatan.
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {logs.map((k) => {
+                                const when = new Date(
+                                  k.created_at
+                                ).toLocaleString("id-ID");
+                                return (
+                                  <div
+                                    key={k.id}
+                                    className="flex items-start justify-between gap-3 rounded-md border p-2"
+                                  >
+                                    <div className="text-sm">
+                                      <div className="text-slate-400 text-xs">
+                                        {when}
+                                      </div>
+                                      <div className="text-slate-800 whitespace-pre-wrap">
+                                        {k.note}
+                                      </div>
+                                    </div>
+                                    <button
+                                      onClick={() =>
+                                        deleteKendala(proj.id, k.id)
+                                      }
+                                      className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                                      title="Hapus catatan kendala"
+                                    >
+                                      <Trash2 className="h-4 w-4" />
+                                      Hapus
+                                    </button>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </>
                   )}
