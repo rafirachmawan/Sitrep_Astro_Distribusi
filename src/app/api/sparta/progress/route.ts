@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseServer";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 type Payload = {
   projectsProgress?: Record<
     string,
@@ -12,6 +15,7 @@ type Payload = {
     }
   >;
 };
+
 type DBHistoryRow = {
   id: string;
   account_id: string;
@@ -26,14 +30,12 @@ export async function GET(req: NextRequest) {
     const accountId = u.searchParams.get("accountId");
     const altId = u.searchParams.get("altId");
     const period = u.searchParams.get("period");
-
     if (!accountId || !period) {
-      return NextResponse.json(
-        { error: "missing_account_or_period" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "missing_params" }, { status: 400 });
     }
+    const acc = accountId as string;
 
+    // Build query dulu
     let q = supabaseAdmin
       .from("sparta_history")
       .select("id,account_id,period,payload,created_at")
@@ -41,10 +43,10 @@ export async function GET(req: NextRequest) {
       .order("created_at", { ascending: false })
       .limit(1);
 
-    q = altId
-      ? q.in("account_id", [accountId, altId])
-      : q.eq("account_id", accountId);
+    // filter account_id: pakai .in kalau ada altId
+    q = altId ? q.in("account_id", [acc, altId]) : q.eq("account_id", acc);
 
+    // returns DIPANGGIL TERAKHIR
     const { data, error } = await q.returns<DBHistoryRow[]>();
     if (error) throw error;
 
@@ -64,25 +66,18 @@ export async function PUT(req: NextRequest) {
     const u = new URL(req.url);
     const accountId = u.searchParams.get("accountId");
     const period = u.searchParams.get("period");
-
     if (!accountId || !period) {
-      return NextResponse.json(
-        { error: "missing_account_or_period" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "missing_params" }, { status: 400 });
     }
 
     const body = (await req.json()) as Payload;
-    const payload: Payload = {
-      projectsProgress: body.projectsProgress ?? {},
-    };
+    const payload: Payload = { projectsProgress: body.projectsProgress ?? {} };
 
     const { error } = await supabaseAdmin
       .from("sparta_history")
-      .insert([{ account_id: accountId, period, payload }]);
+      .insert([{ account_id: accountId as string, period, payload }]);
 
     if (error) throw error;
-
     return NextResponse.json({ ok: true }, { status: 200 });
   } catch (e) {
     console.error("PUT /api/sparta/progress", e);

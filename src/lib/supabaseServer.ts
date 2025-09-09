@@ -2,12 +2,23 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Client Supabase berbasis service-role untuk server (Next.js API routes / server actions).
- * Jangan pernah expose SERVICE_ROLE ke client/browser.
+ * Server-only Supabase client using SERVICE ROLE key.
+ * ❗ Never expose SERVICE_ROLE to the browser.
+ *
+ * If you have a generated Database type from Supabase, you can enable it:
+ *   import type { Database } from "@/lib/types/supabase";
+ *   type SClient = SupabaseClient<Database>;
+ * Otherwise, this falls back to the untyped SupabaseClient.
  */
-let _serverClient: SupabaseClient | null = null;
+type SClient = SupabaseClient;
 
-export function getSupabaseServer(): SupabaseClient {
+let _serverClient: SClient | null = null;
+
+/**
+ * Return a singleton Supabase service client for server environments
+ * (Next.js Route Handlers / Server Actions).
+ */
+export function getSupabaseServer(): SClient {
   if (_serverClient) return _serverClient;
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -15,18 +26,23 @@ export function getSupabaseServer(): SupabaseClient {
 
   if (!url || !serviceKey) {
     throw new Error(
-      "Missing SUPABASE envs. Pastikan NEXT_PUBLIC_SUPABASE_URL dan SUPABASE_SERVICE_ROLE terisi."
+      "Missing SUPABASE envs. Set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE."
     );
   }
 
   _serverClient = createClient(url, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
+    auth: {
+      // This is a server-side client; no need to persist/refresh session.
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  }) as SClient;
+
   return _serverClient;
 }
 
 /**
- * Alias kompatibel untuk kode lama yang mengimpor { supabaseAdmin } sebagai instance client.
- * Boleh dipakai langsung: supabaseAdmin.from("table")...
+ * Back-compat alias: some code may import { supabaseAdmin } directly.
+ * Usage: supabaseAdmin.from("table")...
  */
-export const supabaseAdmin: SupabaseClient = getSupabaseServer();
+export const supabaseAdmin: SClient = getSupabaseServer();

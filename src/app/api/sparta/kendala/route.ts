@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabaseServer";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
 type DBKendalaRow = {
   id: string;
   account_id: string;
@@ -9,43 +12,50 @@ type DBKendalaRow = {
   created_at: string;
 };
 
-function iso(v?: string | null, fb?: string) {
-  if (!v) return fb ?? new Date(0).toISOString();
+function toIsoStart(v: string | null): string | null {
+  if (!v) return null;
   const d = new Date(v);
-  return isNaN(+d) ? fb ?? new Date(0).toISOString() : d.toISOString();
+  if (isNaN(+d)) return null;
+  d.setHours(0, 0, 0, 0);
+  return d.toISOString();
+}
+function toIsoEnd(v: string | null): string | null {
+  if (!v) return null;
+  const d = new Date(v);
+  if (isNaN(+d)) return null;
+  d.setHours(23, 59, 59, 999);
+  return d.toISOString();
 }
 
-/** List kendala:
- * - Per proyek: ?accountId=...&projectId=...
- * - Riwayat rentang tanggal: ?from=yyyy-mm-dd&to=yyyy-mm-dd[&accountId=...]
- */
+// GET — list by (accountId+projectId) ATAU by date range (opsional accountId)
 export async function GET(req: NextRequest) {
   try {
     const u = new URL(req.url);
     const accountId = u.searchParams.get("accountId");
     const projectId = u.searchParams.get("projectId");
-    const from = u.searchParams.get("from");
-    const to = u.searchParams.get("to");
+    const fromIso = toIsoStart(u.searchParams.get("from"));
+    const toIso = toIsoEnd(u.searchParams.get("to"));
 
-    let q = supabaseAdmin
+    const base = supabaseAdmin
       .from("sparta_kendala")
       .select("id,account_id,project_id,note,created_at")
       .order("created_at", { ascending: false });
 
+    let q = base;
+
     if (projectId && accountId) {
       q = q.eq("project_id", projectId).eq("account_id", accountId);
     } else {
-      // mode riwayat rentang
-      const startIso = iso(from, new Date(0).toISOString());
-      const endIso = iso(to, new Date().toISOString());
-      q = q.gte("created_at", startIso).lte("created_at", endIso);
+      if (fromIso) q = q.gte("created_at", fromIso);
+      if (toIso) q = q.lte("created_at", toIso);
       if (accountId) q = q.eq("account_id", accountId);
     }
 
+    // <- PANGGIL returns DI AKHIR
     const { data, error } = await q.returns<DBKendalaRow[]>();
     if (error) throw error;
 
-    return NextResponse.json({ items: data }, { status: 200 });
+    return NextResponse.json({ items: data ?? [] }, { status: 200 });
   } catch (e) {
     console.error("GET /api/sparta/kendala", e);
     return NextResponse.json(
@@ -55,7 +65,6 @@ export async function GET(req: NextRequest) {
   }
 }
 
-/** Simpan catatan kendala: { accountId, projectId, note } */
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as {
@@ -79,8 +88,8 @@ export async function POST(req: NextRequest) {
       .select("id,account_id,project_id,note,created_at")
       .single()
       .returns<DBKendalaRow>();
-    if (error) throw error;
 
+    if (error) throw error;
     return NextResponse.json({ item: data }, { status: 201 });
   } catch (e) {
     console.error("POST /api/sparta/kendala", e);
@@ -91,15 +100,12 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** Hapus catatan: ?id=... [&accountId=...]  (optional: batasi pemilik) */
 export async function DELETE(req: NextRequest) {
   try {
     const u = new URL(req.url);
     const id = u.searchParams.get("id");
     const accountId = u.searchParams.get("accountId");
-    if (!id) {
-      return NextResponse.json({ error: "missing_id" }, { status: 400 });
-    }
+    if (!id) return NextResponse.json({ error: "missing_id" }, { status: 400 });
 
     let q = supabaseAdmin.from("sparta_kendala").delete().eq("id", id);
     if (accountId) q = q.eq("account_id", accountId);
