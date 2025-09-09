@@ -39,6 +39,7 @@ type ProjectDef = {
   steps: string[];
   deadline: string;
   targetRole: TargetRole;
+  position?: number;
 };
 
 type HistoryItem = {
@@ -49,26 +50,9 @@ type HistoryItem = {
   created_at: string;
 };
 
-/* -------------------------- Catalog (local) -------------------------- */
-const CATALOG_KEY = "sitrep-sparta-catalog-v3";
+/* -------------------------- Catalog (server-synced) -------------------------- */
 const TARGET_ROLES: TargetRole[] = ["admin", "sales", "gudang"];
 
-function defaultCatalog(): ProjectDef[] {
-  return [
-    {
-      id: "udi",
-      title: "Penyelesaian Klaim UDI",
-      steps: [
-        "Menyelesaikan Q3 2024",
-        "Menyelesaikan Q4 2024",
-        "Menyelesaikan Q1 2025 (termasuk reward Q1 2025)",
-        "Menyelesaikan Q2 2025 (termasuk reward proporsional Q2 2025)",
-      ],
-      deadline: "",
-      targetRole: "admin",
-    },
-  ];
-}
 function normalizeProject(p: Partial<ProjectDef>): ProjectDef {
   return {
     id:
@@ -80,34 +64,12 @@ function normalizeProject(p: Partial<ProjectDef>): ProjectDef {
     steps: Array.isArray(p.steps) ? p.steps : [],
     deadline: p.deadline ?? "",
     targetRole: (p.targetRole ?? "admin") as TargetRole,
+    position: typeof p.position === "number" ? p.position : 0,
   };
 }
-function readCatalog(): ProjectDef[] {
-  if (typeof window === "undefined") return defaultCatalog();
-  try {
-    const raw = localStorage.getItem(CATALOG_KEY);
-    if (raw) {
-      const arr = JSON.parse(raw) as Array<Partial<ProjectDef>>;
-      return arr.map(normalizeProject);
-    }
-    const rawV2 = localStorage.getItem("sitrep-sparta-catalog-v2");
-    if (rawV2) {
-      const arr = JSON.parse(rawV2) as Array<Partial<ProjectDef>>;
-      return arr.map(normalizeProject);
-    }
-    const rawV1 = localStorage.getItem("sitrep-sparta-catalog-v1");
-    if (rawV1) {
-      const old = JSON.parse(rawV1) as Array<Omit<ProjectDef, "targetRole">>;
-      return old.map((p) => normalizeProject({ ...p, targetRole: "admin" }));
-    }
-    return defaultCatalog();
-  } catch {
-    return defaultCatalog();
-  }
-}
-function writeCatalog(items: ProjectDef[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(CATALOG_KEY, JSON.stringify(items));
+
+function reindex(items: ProjectDef[]) {
+  return items.map((p, i) => ({ ...p, position: i }));
 }
 
 /* -------------------------- Util -------------------------- */
@@ -192,9 +154,59 @@ export default function SpartaTracking({
 
   const period = useMemo(currentPeriod, []);
 
-  // Catalog global (dikelola superadmin, sementara disimpan local)
-  const [catalog, setCatalog] = useState<ProjectDef[]>(readCatalog);
-  useEffect(() => writeCatalog(catalog), [catalog]);
+  // ===== Catalog global (superadmin publish; semua device load dari server) =====
+  const [catalog, setCatalog] = useState<ProjectDef[]>([]);
+  const [catalogStatus, setCatalogStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+
+  const loadCatalog = useCallback(async () => {
+    try {
+      setCatalogStatus("loading");
+      const res = await fetch("/api/sparta/catalog", { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as { items?: ProjectDef[] };
+      const items = (json.items || []).map(normalizeProject);
+      // pastikan urut by position
+      items.sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+      setCatalog(items);
+      setCatalogStatus("loaded");
+    } catch (e) {
+      console.error("GET /api/sparta/catalog", e);
+      setCatalog([]);
+      setCatalogStatus("error");
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCatalog();
+  }, [loadCatalog]);
+
+  // Publish (superadmin)
+  const [publishStatus, setPublishStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+
+  const publishCatalog = async () => {
+    try {
+      setPublishStatus("saving");
+      const res = await fetch("/api/sparta/catalog", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: catalog,
+          updatedBy: accountId ?? null,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setPublishStatus("saved");
+      setTimeout(() => setPublishStatus("idle"), 1200);
+      await loadCatalog();
+    } catch (e) {
+      console.error("PUT /api/sparta/catalog", e);
+      setPublishStatus("error");
+    }
+  };
 
   const [manage, setManage] = useState(false);
   const [viewRole, setViewRole] = useState<TargetRole | "semua">("semua");
@@ -239,7 +251,7 @@ export default function SpartaTracking({
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [catalog.length]);
 
   // Helper get/set progress per proyek
   const getProgress = (id: string, stepLen: number): ProjectProgress => {
@@ -270,23 +282,20 @@ export default function SpartaTracking({
 
   // --- Actions (kelola proyek, hanya superadmin) ---
   const addProject = () => {
-    const p: ProjectDef = {
-      id:
-        typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID()
-          : Math.random().toString(36).slice(2),
+    const p: ProjectDef = normalizeProject({
       title: "Proyek Baru",
       steps: ["Langkah 1", "Langkah 2"],
       deadline: "",
       targetRole: "admin",
-    };
-    setCatalog((c) => [...c, p]);
+      position: catalog.length,
+    });
+    setCatalog((c) => reindex([...c, p]));
   };
   const updateProject = (id: string, patch: Partial<ProjectDef>) =>
     setCatalog((c) => c.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   const deleteProject = (id: string) => {
     if (!confirm("Hapus proyek ini?")) return;
-    setCatalog((c) => c.filter((x) => x.id !== id));
+    setCatalog((c) => reindex(c.filter((x) => x.id !== id)));
     setProgressMap((prev) => {
       const { [id]: _drop, ...rest } = prev;
       return rest;
@@ -320,14 +329,18 @@ export default function SpartaTracking({
 
   // proyek yang tampil
   const visibleCatalog = useMemo(() => {
-    if (isSuper) {
-      if (viewRole === "semua") return catalog;
-      return catalog.filter((p) => p.targetRole === viewRole);
-    }
-    return catalog.filter((p) => p.targetRole === (role as TargetRole));
+    const src =
+      isSuper && viewRole === "semua"
+        ? catalog
+        : catalog.filter((p) =>
+            isSuper
+              ? p.targetRole === viewRole
+              : p.targetRole === (role as TargetRole)
+          );
+    return [...src].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   }, [catalog, isSuper, viewRole, role]);
 
-  /* ====== LOAD / SAVE KE SERVER (per akun) ====== */
+  /* ====== LOAD / SAVE KE SERVER (progress per akun) ====== */
   const [loadStatus, setLoadStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
   >("idle");
@@ -457,6 +470,12 @@ export default function SpartaTracking({
           {loadStatus === "error" && (
             <span className="ml-2 text-xs text-rose-600">Gagal memuat</span>
           )}
+          {catalogStatus === "loading" && (
+            <span className="ml-2 text-xs text-slate-500">Catalog…</span>
+          )}
+          {catalogStatus === "error" && (
+            <span className="ml-2 text-xs text-rose-600">Catalog gagal</span>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -512,12 +531,48 @@ export default function SpartaTracking({
               </button>
 
               {manage && (
-                <button
-                  onClick={addProject}
-                  className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
-                >
-                  <Plus className="h-4 w-4" /> Tambah Proyek
-                </button>
+                <>
+                  <button
+                    onClick={addProject}
+                    className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+                  >
+                    <Plus className="h-4 w-4" /> Tambah Proyek
+                  </button>
+
+                  <button
+                    onClick={loadCatalog}
+                    className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md border hover:bg-slate-50"
+                    title="Reload catalog dari server"
+                  >
+                    Reload
+                  </button>
+
+                  <button
+                    onClick={publishCatalog}
+                    disabled={publishStatus === "saving"}
+                    className={
+                      "inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-md " +
+                      (publishStatus === "saving"
+                        ? "bg-blue-400 text-white cursor-not-allowed"
+                        : "bg-blue-600 text-white hover:bg-blue-700")
+                    }
+                    title="Publish catalog ke server (Supabase)"
+                  >
+                    {publishStatus === "saving"
+                      ? "Publishing…"
+                      : "Publish Catalog"}
+                  </button>
+                  {publishStatus === "saved" && (
+                    <span className="text-xs text-emerald-700">
+                      Catalog tersimpan ✔
+                    </span>
+                  )}
+                  {publishStatus === "error" && (
+                    <span className="text-xs text-rose-600">
+                      Gagal publish catalog
+                    </span>
+                  )}
+                </>
               )}
             </>
           )}
