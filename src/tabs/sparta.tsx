@@ -348,10 +348,10 @@ export default function SpartaTracking({
   const [kendalaMap, setKendalaMap] = useState<Record<string, KendalaLog[]>>(
     {}
   );
-  const [kendalaBusy, setKendalaBusy] = useState<Record<string, boolean>>({}); // per project saving
+  const [kendalaBusy, setKendalaBusy] = useState<Record<string, boolean>>({});
   const [kendalaLoadBusy, setKendalaLoadBusy] = useState<
     Record<string, boolean>
-  >({}); // per project loading
+  >({});
 
   const loadKendala = useCallback(
     async (projectId: string) => {
@@ -378,11 +378,9 @@ export default function SpartaTracking({
     [accountId]
   );
 
-  // Load kendala untuk semua proyek yang terlihat saat berubah
   useEffect(() => {
     if (!accountId) return;
     visibleCatalog.forEach((p) => {
-      // jika belum pernah load, load
       if (!kendalaMap[p.id]) {
         void loadKendala(p.id);
       }
@@ -401,9 +399,7 @@ export default function SpartaTracking({
         body: JSON.stringify({ accountId, projectId, note }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      // refresh list
       await loadKendala(projectId);
-      // kosongkan draf kendala pada progressMap
       setProgress(projectId, { kendala: "" });
     } catch (e) {
       console.error("POST /api/sparta/kendala", e);
@@ -530,7 +526,7 @@ export default function SpartaTracking({
     loadHistory();
   }, [loadHistory]);
 
-  // ringkas payload untuk tampilan card
+  // ringkas payload untuk badge kecil
   const summarizePayload = (payload: HistoryItem["payload"]) => {
     const pp = payload?.projectsProgress || {};
     let totalSteps = 0;
@@ -543,6 +539,58 @@ export default function SpartaTracking({
     const pct = totalSteps ? Math.round((doneSteps / totalSteps) * 100) : 0;
     return { totalSteps, doneSteps, pct };
   };
+
+  // helper: ambil judul proyek dari catalog
+  const projectTitle = useCallback(
+    (id: string) => catalog.find((c) => c.id === id)?.title ?? id,
+    [catalog]
+  );
+
+  // flatten history -> baris tabel detail per project
+  const detailedRows = useMemo(() => {
+    type Row = {
+      key: string;
+      when: string;
+      account: string;
+      period: string;
+      projectId: string;
+      projectTitle: string;
+      total: number;
+      done: number;
+      stepsDetail: Array<{ label: string; done: boolean }>;
+    };
+    const rows: Row[] = [];
+    history.forEach((h) => {
+      const pp = h.payload?.projectsProgress || {};
+      Object.entries(pp).forEach(([pid, prog]) => {
+        const proj = catalog.find((c) => c.id === pid);
+        const labels = proj?.steps ?? [];
+        const steps = (prog.steps ?? []).slice(0, labels.length);
+        const detail = labels.map((label, i) => ({
+          label,
+          done: Boolean(steps[i]),
+        }));
+        const total = labels.length;
+        const done = detail.filter((d) => d.done).length;
+        rows.push({
+          key: `${h.id}-${pid}`,
+          when: h.created_at,
+          account: h.account_id,
+          period: h.period,
+          projectId: pid,
+          projectTitle: projectTitle(pid),
+          total,
+          done,
+          stepsDetail: detail,
+        });
+      });
+    });
+    // urut terbaru dulu
+    rows.sort(
+      (a, b) => new Date(b.when).getTime() - new Date(a.when).getTime()
+    );
+    return rows;
+  }, [history, catalog, projectTitle]);
 
   return (
     <div className="bg-white border rounded-2xl shadow-sm overflow-hidden">
@@ -935,11 +983,15 @@ export default function SpartaTracking({
                           <button
                             onClick={() => saveKendala(proj.id, prog.kendala)}
                             disabled={
-                              busy || !accountId || !prog.kendala.trim()
+                              kendalaBusy[proj.id] ||
+                              !accountId ||
+                              !prog.kendala.trim()
                             }
                             className={
                               "shrink-0 h-[40px] self-end px-3 py-2 rounded-md text-sm " +
-                              (busy || !accountId || !prog.kendala.trim()
+                              (kendalaBusy[proj.id] ||
+                              !accountId ||
+                              !prog.kendala.trim()
                                 ? "bg-blue-300 text-white cursor-not-allowed"
                                 : "bg-blue-600 text-white hover:bg-blue-700")
                             }
@@ -952,15 +1004,16 @@ export default function SpartaTracking({
                         {/* List kendala */}
                         <div className="mt-2">
                           <div className="text-xs text-slate-500 mb-1">
-                            Catatan Kendala {loadingLogs ? "• memuat…" : ""}
+                            Catatan Kendala{" "}
+                            {kendalaLoadBusy[proj.id] ? "• memuat…" : ""}
                           </div>
-                          {logs.length === 0 ? (
+                          {(kendalaMap[proj.id] ?? []).length === 0 ? (
                             <div className="text-sm text-slate-500">
                               Belum ada catatan.
                             </div>
                           ) : (
                             <div className="space-y-2">
-                              {logs.map((k) => {
+                              {(kendalaMap[proj.id] ?? []).map((k) => {
                                 const when = new Date(
                                   k.created_at
                                 ).toLocaleString("id-ID");
@@ -1003,7 +1056,7 @@ export default function SpartaTracking({
         )}
       </div>
 
-      {/* ======== Riwayat Simpan ======== */}
+      {/* ======== Riwayat Simpan (TABEL DETAIL, mengikuti filter tanggal) ======== */}
       <div className="px-3 sm:px-6 py-4 border-t bg-slate-50">
         <div className="flex items-center gap-2 mb-3">
           <History className="h-5 w-5 text-slate-600" />
@@ -1058,41 +1111,74 @@ export default function SpartaTracking({
           </button>
         </div>
 
-        {history.length === 0 ? (
+        {/* TABEL */}
+        {detailedRows.length === 0 ? (
           <div className="text-sm text-slate-600">
             Belum ada riwayat pada rentang ini.
           </div>
         ) : (
-          <div className="space-y-2">
-            {history.map((h) => {
-              const s = summarizePayload(h.payload);
-              const when = new Date(h.created_at).toLocaleString();
-              return (
-                <div
-                  key={h.id}
-                  className="rounded-lg border bg-white p-3 text-sm"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      <div className="font-medium text-slate-800">{when}</div>
-                      <div className="text-slate-500">•</div>
-                      <div className="text-slate-600">
-                        Period: <span className="font-medium">{h.period}</span>
-                      </div>
-                      <div className="text-slate-500">•</div>
-                      <div className="text-slate-600">
-                        Akun:{" "}
-                        <span className="font-medium">{h.account_id}</span>
-                      </div>
-                    </div>
-                    <div className="text-slate-700">
-                      Steps: <span className="font-medium">{s.doneSteps}</span>{" "}
-                      / {s.totalSteps} • {s.pct}%
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+          <div className="overflow-x-auto rounded-lg border bg-white">
+            <table className="min-w-[720px] w-full text-sm">
+              <thead className="bg-slate-50 text-slate-700">
+                <tr>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Waktu
+                  </th>
+                  {isSuper && (
+                    <th className="px-3 py-2 text-left whitespace-nowrap">
+                      Akun
+                    </th>
+                  )}
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Period
+                  </th>
+                  <th className="px-3 py-2 text-left">Proyek</th>
+                  <th className="px-3 py-2 text-left whitespace-nowrap">
+                    Selesai/Total
+                  </th>
+                  <th className="px-3 py-2 text-left">Detail Langkah</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detailedRows.map((r) => (
+                  <tr key={r.key} className="border-t">
+                    <td className="px-3 py-2 align-top text-slate-700">
+                      {new Date(r.when).toLocaleString("id-ID")}
+                    </td>
+                    {isSuper && (
+                      <td className="px-3 py-2 align-top text-slate-700">
+                        {r.account}
+                      </td>
+                    )}
+                    <td className="px-3 py-2 align-top text-slate-700">
+                      {r.period}
+                    </td>
+                    <td className="px-3 py-2 align-top text-slate-800">
+                      {r.projectTitle}
+                    </td>
+                    <td className="px-3 py-2 align-top text-slate-800">
+                      {r.done} / {r.total}
+                    </td>
+                    <td className="px-3 py-2 align-top">
+                      <ul className="space-y-1">
+                        {r.stepsDetail.map((s, i) => (
+                          <li
+                            key={i}
+                            className={
+                              s.done
+                                ? "text-emerald-700"
+                                : "text-slate-600 line-through"
+                            }
+                          >
+                            {s.done ? "✔" : "✗"} {i + 1}. {s.label}
+                          </li>
+                        ))}
+                      </ul>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
