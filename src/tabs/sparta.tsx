@@ -20,7 +20,7 @@ export type ProjectProgress = {
   steps: boolean[];
   progressText: string;
   nextAction: string;
-  kendala: string; // teks draf sebelum di-save ke log
+  kendala: string; // draft sebelum disimpan ke log
 };
 
 type SpartaStateWithProgress = SpartaState & {
@@ -51,11 +51,11 @@ type HistoryItem = {
 };
 
 type KendalaLog = {
-  id: string; // uuid
+  id: string;
   account_id: string;
   project_id: string;
   note: string;
-  created_at: string; // ISO
+  created_at: string;
 };
 
 /* -------------------------- Catalog (server-synced) -------------------------- */
@@ -147,7 +147,7 @@ export default function SpartaTracking({
   };
   const isSuper = role === "superadmin";
 
-  // ===== Account identity (stabil) =====
+  // ===== Account identity =====
   const uid = user?.id || null;
   const email = user?.email || null;
   const FORCE =
@@ -155,13 +155,13 @@ export default function SpartaTracking({
       ? localStorage.getItem("sitrep-force-account-id")
       : null;
 
-  const accountId: string | null = FORCE || email || uid || null; // pakai email lalu uid
+  const accountId: string | null = FORCE || email || uid || null;
   const altId: string | null =
     FORCE || !email || !uid ? null : accountId === email ? uid : email;
 
   const period = useMemo(currentPeriod, []);
 
-  // ===== Catalog global (superadmin publish; semua device load dari server) =====
+  // ===== Catalog (server) =====
   const [catalog, setCatalog] = useState<ProjectDef[]>([]);
   const [catalogStatus, setCatalogStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
@@ -215,13 +215,12 @@ export default function SpartaTracking({
   const [manage, setManage] = useState(false);
   const [viewRole, setViewRole] = useState<TargetRole | "semua">("semua");
 
-  // ====== STATE PROGRESS PER USER (local + sinkron parent) ======
+  // ===== Progress per user =====
   const localProgress =
     (data as SpartaStateWithProgress).projectsProgress ?? {};
   const [progressMap, setProgressMap] =
     useState<Record<string, ProjectProgress>>(localProgress);
 
-  // jaga parent tetap sync
   useEffect(() => {
     const next: SpartaStateWithProgress = {
       ...(data as object),
@@ -231,7 +230,6 @@ export default function SpartaTracking({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(progressMap)]);
 
-  // Back-compat: migrasi struktur lama → projectsProgress (sekali)
   useEffect(() => {
     const legacy = data as SpartaStateAny;
     if (
@@ -257,7 +255,6 @@ export default function SpartaTracking({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [catalog.length]);
 
-  // Helper get/set progress per proyek
   const getProgress = (id: string, stepLen: number): ProjectProgress => {
     const cur = progressMap[id] ?? {
       steps: [],
@@ -284,7 +281,7 @@ export default function SpartaTracking({
     });
   };
 
-  // --- Actions (kelola proyek, hanya superadmin) ---
+  // --- Kelola proyek (superadmin) ---
   const addProject = () => {
     const p: ProjectDef = normalizeProject({
       title: "Proyek Baru",
@@ -331,7 +328,6 @@ export default function SpartaTracking({
     );
   };
 
-  // proyek yang tampil
   const visibleCatalog = useMemo(() => {
     const src =
       isSuper && viewRole === "semua"
@@ -344,7 +340,7 @@ export default function SpartaTracking({
     return [...src].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
   }, [catalog, isSuper, viewRole, role]);
 
-  /* ====== KENDALA LOGS (Supabase) ====== */
+  /* ====== KENDALA (per kartu proyek) ====== */
   const [kendalaMap, setKendalaMap] = useState<Record<string, KendalaLog[]>>(
     {}
   );
@@ -428,7 +424,7 @@ export default function SpartaTracking({
     }
   };
 
-  /* ====== LOAD / SAVE KE SERVER (progress per akun) ====== */
+  /* ====== LOAD / SAVE progress ====== */
   const [loadStatus, setLoadStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
   >("idle");
@@ -478,18 +474,20 @@ export default function SpartaTracking({
       setTimeout(() => setSaveStatus("idle"), 1200);
       await loadFromServer();
       await loadHistory();
+      await loadKendalaHistory(); // ikut refresh
     } catch (e) {
       console.error("PUT /api/sparta/progress", e);
       setSaveStatus("error");
     }
   };
 
-  /* ====== RIWAYAT SIMPAN (range tanggal) ====== */
+  /* ====== RIWAYAT SIMPAN (progress + kendala) ====== */
   const [fromDate, setFromDate] = useState(firstDayOfMonth());
   const [toDate, setToDate] = useState(lastDayOfMonth());
   const [historyAccountId, setHistoryAccountId] = useState<string>(
     accountId || ""
   );
+
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [histStatus, setHistStatus] = useState<
     "idle" | "loading" | "loaded" | "error"
@@ -507,7 +505,6 @@ export default function SpartaTracking({
       } else if (accountId) {
         params.set("accountId", accountId);
       }
-
       const url = `/api/sparta/history?${params.toString()}`;
       const res = await fetch(url, {
         headers: { Accept: "application/json" },
@@ -522,11 +519,48 @@ export default function SpartaTracking({
       setHistStatus("error");
     }
   }, [fromDate, toDate, historyAccountId, isSuper, accountId]);
+
+  // === Kendala history (BERDASARKAN FILTER TANGGAL) ===
+  const [kendalaHistory, setKendalaHistory] = useState<KendalaLog[]>([]);
+  const [khStatus, setKhStatus] = useState<
+    "idle" | "loading" | "loaded" | "error"
+  >("idle");
+
+  const loadKendalaHistory = useCallback(async () => {
+    try {
+      setKhStatus("loading");
+      const params = new URLSearchParams();
+      if (fromDate) params.set("from", fromDate);
+      if (toDate) params.set("to", toDate);
+      if (isSuper) {
+        if (historyAccountId.trim())
+          params.set("accountId", historyAccountId.trim());
+      } else if (accountId) {
+        params.set("accountId", accountId);
+      }
+      // NOTE: pastikan API /api/sparta/kendala support query dari, sampai, accountId tanpa projectId
+      const url = `/api/sparta/kendala?${params.toString()}`;
+      const res = await fetch(url, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as { items?: KendalaLog[] };
+      setKendalaHistory(json.items || []);
+      setKhStatus("loaded");
+    } catch (e) {
+      console.error("GET /api/sparta/kendala (history)", e);
+      setKhStatus("error");
+      setKendalaHistory([]);
+    }
+  }, [fromDate, toDate, historyAccountId, isSuper, accountId]);
+
   useEffect(() => {
     loadHistory();
-  }, [loadHistory]);
+    loadKendalaHistory();
+  }, [loadHistory, loadKendalaHistory]);
 
-  // ringkas payload untuk badge kecil
+  // ringkas payload untuk badge (progress)
   const summarizePayload = (payload: HistoryItem["payload"]) => {
     const pp = payload?.projectsProgress || {};
     let totalSteps = 0;
@@ -540,13 +574,11 @@ export default function SpartaTracking({
     return { totalSteps, doneSteps, pct };
   };
 
-  // helper: ambil judul proyek dari catalog
   const projectTitle = useCallback(
     (id: string) => catalog.find((c) => c.id === id)?.title ?? id,
     [catalog]
   );
 
-  // flatten history -> baris tabel detail per project
   const detailedRows = useMemo(() => {
     type Row = {
       key: string;
@@ -585,7 +617,6 @@ export default function SpartaTracking({
         });
       });
     });
-    // urut terbaru dulu
     rows.sort(
       (a, b) => new Date(b.when).getTime() - new Date(a.when).getTime()
     );
@@ -715,7 +746,7 @@ export default function SpartaTracking({
         </div>
       </div>
 
-      {/* Daftar Project */}
+      {/* ================== DAFTAR PROJECT ================== */}
       <div className="p-3 sm:p-6 space-y-6">
         {visibleCatalog.length === 0 ? (
           <div className="text-sm text-slate-600">
@@ -1001,19 +1032,18 @@ export default function SpartaTracking({
                           </button>
                         </div>
 
-                        {/* List kendala */}
+                        {/* List kendala (per proyek) */}
                         <div className="mt-2">
                           <div className="text-xs text-slate-500 mb-1">
-                            Catatan Kendala{" "}
-                            {kendalaLoadBusy[proj.id] ? "• memuat…" : ""}
+                            Catatan Kendala {loadingLogs ? "• memuat…" : ""}
                           </div>
-                          {(kendalaMap[proj.id] ?? []).length === 0 ? (
+                          {logs.length === 0 ? (
                             <div className="text-sm text-slate-500">
                               Belum ada catatan.
                             </div>
                           ) : (
                             <div className="space-y-2">
-                              {(kendalaMap[proj.id] ?? []).map((k) => {
+                              {logs.map((k) => {
                                 const when = new Date(
                                   k.created_at
                                 ).toLocaleString("id-ID");
@@ -1030,16 +1060,18 @@ export default function SpartaTracking({
                                         {k.note}
                                       </div>
                                     </div>
-                                    <button
-                                      onClick={() =>
-                                        deleteKendala(proj.id, k.id)
-                                      }
-                                      className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
-                                      title="Hapus catatan kendala"
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                      Hapus
-                                    </button>
+                                    {k.account_id === accountId && (
+                                      <button
+                                        onClick={() =>
+                                          deleteKendala(proj.id, k.id)
+                                        }
+                                        className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                                        title="Hapus catatan kendala"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                        Hapus
+                                      </button>
+                                    )}
                                   </div>
                                 );
                               })}
@@ -1056,7 +1088,7 @@ export default function SpartaTracking({
         )}
       </div>
 
-      {/* ======== Riwayat Simpan (TABEL DETAIL, mengikuti filter tanggal) ======== */}
+      {/* ================== RIWAYAT SIMPAN (filter tanggal) ================== */}
       <div className="px-3 sm:px-6 py-4 border-t bg-slate-50">
         <div className="flex items-center gap-2 mb-3">
           <History className="h-5 w-5 text-slate-600" />
@@ -1104,79 +1136,137 @@ export default function SpartaTracking({
           )}
 
           <button
-            onClick={loadHistory}
+            onClick={() => {
+              loadHistory();
+              loadKendalaHistory();
+            }}
             className="px-3 py-1.5 rounded-md bg-blue-600 text-white text-sm hover:bg-blue-700"
           >
             Tampilkan
           </button>
         </div>
 
-        {/* TABEL */}
-        {detailedRows.length === 0 ? (
+        {/* === Tabel PROGRESS tersimpan === */}
+        {detailedRows.length > 0 && (
+          <>
+            <div className="text-sm font-medium text-slate-700 mb-2">
+              Progress Tersimpan
+            </div>
+            <div className="overflow-x-auto rounded-lg border bg-white mb-6">
+              <table className="min-w-[720px] w-full text-sm">
+                <thead className="bg-slate-50 text-slate-700">
+                  <tr>
+                    <th className="px-3 py-2 text-left">Waktu</th>
+                    {isSuper && <th className="px-3 py-2 text-left">Akun</th>}
+                    <th className="px-3 py-2 text-left">Period</th>
+                    <th className="px-3 py-2 text-left">Proyek</th>
+                    <th className="px-3 py-2 text-left">Selesai/Total</th>
+                    <th className="px-3 py-2 text-left">Detail Langkah</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {detailedRows.map((r) => (
+                    <tr key={r.key} className="border-t">
+                      <td className="px-3 py-2 align-top">
+                        {new Date(r.when).toLocaleString("id-ID")}
+                      </td>
+                      {isSuper && (
+                        <td className="px-3 py-2 align-top">{r.account}</td>
+                      )}
+                      <td className="px-3 py-2 align-top">{r.period}</td>
+                      <td className="px-3 py-2 align-top">{r.projectTitle}</td>
+                      <td className="px-3 py-2 align-top">
+                        {r.done} / {r.total}
+                      </td>
+                      <td className="px-3 py-2 align-top">
+                        <ul className="space-y-1">
+                          {r.stepsDetail.map((s, i) => (
+                            <li
+                              key={i}
+                              className={
+                                s.done
+                                  ? "text-emerald-700"
+                                  : "text-slate-600 line-through"
+                              }
+                            >
+                              {s.done ? "✔" : "✗"} {i + 1}. {s.label}
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {/* === Tabel KENDALA (di SINI) === */}
+        <div className="flex items-center gap-2 mb-2">
+          <div className="text-sm font-medium text-slate-700">
+            Catatan Kendala
+          </div>
+          {khStatus === "loading" && (
+            <span className="text-xs text-slate-500">Memuat…</span>
+          )}
+          {khStatus === "error" && (
+            <span className="text-xs text-rose-600">Gagal memuat</span>
+          )}
+        </div>
+
+        {kendalaHistory.length === 0 ? (
           <div className="text-sm text-slate-600">
-            Belum ada riwayat pada rentang ini.
+            Belum ada catatan kendala pada rentang ini.
           </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border bg-white">
-            <table className="min-w-[720px] w-full text-sm">
+            <table className="min-w-[640px] w-full text-sm">
               <thead className="bg-slate-50 text-slate-700">
                 <tr>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Waktu
-                  </th>
-                  {isSuper && (
-                    <th className="px-3 py-2 text-left whitespace-nowrap">
-                      Akun
-                    </th>
-                  )}
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Period
-                  </th>
+                  <th className="px-3 py-2 text-left">Waktu</th>
+                  {isSuper && <th className="px-3 py-2 text-left">Akun</th>}
                   <th className="px-3 py-2 text-left">Proyek</th>
-                  <th className="px-3 py-2 text-left whitespace-nowrap">
-                    Selesai/Total
-                  </th>
-                  <th className="px-3 py-2 text-left">Detail Langkah</th>
+                  <th className="px-3 py-2 text-left">Kendala</th>
+                  <th className="px-3 py-2"></th>
                 </tr>
               </thead>
               <tbody>
-                {detailedRows.map((r) => (
-                  <tr key={r.key} className="border-t">
-                    <td className="px-3 py-2 align-top text-slate-700">
-                      {new Date(r.when).toLocaleString("id-ID")}
-                    </td>
-                    {isSuper && (
-                      <td className="px-3 py-2 align-top text-slate-700">
-                        {r.account}
+                {kendalaHistory
+                  .slice()
+                  .sort(
+                    (a, b) =>
+                      new Date(b.created_at).getTime() -
+                      new Date(a.created_at).getTime()
+                  )
+                  .map((k) => (
+                    <tr key={k.id} className="border-t">
+                      <td className="px-3 py-2 align-top">
+                        {new Date(k.created_at).toLocaleString("id-ID")}
                       </td>
-                    )}
-                    <td className="px-3 py-2 align-top text-slate-700">
-                      {r.period}
-                    </td>
-                    <td className="px-3 py-2 align-top text-slate-800">
-                      {r.projectTitle}
-                    </td>
-                    <td className="px-3 py-2 align-top text-slate-800">
-                      {r.done} / {r.total}
-                    </td>
-                    <td className="px-3 py-2 align-top">
-                      <ul className="space-y-1">
-                        {r.stepsDetail.map((s, i) => (
-                          <li
-                            key={i}
-                            className={
-                              s.done
-                                ? "text-emerald-700"
-                                : "text-slate-600 line-through"
-                            }
+                      {isSuper && (
+                        <td className="px-3 py-2 align-top">{k.account_id}</td>
+                      )}
+                      <td className="px-3 py-2 align-top">
+                        {projectTitle(k.project_id)}
+                      </td>
+                      <td className="px-3 py-2 align-top whitespace-pre-wrap">
+                        {k.note}
+                      </td>
+                      <td className="px-3 py-2 align-top text-right">
+                        {k.account_id === accountId && (
+                          <button
+                            onClick={() => deleteKendala(k.project_id, k.id)}
+                            className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                            title="Hapus catatan"
                           >
-                            {s.done ? "✔" : "✗"} {i + 1}. {s.label}
-                          </li>
-                        ))}
-                      </ul>
-                    </td>
-                  </tr>
-                ))}
+                            <Trash2 className="h-4 w-4" />
+                            Hapus
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>
