@@ -1,128 +1,118 @@
-import { NextResponse } from "next/server";
-import { getSupabaseServer } from "@/lib/supabaseServer";
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabaseServer";
 
-/** === Types === */
-type KendalaRow = {
-  id: string; // uuid
+type DBKendalaRow = {
+  id: string;
   account_id: string;
   project_id: string;
   note: string;
-  created_at: string; // ISO
+  created_at: string;
 };
 
-/** Helper format error */
-function errMsg(e: unknown): string {
-  if (e instanceof Error) return e.message;
-  try {
-    return JSON.stringify(e);
-  } catch {
-    return String(e);
-  }
+function iso(v?: string | null, fb?: string) {
+  if (!v) return fb ?? new Date(0).toISOString();
+  const d = new Date(v);
+  return isNaN(+d) ? fb ?? new Date(0).toISOString() : d.toISOString();
 }
 
-/** GET ?accountId=...&projectId=... : daftar kendala milik akun tsb untuk satu project */
-export async function GET(req: Request) {
-  const sb = getSupabaseServer();
-  const { searchParams } = new URL(req.url);
-  const accountId = searchParams.get("accountId") || "";
-  const projectId = searchParams.get("projectId") || "";
+/** List kendala:
+ * - Per proyek: ?accountId=...&projectId=...
+ * - Riwayat rentang tanggal: ?from=yyyy-mm-dd&to=yyyy-mm-dd[&accountId=...]
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const u = new URL(req.url);
+    const accountId = u.searchParams.get("accountId");
+    const projectId = u.searchParams.get("projectId");
+    const from = u.searchParams.get("from");
+    const to = u.searchParams.get("to");
 
-  if (!accountId || !projectId) {
+    let q = supabaseAdmin
+      .from("sparta_kendala")
+      .select("id,account_id,project_id,note,created_at")
+      .order("created_at", { ascending: false });
+
+    if (projectId && accountId) {
+      q = q.eq("project_id", projectId).eq("account_id", accountId);
+    } else {
+      // mode riwayat rentang
+      const startIso = iso(from, new Date(0).toISOString());
+      const endIso = iso(to, new Date().toISOString());
+      q = q.gte("created_at", startIso).lte("created_at", endIso);
+      if (accountId) q = q.eq("account_id", accountId);
+    }
+
+    const { data, error } = await q.returns<DBKendalaRow[]>();
+    if (error) throw error;
+
+    return NextResponse.json({ items: data }, { status: 200 });
+  } catch (e) {
+    console.error("GET /api/sparta/kendala", e);
     return NextResponse.json(
-      { error: "accountId dan projectId wajib diisi" },
-      { status: 400 }
+      { error: "failed_to_fetch_kendala" },
+      { status: 500 }
     );
   }
-
-  const { data, error } = await sb
-    .from("sparta_kendala_logs")
-    .select("*")
-    .eq("account_id", accountId)
-    .eq("project_id", projectId)
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  const items = (data ?? []) as KendalaRow[];
-  return NextResponse.json({ items });
 }
 
-/** POST {accountId, projectId, note} : tambah catatan kendala */
-export async function POST(req: Request) {
-  const sb = getSupabaseServer();
-
+/** Simpan catatan kendala: { accountId, projectId, note } */
+export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as {
       accountId?: string;
       projectId?: string;
       note?: string;
     };
-
-    const accountId = (body.accountId || "").trim();
-    const projectId = (body.projectId || "").trim();
-    const note = (body.note || "").trim();
-
-    if (!accountId || !projectId || !note) {
-      return NextResponse.json(
-        { error: "accountId, projectId, dan note wajib diisi" },
-        { status: 400 }
-      );
+    if (!body.accountId || !body.projectId || !body.note?.trim()) {
+      return NextResponse.json({ error: "missing_fields" }, { status: 400 });
     }
 
-    const { error } = await sb.from("sparta_kendala_logs").insert({
-      account_id: accountId,
-      project_id: projectId,
-      note,
-    });
+    const { data, error } = await supabaseAdmin
+      .from("sparta_kendala")
+      .insert([
+        {
+          account_id: body.accountId,
+          project_id: body.projectId,
+          note: body.note.trim(),
+        },
+      ])
+      .select("id,account_id,project_id,note,created_at")
+      .single()
+      .returns<DBKendalaRow>();
+    if (error) throw error;
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    return NextResponse.json({ ok: true });
-  } catch (e: unknown) {
-    return NextResponse.json({ error: errMsg(e) }, { status: 500 });
+    return NextResponse.json({ item: data }, { status: 201 });
+  } catch (e) {
+    console.error("POST /api/sparta/kendala", e);
+    return NextResponse.json(
+      { error: "failed_to_insert_kendala" },
+      { status: 500 }
+    );
   }
 }
 
-/** DELETE ?id=...&accountId=... : hapus satu catatan kendala milik accountId tsb */
-export async function DELETE(req: Request) {
-  const sb = getSupabaseServer();
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id") || "";
-  const accountId = searchParams.get("accountId") || "";
+/** Hapus catatan: ?id=... [&accountId=...]  (optional: batasi pemilik) */
+export async function DELETE(req: NextRequest) {
+  try {
+    const u = new URL(req.url);
+    const id = u.searchParams.get("id");
+    const accountId = u.searchParams.get("accountId");
+    if (!id) {
+      return NextResponse.json({ error: "missing_id" }, { status: 400 });
+    }
 
-  if (!id || !accountId) {
+    let q = supabaseAdmin.from("sparta_kendala").delete().eq("id", id);
+    if (accountId) q = q.eq("account_id", accountId);
+
+    const { error } = await q;
+    if (error) throw error;
+
+    return NextResponse.json({ ok: true }, { status: 200 });
+  } catch (e) {
+    console.error("DELETE /api/sparta/kendala", e);
     return NextResponse.json(
-      { error: "id dan accountId wajib diisi" },
-      { status: 400 }
+      { error: "failed_to_delete_kendala" },
+      { status: 500 }
     );
   }
-
-  // Safety: pastikan row memang milik accountId tsb
-  const { data: row, error: selErr } = await sb
-    .from("sparta_kendala_logs")
-    .select("id, account_id")
-    .eq("id", id)
-    .single();
-
-  if (selErr) {
-    return NextResponse.json({ error: selErr.message }, { status: 500 });
-  }
-  if (!row || row.account_id !== accountId) {
-    return NextResponse.json({ error: "Tidak diizinkan" }, { status: 403 });
-  }
-
-  const { error: delErr } = await sb
-    .from("sparta_kendala_logs")
-    .delete()
-    .eq("id", id);
-
-  if (delErr) {
-    return NextResponse.json({ error: delErr.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true });
 }
