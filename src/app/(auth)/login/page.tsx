@@ -12,7 +12,7 @@ const ACCOUNTS: Record<
   string,
   { password: string; role: Role; displayName: string }
 > = {
-  Yesi: { password: "admin123", role: "admin", displayName: "Yesi" },
+  yessi: { password: "admin123", role: "admin", displayName: "Yessi" },
   dewi: { password: "superadmin", role: "superadmin", displayName: "Dewi" },
   andi: { password: "sales789", role: "sales", displayName: "Andi" },
   budi: { password: "gudang321", role: "gudang", displayName: "Budi" },
@@ -37,14 +37,6 @@ export default function LoginPage() {
     if (pass !== acc.password) return setError("Password salah.");
 
     setSubmitting(true);
-    try {
-      // Simpan ke AuthProvider (provider ada di root layout)
-      signIn({ name: acc.displayName, role: acc.role });
-      router.push("/" as Route);
-    } finally {
-      setSubmitting(false);
-    }
-    // ...
     try {
       // Simpan ke AuthProvider
       signIn({ name: acc.displayName, role: acc.role });
@@ -142,11 +134,11 @@ export default function LoginPage() {
                   <input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="mis. Yesi"
+                    placeholder="mis. Yessi"
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-800 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <div className="mt-2 flex gap-2 text-xs">
-                    {["Yesi", "Dewi", "Andi", "Budi"].map((n) => (
+                    {["Yessi", "Dewi", "Andi", "Budi"].map((n) => (
                       <button
                         type="button"
                         key={n}
