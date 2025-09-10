@@ -12,7 +12,7 @@ const ACCOUNTS: Record<
   string,
   { password: string; role: Role; displayName: string }
 > = {
-  riko: { password: "admin123", role: "admin", displayName: "Riko" },
+  Yesi: { password: "admin123", role: "admin", displayName: "Yesi" },
   dewi: { password: "superadmin", role: "superadmin", displayName: "Dewi" },
   andi: { password: "sales789", role: "sales", displayName: "Andi" },
   budi: { password: "gudang321", role: "gudang", displayName: "Budi" },
@@ -142,11 +142,11 @@ export default function LoginPage() {
                   <input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="mis. Riko"
+                    placeholder="mis. Yesi"
                     className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-slate-800 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <div className="mt-2 flex gap-2 text-xs">
-                    {["Riko", "Dewi", "Andi", "Budi"].map((n) => (
+                    {["Yesi", "Dewi", "Andi", "Budi"].map((n) => (
                       <button
                         type="button"
                         key={n}
