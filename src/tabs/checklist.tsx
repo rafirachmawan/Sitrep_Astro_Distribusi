@@ -501,7 +501,6 @@ export default function ChecklistArea({
               options: ["Sudah"],
             },
 
-            // contoh tambahan konten
             {
               kind: "compound",
               key: "rekonsiliasi-kas-kecil",
@@ -740,18 +739,21 @@ export default function ChecklistArea({
               ],
               extra: [{ type: "text", placeholder: "Alasan" }],
             },
+            // ✅ Diubah: ada checklist Ada/Tidak + jumlah
             {
-              kind: "number",
+              kind: "compound",
               key: "faktur-dibatalkan",
               label: "Faktur yang dibatalkan",
-              suffix: "Faktur",
+              options: ["Ada", "Tidak"],
+              extra: [{ type: "number", placeholder: "Jumlah Faktur" }],
             },
+            // ✅ Diubah: tambah UI khusus tombol + untuk nama sales
             {
               kind: "compound",
               key: "konfirmasi-sales",
               label: "Konfirmasi ke Tim Salesman",
               options: ["Sudah", "Belum"],
-              extra: [{ type: "text", placeholder: "Alasan" }],
+              extra: [{ type: "text", placeholder: "Nama Sales" }],
             },
           ],
         },
@@ -773,7 +775,7 @@ export default function ChecklistArea({
               label: "Setoran Bank sesuai Entity",
               options: ["Sesuai", "Tidak Sesuai"],
             },
-            // Nominal per entitas dipisah agar rapi (2 input currency terpisah)
+            // Nominal per entitas (2 input currency terpisah)
             {
               kind: "compound",
               key: "setoran-astro-dm",
@@ -986,9 +988,9 @@ export default function ChecklistArea({
       (Object.keys(overrides.rows) as AnySectionKey[]).forEach((sec) => {
         const rmap = overrides.rows?.[sec] || {};
         const existingKeys = new Set(
-          (clone[sec]?.rows || []).map((r) => r.key)
-        );
-        const curRows = (clone[sec]?.rows || []) as RowDef[];
+            (clone[sec]?.rows || []).map((r) => r.key)
+          ),
+          curRows = (clone[sec]?.rows || []) as RowDef[];
 
         const patched = curRows
           .filter((r) => !(rmap[r.key]?.__delete === true))
@@ -1005,7 +1007,6 @@ export default function ChecklistArea({
             ) {
               rn.options = p.options;
             }
-
             if (isCompound(rn) && p.extras) {
               const extrasArr: {
                 type: "text" | "currency" | "number";
@@ -1665,6 +1666,42 @@ function ChecklistRow({
   const [note, setNote] = useState(value?.note || "");
   const taRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // === Khusus konfirmasi-sales: kelola daftar nama sales ===
+  const isKonfirmasiSales = isCompound(row) && row.key === "konfirmasi-sales";
+  const compVal = value?.kind === "compound" ? value : undefined;
+  const compExtras = compVal?.extras;
+  const [salesNames, setSalesNames] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!isKonfirmasiSales) return;
+    const raw = (compExtras?.text || "").trim();
+    const parts = raw
+      ? raw
+          .split("|")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [];
+    setSalesNames(parts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isKonfirmasiSales, compExtras?.text]);
+
+  const syncSalesNames = (arr: string[]) => {
+    const joined = arr
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .join(SEP);
+    onChange({
+      kind: "compound",
+      value: compVal?.value ?? null,
+      note,
+      extras: {
+        text: joined,
+        currency: compExtras?.currency,
+        number: compExtras?.number,
+      },
+    } as RVCompound);
+  };
+
   const adjustHeight = () => {
     const el = taRef.current;
     if (!el) return;
@@ -1676,7 +1713,6 @@ function ChecklistRow({
     if (!value) return;
     if (value.note === note) return;
 
-    // Update note dengan tipe yang tepat (tanpa `any`)
     if (value.kind === "options") {
       onChange({ ...value, note });
     } else if (value.kind === "number") {
@@ -1713,8 +1749,6 @@ function ChecklistRow({
   const optVal = value?.kind === "options" ? value.value : null;
   const numStr = value?.kind === "number" ? String(value.value ?? "") : "";
   const scoreVal = value?.kind === "score" ? value.value : 3;
-  const compVal = value?.kind === "compound" ? value : undefined;
-  const compExtras = compVal?.extras;
 
   const INPUT_BASE =
     "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center " +
@@ -1826,71 +1860,109 @@ function ChecklistRow({
                 }
               />
 
-              {(hasTextExtra || hasCurrencyExtra || hasNumberExtra) && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                  {hasTextExtra && (
-                    <input
-                      placeholder={textPlaceholder}
-                      value={compExtras?.text ?? ""}
-                      onChange={(e) =>
-                        onChange({
-                          kind: "compound",
-                          value: compVal?.value ?? null,
-                          note,
-                          extras: {
-                            text: e.target.value,
-                            currency: compExtras?.currency,
-                            number: compExtras?.number,
-                          },
-                        } as RVCompound)
-                      }
-                      className={INPUT_BASE}
-                    />
+              {/* === Extras: khusus konfirmasi-sales pakai tombol + untuk nama sales === */}
+              {isKonfirmasiSales ? (
+                <div className="space-y-2">
+                  <button
+                    onClick={() => setSalesNames((arr) => [...arr, ""])}
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                    title="Tambah nama sales"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Tambah Sales
+                  </button>
+
+                  {salesNames.length === 0 && (
+                    <div className="text-xs text-slate-500 px-1">
+                      Klik <span className="font-medium">Tambah Sales</span>{" "}
+                      untuk menambahkan nama sales.
+                    </div>
                   )}
 
-                  {hasCurrencyExtra && (
-                    <div className="md:col-span-2">
-                      <CurrencyField
-                        valueDigits={compExtras?.currency}
-                        onChangeDigits={(digits) =>
+                  {salesNames.map((nm, idx) => (
+                    <input
+                      key={idx}
+                      value={nm}
+                      onChange={(e) => {
+                        const next = [...salesNames];
+                        next[idx] = e.target.value;
+                        setSalesNames(next);
+                        syncSalesNames(next);
+                      }}
+                      className={INPUT_BASE}
+                      placeholder={`Nama Sales #${idx + 1}`}
+                    />
+                  ))}
+                </div>
+              ) : (
+                // === Default extras (text / currency / number) ===
+                (hasTextExtra || hasCurrencyExtra || hasNumberExtra) && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {hasTextExtra && (
+                      <input
+                        placeholder={textPlaceholder}
+                        value={compExtras?.text ?? ""}
+                        onChange={(e) =>
+                          onChange({
+                            kind: "compound",
+                            value: compVal?.value ?? null,
+                            note,
+                            extras: {
+                              text: e.target.value,
+                              currency: compExtras?.currency,
+                              number: compExtras?.number,
+                            },
+                          } as RVCompound)
+                        }
+                        className={INPUT_BASE}
+                      />
+                    )}
+
+                    {hasCurrencyExtra && (
+                      <div className="md:col-span-2">
+                        <CurrencyField
+                          valueDigits={compExtras?.currency}
+                          onChangeDigits={(digits) =>
+                            onChange({
+                              kind: "compound",
+                              value: compVal?.value ?? null,
+                              note,
+                              extras: {
+                                text: compExtras?.text,
+                                currency: digits,
+                                number: compExtras?.number,
+                              },
+                            } as RVCompound)
+                          }
+                          placeholder={
+                            currencyPlaceholder || "contoh: 4.235.523"
+                          }
+                        />
+                      </div>
+                    )}
+
+                    {hasNumberExtra && (
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        placeholder={numberPlaceholder || "Jumlah"}
+                        value={compExtras?.number ?? ""}
+                        onChange={(e) =>
                           onChange({
                             kind: "compound",
                             value: compVal?.value ?? null,
                             note,
                             extras: {
                               text: compExtras?.text,
-                              currency: digits,
-                              number: compExtras?.number,
+                              currency: compExtras?.currency,
+                              number: e.target.value,
                             },
                           } as RVCompound)
                         }
-                        placeholder={currencyPlaceholder || "contoh: 4.235.523"}
+                        className={INPUT_BASE}
                       />
-                    </div>
-                  )}
-
-                  {hasNumberExtra && (
-                    <input
-                      type="number"
-                      inputMode="numeric"
-                      placeholder={numberPlaceholder || "Jumlah"}
-                      value={compExtras?.number ?? ""}
-                      onChange={(e) =>
-                        onChange({
-                          kind: "compound",
-                          value: compVal?.value ?? null,
-                          note,
-                          extras: {
-                            text: compExtras?.text,
-                            currency: compExtras?.currency,
-                            number: e.target.value,
-                          },
-                        } as RVCompound)
-                      }
-                      className={INPUT_BASE}
-                    />
-                  )}
-                </div>
+                    )}
+                  </div>
+                )
               )}
             </div>
           )}
