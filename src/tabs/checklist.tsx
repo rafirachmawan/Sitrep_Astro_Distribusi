@@ -403,6 +403,22 @@ export default function ChecklistArea({
     window.scrollTo({ top, behavior: "smooth" });
   };
 
+  useEffect(() => {
+    // Perbaiki override lama yang bikin opsi Dropping kosong
+    const cur = readRoleOverrides(viewRole);
+    const row = (cur.rows?.kas || {})["dropping-kas-kecil"];
+
+    if (row && Array.isArray(row.options) && row.options.length === 0) {
+      const next = mergeRowOverride(cur, "kas", "dropping-kas-kecil", {
+        options: ["Ada", "Tidak"],
+      });
+      writeRoleOverrides(viewRole, next);
+      void saveOverridesToServer(viewRole, next).catch(() => {});
+      setRev((x) => x + 1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewRole, rev]);
+
   /* ===== sinkronisasi awal dari SERVER → localStorage (per role) ===== */
   useEffect(() => {
     let alive = true;
@@ -982,8 +998,14 @@ export default function ChecklistArea({
             const rn: RowDef = { ...r };
             if (p.label) rn.label = p.label;
             if (isNumber(rn) && p.suffix !== undefined) rn.suffix = p.suffix;
-            if ((isOptions(rn) || isCompound(rn)) && p.options)
+            if (
+              (isOptions(rn) || isCompound(rn)) &&
+              Array.isArray(p.options) &&
+              p.options.length > 0
+            ) {
               rn.options = p.options;
+            }
+
             if (isCompound(rn) && p.extras) {
               const extrasArr: {
                 type: "text" | "currency" | "number";
