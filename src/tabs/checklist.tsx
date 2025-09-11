@@ -463,14 +463,14 @@ export default function ChecklistArea({
               options: ["Clear", "Belum Kembali"],
               extra: [{ type: "text", placeholder: "Keterangan" }],
             },
-            // (2) Dokumentasi Bukti Pengeluaran Biaya → hilangkan input penjelasan (hanya keterangan di kanan)
+            // Hanya opsi, tanpa input penjelasan di kolom tengah
             {
               kind: "options",
               key: "dok-bukti-biaya",
               label: "Dokumentasi Bukti Pengeluaran Biaya",
               options: ["Valid", "Tidak Valid"],
             },
-            // (1) Dropping Kas Kecil → checkbox Ada/Tidak + nominal
+            // Dropping Kas Kecil → Ada/Tidak + nominal
             {
               kind: "compound",
               key: "dropping-kas-kecil",
@@ -701,7 +701,7 @@ export default function ChecklistArea({
               label: "Faktur DO yang belum draft loading",
               suffix: "Faktur",
             },
-            // (4) Pengiriman Besok Sudah Draft Loading → jika Belum, input jumlah faktur
+            // Jika "Belum", isi jumlah faktur yang belum didraft
             {
               kind: "compound",
               key: "draft-loading-besok",
@@ -750,16 +750,27 @@ export default function ChecklistArea({
               label: "Kas besar disetorkan bank semua",
               options: ["Sesuai", "Tidak Sesuai"],
             },
-            // (3) Setoran sesuai entitas + nominal Astro DM & Astro Tumbuh
+            // Opsi sesuai/tidak sesuai
             {
-              kind: "compound",
+              kind: "options",
               key: "setoran-sesuai-entity",
               label: "Setoran Bank sesuai Entity",
               options: ["Sesuai", "Tidak Sesuai"],
-              extra: [
-                { type: "currency", placeholder: "Astro DM (Rp)" },
-                { type: "currency", placeholder: "Astro Tumbuh (Rp)" },
-              ],
+            },
+            // Nominal per entitas dipisah agar rapi (2 input currency terpisah)
+            {
+              kind: "compound",
+              key: "setoran-astro-dm",
+              label: "Nominal Setoran Astro DM",
+              options: [],
+              extra: [{ type: "currency", placeholder: "Astro DM (Rp)" }],
+            },
+            {
+              kind: "compound",
+              key: "setoran-astro-tumbuh",
+              label: "Nominal Setoran Astro Tumbuh",
+              options: [],
+              extra: [{ type: "currency", placeholder: "Astro Tumbuh (Rp)" }],
             },
             {
               kind: "options",
