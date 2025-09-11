@@ -486,13 +486,16 @@ export default function ChecklistArea({
               label: "Dokumentasi Bukti Pengeluaran Biaya",
               options: ["Valid", "Tidak Valid"],
             },
-            // Dropping Kas Kecil → Ada/Tidak + nominal
+            // Dropping Kas Kecil → Ada/Tidak + nominal + nomor dropping kas (baru)
             {
               kind: "compound",
               key: "dropping-kas-kecil",
               label: "Dropping Kas Kecil",
               options: ["Ada", "Tidak"],
-              extra: [{ type: "currency", placeholder: "Nilai (Rp)" }],
+              extra: [
+                { type: "currency", placeholder: "Nilai (Rp)" },
+                { type: "text", placeholder: "Nomor Dropping Kas" },
+              ],
             },
             {
               kind: "options",
@@ -525,7 +528,7 @@ export default function ChecklistArea({
 
         /* ===== 2. BUKU PENUNJANG ===== */
         buku: {
-          title: "Buku Penunjang",
+          title: "Buku Penunjnag",
           rows: [
             {
               kind: "options",
@@ -739,21 +742,24 @@ export default function ChecklistArea({
               ],
               extra: [{ type: "text", placeholder: "Alasan" }],
             },
-            // ✅ Diubah: ada checklist Ada/Tidak + jumlah
+            // ✅ Diubah: Ada/Tidak + jumlah + list nomor faktur via tombol +
             {
               kind: "compound",
               key: "faktur-dibatalkan",
               label: "Faktur yang dibatalkan",
               options: ["Ada", "Tidak"],
-              extra: [{ type: "number", placeholder: "Jumlah Faktur" }],
+              extra: [
+                { type: "number", placeholder: "Jumlah Faktur" },
+                { type: "text", placeholder: "Nomor Faktur" },
+              ],
             },
-            // ✅ Diubah: tambah UI khusus tombol + untuk nama sales
+            // ✅ Diubah: fitur + tambah sales dihilangkan (tanpa extra)
             {
               kind: "compound",
               key: "konfirmasi-sales",
               label: "Konfirmasi ke Tim Salesman",
               options: ["Sudah", "Belum"],
-              extra: [{ type: "text", placeholder: "Nama Sales" }],
+              // no extra
             },
           ],
         },
@@ -768,14 +774,12 @@ export default function ChecklistArea({
               label: "Kas besar disetorkan bank semua",
               options: ["Sesuai", "Tidak Sesuai"],
             },
-            // Opsi sesuai/tidak sesuai
             {
               kind: "options",
               key: "setoran-sesuai-entity",
               label: "Setoran Bank sesuai Entity",
               options: ["Sesuai", "Tidak Sesuai"],
             },
-            // Nominal per entitas (2 input currency terpisah)
             {
               kind: "compound",
               key: "setoran-astro-dm",
@@ -1666,26 +1670,26 @@ function ChecklistRow({
   const [note, setNote] = useState(value?.note || "");
   const taRef = useRef<HTMLTextAreaElement | null>(null);
 
-  // === Khusus konfirmasi-sales: kelola daftar nama sales ===
-  const isKonfirmasiSales = isCompound(row) && row.key === "konfirmasi-sales";
   const compVal = value?.kind === "compound" ? value : undefined;
   const compExtras = compVal?.extras;
-  const [salesNames, setSalesNames] = useState<string[]>([]);
 
+  // === Khusus "faktur-dibatalkan": kelola daftar nomor faktur via tombol +
+  const isFakturDibatalkan = isCompound(row) && row.key === "faktur-dibatalkan";
+  const [invoiceNumbers, setInvoiceNumbers] = useState<string[]>([]);
   useEffect(() => {
-    if (!isKonfirmasiSales) return;
+    if (!isFakturDibatalkan) return;
     const raw = (compExtras?.text || "").trim();
     const parts = raw
       ? raw
-          .split("|")
+          .split(SEP)
           .map((s) => s.trim())
           .filter(Boolean)
       : [];
-    setSalesNames(parts);
+    setInvoiceNumbers(parts);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isKonfirmasiSales, compExtras?.text]);
+  }, [isFakturDibatalkan, compExtras?.text]);
 
-  const syncSalesNames = (arr: string[]) => {
+  const syncInvoiceNumbers = (arr: string[]) => {
     const joined = arr
       .map((s) => s.trim())
       .filter(Boolean)
@@ -1695,9 +1699,9 @@ function ChecklistRow({
       value: compVal?.value ?? null,
       note,
       extras: {
-        text: joined,
+        text: joined, // nomor faktur disimpan pipe-separated
         currency: compExtras?.currency,
-        number: compExtras?.number,
+        number: compExtras?.number, // jumlah faktur tetap di extra.number
       },
     } as RVCompound);
   };
@@ -1860,38 +1864,80 @@ function ChecklistRow({
                 }
               />
 
-              {/* === Extras: khusus konfirmasi-sales pakai tombol + untuk nama sales === */}
-              {isKonfirmasiSales ? (
+              {/* === Khusus "faktur-dibatalkan": Number + daftar nomor faktur pakai tombol + === */}
+              {isFakturDibatalkan ? (
                 <div className="space-y-2">
+                  {/* Jumlah Faktur */}
+                  {hasNumberExtra && (
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      placeholder={numberPlaceholder || "Jumlah Faktur"}
+                      value={compExtras?.number ?? ""}
+                      onChange={(e) =>
+                        onChange({
+                          kind: "compound",
+                          value: compVal?.value ?? null,
+                          note,
+                          extras: {
+                            text: compExtras?.text,
+                            currency: compExtras?.currency,
+                            number: e.target.value,
+                          },
+                        } as RVCompound)
+                      }
+                      className={INPUT_BASE}
+                    />
+                  )}
+
+                  {/* Tombol tambah nomor faktur */}
                   <button
-                    onClick={() => setSalesNames((arr) => [...arr, ""])}
+                    onClick={() => setInvoiceNumbers((arr) => [...arr, ""])}
                     className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
-                    title="Tambah nama sales"
+                    title="Tambah nomor faktur dibatalkan"
                   >
-                    <Plus className="h-3.5 w-3.5" /> Tambah Sales
+                    <Plus className="h-3.5 w-3.5" /> Tambah Nomor Faktur
                   </button>
 
-                  {salesNames.length === 0 && (
+                  {invoiceNumbers.length === 0 && (
                     <div className="text-xs text-slate-500 px-1">
-                      Klik <span className="font-medium">Tambah Sales</span>{" "}
-                      untuk menambahkan nama sales.
+                      Klik{" "}
+                      <span className="font-medium">Tambah Nomor Faktur</span>{" "}
+                      untuk memasukkan nomor faktur yang dibatalkan.
                     </div>
                   )}
 
-                  {salesNames.map((nm, idx) => (
-                    <input
-                      key={idx}
-                      value={nm}
-                      onChange={(e) => {
-                        const next = [...salesNames];
-                        next[idx] = e.target.value;
-                        setSalesNames(next);
-                        syncSalesNames(next);
-                      }}
-                      className={INPUT_BASE}
-                      placeholder={`Nama Sales #${idx + 1}`}
-                    />
-                  ))}
+                  {/* List input nomor faktur */}
+                  <div className="space-y-2">
+                    {invoiceNumbers.map((val, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <input
+                          value={val}
+                          onChange={(e) => {
+                            const next = [...invoiceNumbers];
+                            next[idx] = e.target.value;
+                            setInvoiceNumbers(next);
+                            syncInvoiceNumbers(next);
+                          }}
+                          className={INPUT_BASE}
+                          placeholder={`Nomor Faktur #${idx + 1}`}
+                        />
+                        <button
+                          onClick={() => {
+                            const next = invoiceNumbers.filter(
+                              (_, i) => i !== idx
+                            );
+                            setInvoiceNumbers(next);
+                            syncInvoiceNumbers(next);
+                          }}
+                          className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+                          title="Hapus nomor ini"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 // === Default extras (text / currency / number) ===
