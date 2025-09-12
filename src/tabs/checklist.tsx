@@ -742,7 +742,7 @@ export default function ChecklistArea({
               ],
               extra: [{ type: "text", placeholder: "Alasan" }],
             },
-            // ✅ Diubah: Ada/Tidak + jumlah + list nomor faktur via tombol +
+            // ✅ Ada/Tidak + jumlah + list nomor faktur via tombol +
             {
               kind: "compound",
               key: "faktur-dibatalkan",
@@ -753,7 +753,15 @@ export default function ChecklistArea({
                 { type: "text", placeholder: "Nomor Faktur" },
               ],
             },
-            // ✅ Diubah: fitur + tambah sales dihilangkan (tanpa extra)
+            // ✅ Tambahan baru: Coret Nota — Ada/Tidak + tombol + (dropdown alasan + input teks)
+            {
+              kind: "compound",
+              key: "coret-nota",
+              label: "Coret Nota",
+              options: ["Ada", "Tidak"],
+              // (UI khusus; data daftar item disimpan di extras.text sebagai JSON)
+            },
+            // ✅ Konfirmasi ke tim sales: fitur + tambah sales dihilangkan
             {
               kind: "compound",
               key: "konfirmasi-sales",
@@ -1706,6 +1714,61 @@ function ChecklistRow({
     } as RVCompound);
   };
 
+  // === Khusus "coret-nota": daftar item (dropdown alasan + input teks) via tombol +
+  const isCoretNota = isCompound(row) && row.key === "coret-nota";
+  type CoretItem = { reason: string; detail: string };
+  const [coretItems, setCoretItems] = useState<CoretItem[]>([]);
+  const CORET_REASONS = [
+    "Barang kosong",
+    "Rusak tidak dimuat",
+    "Tidak terima toko sehingga dikembalikan gudang",
+  ];
+  useEffect(() => {
+    if (!isCoretNota) return;
+    const raw = compExtras?.text;
+    if (!raw) {
+      setCoretItems([]);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const safe = parsed
+          .map((it) => ({
+            reason: String(it?.reason ?? ""),
+            detail: String(it?.detail ?? ""),
+          }))
+          .filter((it) => it.reason || it.detail);
+        setCoretItems(safe);
+      } else {
+        setCoretItems([]);
+      }
+    } catch {
+      // fallback jika bukan JSON — kosongkan agar tidak crash
+      setCoretItems([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isCoretNota, compExtras?.text]);
+
+  const syncCoretItems = (items: CoretItem[]) => {
+    const json = JSON.stringify(
+      items.map((it) => ({
+        reason: (it.reason || "").trim(),
+        detail: (it.detail || "").trim(),
+      }))
+    );
+    onChange({
+      kind: "compound",
+      value: compVal?.value ?? null,
+      note,
+      extras: {
+        text: json, // simpan list sebagai JSON string
+        currency: compExtras?.currency,
+        number: compExtras?.number,
+      },
+    } as RVCompound);
+  };
+
   const adjustHeight = () => {
     const el = taRef.current;
     if (!el) return;
@@ -1935,6 +1998,98 @@ function ChecklistRow({
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : isCoretNota ? (
+                // === Khusus "coret-nota": tombol + memunculkan dropdown + input text
+                <div className="space-y-2">
+                  <button
+                    onClick={() =>
+                      setCoretItems((arr) => [
+                        ...arr,
+                        { reason: "", detail: "" },
+                      ])
+                    }
+                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                    title="Tambah item coret nota"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Tambah Coret Nota
+                  </button>
+
+                  {coretItems.length === 0 && (
+                    <div className="text-xs text-slate-500 px-1">
+                      Klik{" "}
+                      <span className="font-medium">Tambah Coret Nota</span>{" "}
+                      untuk menambahkan alasan dan keterangan.
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    {coretItems.map((it, idx) => (
+                      <div
+                        key={idx}
+                        className="grid grid-cols-1 md:grid-cols-6 gap-2"
+                      >
+                        {/* Dropdown alasan */}
+                        <div className="md:col-span-3">
+                          <select
+                            value={it.reason}
+                            onChange={(e) => {
+                              const next = [...coretItems];
+                              next[idx] = {
+                                ...next[idx],
+                                reason: e.target.value,
+                              };
+                              setCoretItems(next);
+                              syncCoretItems(next);
+                            }}
+                            className={INPUT_BASE}
+                          >
+                            <option value="">Pilih alasan…</option>
+                            {CORET_REASONS.map((r) => (
+                              <option key={r} value={r}>
+                                {r}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Input teks detail */}
+                        <div className="md:col-span-2">
+                          <input
+                            value={it.detail}
+                            onChange={(e) => {
+                              const next = [...coretItems];
+                              next[idx] = {
+                                ...next[idx],
+                                detail: e.target.value,
+                              };
+                              setCoretItems(next);
+                              syncCoretItems(next);
+                            }}
+                            className={INPUT_BASE}
+                            placeholder="Keterangan"
+                          />
+                        </div>
+
+                        {/* Hapus item */}
+                        <div className="md:col-span-1 flex">
+                          <button
+                            onClick={() => {
+                              const next = coretItems.filter(
+                                (_, i) => i !== idx
+                              );
+                              setCoretItems(next);
+                              syncCoretItems(next);
+                            }}
+                            className="w-full md:w-auto h-9 px-3 inline-flex items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+                            title="Hapus item"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
