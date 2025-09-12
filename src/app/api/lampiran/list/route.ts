@@ -1,56 +1,52 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs";
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const BUCKET = process.env.SUPABASE_BUCKET || "Lampiran";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE!
-);
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
+  auth: { persistSession: false },
+});
 
-const BUCKET = process.env.SUPABASE_BUCKET ?? "Lampiran";
-
-// minimal shape yang kita pakai dari hasil list()
-type FileRow = { name: string; created_at?: string | null };
-
-export async function GET(req: Request) {
+export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get("userId") ?? "unknown";
-    const role = searchParams.get("role") ?? "admin";
-    const prefix = `${role}/${encodeURIComponent(userId)}/`;
+    const userId = searchParams.get("userId") || "unknown";
+    const role = searchParams.get("role") || "admin";
 
-    const { data, error } = await supabase.storage
-      .from(BUCKET)
-      .list(prefix, { limit: 100, sortBy: { column: "name", order: "desc" } });
+    const { data, error } = await supabase
+      .from("lampiran_history")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("role", role)
+      .order("date_iso", { ascending: false })
+      .order("submitted_at", { ascending: false });
 
-    if (error) throw error;
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
+    }
 
-    const files: FileRow[] = Array.isArray(data) ? (data as FileRow[]) : [];
-
-    const items = files
-      .filter(
-        (o) =>
-          typeof o.name === "string" && o.name.toLowerCase().endsWith(".pdf")
-      )
-      .map((o) => {
-        const dateISO = o.name.replace(/\.pdf$/i, "");
-        const key = `${prefix}${o.name}`;
-        const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(key);
-        const publicUrl = pub?.publicUrl ?? "";
+    const items =
+      (data || []).map((row) => {
+        // Untuk bucket public:
+        const { data: pub } = supabase.storage
+          .from(BUCKET)
+          .getPublicUrl(row.storage_key);
         return {
-          filename: o.name,
-          dateISO,
-          key,
-          url: publicUrl,
-          submittedAt: o.created_at ?? undefined,
+          filename: row.filename as string,
+          dateISO: row.date_iso as string,
+          key: row.storage_key as string,
+          url: pub.publicUrl as string,
+          submittedAt: row.submitted_at as string,
         };
-      });
+      }) || [];
 
     return NextResponse.json({ items });
-  } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+  } catch (e: any) {
+    return NextResponse.json(
+      { error: e?.message || "List failed" },
+      { status: 500 }
+    );
   }
 }
