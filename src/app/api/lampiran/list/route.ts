@@ -9,6 +9,26 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
   auth: { persistSession: false },
 });
 
+function errMsg(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return "Unknown error";
+  }
+}
+
+type LampiranRow = {
+  id: string;
+  user_id: string;
+  role: string;
+  date_iso: string; // YYYY-MM-DD
+  filename: string;
+  storage_key: string;
+  submitted_at: string; // timestamptz
+};
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -21,32 +41,29 @@ export async function GET(req: NextRequest) {
       .eq("user_id", userId)
       .eq("role", role)
       .order("date_iso", { ascending: false })
-      .order("submitted_at", { ascending: false });
+      .order("submitted_at", { ascending: false })
+      .returns<LampiranRow[]>(); // ✅ ini yang ngetikkan hasilnya
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
-    const items =
-      (data || []).map((row) => {
-        // Untuk bucket public:
-        const { data: pub } = supabase.storage
-          .from(BUCKET)
-          .getPublicUrl(row.storage_key);
-        return {
-          filename: row.filename as string,
-          dateISO: row.date_iso as string,
-          key: row.storage_key as string,
-          url: pub.publicUrl as string,
-          submittedAt: row.submitted_at as string,
-        };
-      }) || [];
+    const rows = data ?? [];
+    const items = rows.map((row) => {
+      const { data: pub } = supabase.storage
+        .from(BUCKET)
+        .getPublicUrl(row.storage_key);
+      return {
+        filename: row.filename,
+        dateISO: row.date_iso,
+        key: row.storage_key,
+        url: pub.publicUrl,
+        submittedAt: row.submitted_at,
+      };
+    });
 
     return NextResponse.json({ items });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "List failed" },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    return NextResponse.json({ error: errMsg(e) }, { status: 500 });
   }
 }

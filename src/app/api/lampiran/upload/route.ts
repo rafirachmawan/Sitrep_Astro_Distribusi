@@ -9,6 +9,16 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
   auth: { persistSession: false },
 });
 
+function errMsg(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return "Unknown error";
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -35,7 +45,7 @@ export async function POST(req: NextRequest) {
 
     const body = await req.arrayBuffer();
 
-    // Upload ke Storage (upsert=true biar overwrite jika ada)
+    // Upload ke Storage
     const { error: uploadErr } = await supabase.storage
       .from(BUCKET)
       .upload(storageKey, body, {
@@ -47,13 +57,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: uploadErr.message }, { status: 500 });
     }
 
-    // URL publik (bucket public). Jika private, lihat catatan di bawah.
+    // URL publik (kalau bucket private, ganti jadi signed URL)
     const { data: pub } = supabase.storage
       .from(BUCKET)
       .getPublicUrl(storageKey);
     const publicUrl = pub.publicUrl;
 
-    // Upsert baris history
+    // Upsert history (dedupe by storage_key)
+    type LampiranRowInsert = {
+      user_id: string;
+      role: string;
+      date_iso: string;
+      filename: string;
+      storage_key: string;
+      submitted_at?: string;
+    };
+
     const { error: dbErr } = await supabase.from("lampiran_history").upsert(
       {
         user_id: userId,
@@ -62,7 +81,7 @@ export async function POST(req: NextRequest) {
         filename,
         storage_key: storageKey,
         submitted_at: new Date().toISOString(),
-      },
+      } satisfies LampiranRowInsert,
       { onConflict: "storage_key" }
     );
 
@@ -71,10 +90,7 @@ export async function POST(req: NextRequest) {
     }
 
     return NextResponse.json({ ok: true, url: publicUrl, key: storageKey });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Upload failed" },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    return NextResponse.json({ error: errMsg(e) }, { status: 500 });
   }
 }

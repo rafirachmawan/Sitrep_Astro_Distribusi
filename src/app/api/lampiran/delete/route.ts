@@ -9,12 +9,23 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
   auth: { persistSession: false },
 });
 
+function errMsg(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return "Unknown error";
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const key = searchParams.get("key");
-    if (!key)
+    if (!key) {
       return NextResponse.json({ error: "Missing key" }, { status: 400 });
+    }
 
     // Hapus file di Storage
     const { error: delStorageErr } = await supabase.storage
@@ -32,15 +43,13 @@ export async function POST(req: NextRequest) {
       .from("lampiran_history")
       .delete()
       .eq("storage_key", key);
+
     if (delDbErr) {
       return NextResponse.json({ error: delDbErr.message }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });
-  } catch (e: any) {
-    return NextResponse.json(
-      { error: e?.message || "Delete failed" },
-      { status: 500 }
-    );
+  } catch (e: unknown) {
+    return NextResponse.json({ error: errMsg(e) }, { status: 500 });
   }
 }
