@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!;
+const SUPABASE_ANON = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const BUCKET = process.env.SUPABASE_BUCKET || "Lampiran";
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
   auth: { persistSession: false },
 });
 
@@ -22,30 +22,26 @@ function errMsg(e: unknown): string {
 export async function POST(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const key = searchParams.get("key");
-    if (!key) {
-      return NextResponse.json({ error: "Missing key" }, { status: 400 });
+    const rawKey = searchParams.get("key");
+    if (!rawKey) {
+      return NextResponse.json({ error: "Missing ?key=" }, { status: 400 });
     }
 
-    // Hapus file di Storage
-    const { error: delStorageErr } = await supabase.storage
-      .from(BUCKET)
-      .remove([key]);
-    if (delStorageErr) {
-      return NextResponse.json(
-        { error: delStorageErr.message },
-        { status: 500 }
-      );
-    }
+    // hapus dua kemungkinan: key mentah & yang sudah ter-decode
+    const candidates = Array.from(
+      new Set([rawKey, decodeURIComponent(rawKey)])
+    );
 
-    // Hapus baris di DB
-    const { error: delDbErr } = await supabase
+    await supabase.storage.from(BUCKET).remove(candidates);
+
+    // bersihkan dari tabel
+    const { error } = await supabase
       .from("lampiran_history")
       .delete()
-      .eq("storage_key", key);
+      .in("storage_key", candidates);
 
-    if (delDbErr) {
-      return NextResponse.json({ error: delDbErr.message }, { status: 500 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
     return NextResponse.json({ ok: true });

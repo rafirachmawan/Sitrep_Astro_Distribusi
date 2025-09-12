@@ -23,10 +23,10 @@ type LampiranRow = {
   id: string;
   user_id: string;
   role: string;
-  date_iso: string; // YYYY-MM-DD
+  date_iso: string;
   filename: string;
   storage_key: string;
-  submitted_at: string; // timestamptz
+  submitted_at: string;
 };
 
 export async function GET(req: NextRequest) {
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       .eq("role", role)
       .order("date_iso", { ascending: false })
       .order("submitted_at", { ascending: false })
-      .returns<LampiranRow[]>(); // ✅ ini yang ngetikkan hasilnya
+      .returns<LampiranRow[]>();
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -50,13 +50,15 @@ export async function GET(req: NextRequest) {
 
     const rows = data ?? [];
     const items = rows.map((row) => {
+      // penting: decode untuk menormalkan entri lama yang terlanjur %3A dll
+      const normalizedKey = decodeURIComponent(row.storage_key);
       const { data: pub } = supabase.storage
         .from(BUCKET)
-        .getPublicUrl(row.storage_key);
+        .getPublicUrl(normalizedKey);
       return {
         filename: row.filename,
         dateISO: row.date_iso,
-        key: row.storage_key,
+        key: normalizedKey,
         url: pub.publicUrl,
         submittedAt: row.submitted_at,
       };
