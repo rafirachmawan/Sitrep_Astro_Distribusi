@@ -121,7 +121,7 @@ async function fetchOverridesFromServer(
 async function saveOverridesToServer(
   role: Role,
   overrides: ChecklistOverrides,
-  editorRole?: string // <— tambahan: kirim role user yang sedang login (harus superadmin)
+  editorRole?: string
 ) {
   const res = await fetch(`/api/checklist/overrides?role=${role}`, {
     method: "PUT",
@@ -483,14 +483,12 @@ export default function ChecklistArea({
               options: ["Clear", "Belum Kembali"],
               extra: [{ type: "text", placeholder: "Keterangan" }],
             },
-            // Hanya opsi, tanpa input penjelasan di kolom tengah
             {
               kind: "options",
               key: "dok-bukti-biaya",
               label: "Dokumentasi Bukti Pengeluaran Biaya",
               options: ["Valid", "Tidak Valid"],
             },
-            // Dropping Kas Kecil → Ada/Tidak + nominal + nomor dropping kas (baru)
             {
               kind: "compound",
               key: "dropping-kas-kecil",
@@ -532,7 +530,7 @@ export default function ChecklistArea({
 
         /* ===== 2. BUKU PENUNJANG ===== */
         buku: {
-          title: "Buku Penunjnag",
+          title: "Buku Penunjang",
           rows: [
             {
               kind: "options",
@@ -723,7 +721,6 @@ export default function ChecklistArea({
               label: "Faktur DO yang belum draft loading",
               suffix: "Faktur",
             },
-            // Jika "Belum", isi jumlah faktur yang belum didraft
             {
               kind: "compound",
               key: "draft-loading-besok",
@@ -746,7 +743,6 @@ export default function ChecklistArea({
               ],
               extra: [{ type: "text", placeholder: "Alasan" }],
             },
-            // ✅ Ada/Tidak + jumlah + list nomor faktur via tombol +
             {
               kind: "compound",
               key: "faktur-dibatalkan",
@@ -757,21 +753,17 @@ export default function ChecklistArea({
                 { type: "text", placeholder: "Nomor Faktur" },
               ],
             },
-            // ✅ Coret Nota — opsi Ada/Tidak di kolom Hasil Kontrol; daftar item (alasan + Nomor RJ) di kolom Keterangan
             {
               kind: "compound",
               key: "coret-nota",
               label: "Coret Nota",
               options: ["Ada", "Tidak"],
-              // data daftar item disimpan di extras.text sebagai JSON: [{reason, rj}]
             },
-            // ✅ Konfirmasi ke tim sales: fitur + tambah sales dihilangkan
             {
               kind: "compound",
               key: "konfirmasi-sales",
               label: "Konfirmasi ke Tim Salesman",
               options: ["Sudah", "Belum"],
-              // no extra
             },
           ],
         },
@@ -1092,14 +1084,15 @@ export default function ChecklistArea({
   }, [BASE_MAP, overrides]);
 
   /* ===== TABS: base + custom ===== */
+  // ⬇️ FIX PENTING: label base tabs ambil dari FINAL_MAP agar judul tab ikut berubah saat di-rename
   const BASE_TABS = useMemo(() => {
     return (Object.keys(BASE_MAP) as SectionKey[]).map((k) => ({
       key: k as AnySectionKey,
-      label: BASE_MAP[k].title,
+      label: FINAL_MAP[k]?.title || BASE_MAP[k].title,
       order: 0,
       isCustom: false,
     }));
-  }, [BASE_MAP]);
+  }, [BASE_MAP, FINAL_MAP]);
 
   const EXTRA_TABS = useMemo(() => {
     const ex = overrides.extraSections || {};
@@ -1698,6 +1691,7 @@ function ChecklistRow({
           .filter(Boolean)
       : [];
     setInvoiceNumbers(parts);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFakturDibatalkan, compExtras?.text]);
 
   const syncInvoiceNumbers = (arr: string[]) => {
@@ -1739,7 +1733,7 @@ function ChecklistRow({
         const safe = parsed
           .map((it) => ({
             reason: String(it?.reason ?? ""),
-            // backward-compatible
+            // backward-compatible: jika data lama pakai 'detail', fallback ke situ
             rj: String(it?.rj ?? it?.detail ?? ""),
           }))
           .filter((it) => it.reason || it.rj);
@@ -1748,8 +1742,10 @@ function ChecklistRow({
         setCoretItems([]);
       }
     } catch {
+      // fallback jika bukan JSON — kosongkan agar tidak crash
       setCoretItems([]);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCoretNota, compExtras?.text]);
 
   const syncCoretItems = (items: CoretItem[]) => {
@@ -1781,6 +1777,7 @@ function ChecklistRow({
   useEffect(() => {
     if (!value) return;
     if (value.note === note) return;
+
     if (value.kind === "options") {
       onChange({ ...value, note });
     } else if (value.kind === "number") {
@@ -1790,7 +1787,8 @@ function ChecklistRow({
     } else if (value.kind === "compound") {
       onChange({ ...value, note });
     }
-  }, [note]); // eslint-disable-line
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note]);
 
   useEffect(() => {
     adjustHeight();
@@ -1927,9 +1925,10 @@ function ChecklistRow({
                 }
               />
 
-              {/* === Faktur dibatalkan === */}
+              {/* === Faktur dibatalkan (tetap di kolom Hasil Kontrol) === */}
               {isFakturDibatalkan ? (
                 <div className="space-y-2">
+                  {/* Jumlah Faktur */}
                   {hasNumberExtra && (
                     <input
                       type="number"
@@ -1952,6 +1951,7 @@ function ChecklistRow({
                     />
                   )}
 
+                  {/* Tombol tambah nomor faktur */}
                   <button
                     onClick={() => setInvoiceNumbers((arr) => [...arr, ""])}
                     className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
@@ -1968,6 +1968,7 @@ function ChecklistRow({
                     </div>
                   )}
 
+                  {/* List input nomor faktur */}
                   <div className="space-y-2">
                     {invoiceNumbers.map((val, idx) => (
                       <div key={idx} className="flex items-center gap-2">
@@ -2000,8 +2001,10 @@ function ChecklistRow({
                   </div>
                 </div>
               ) : isCoretNota ? (
+                // === Coret nota: daftar item DIPINDAH ke kolom Keterangan (di sini tidak ada apa-apa lagi selain checkbox di atas)
                 <></>
               ) : (
+                // === Default extras (text / currency / number)
                 (hasTextExtra || hasCurrencyExtra || hasNumberExtra) && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {hasTextExtra && (
@@ -2080,6 +2083,7 @@ function ChecklistRow({
       <div className="sm:col-span-5 py-3 px-2">
         <div className="sm:hidden text-xs text-slate-500 mb-1">Keterangan</div>
 
+        {/* === Khusus coret-nota: render daftar item (alasan + Nomor RJ) di sini dan sembunyikan textarea umum === */}
         {isCoretNota ? (
           <div className="border border-slate-300 rounded-lg p-2 bg-slate-50">
             <div className="flex items-center justify-between mb-2">
@@ -2113,6 +2117,7 @@ function ChecklistRow({
                   key={idx}
                   className="grid grid-cols-1 md:grid-cols-6 gap-2"
                 >
+                  {/* Dropdown alasan */}
                   <div className="md:col-span-3">
                     <select
                       value={it.reason}
@@ -2133,6 +2138,7 @@ function ChecklistRow({
                     </select>
                   </div>
 
+                  {/* Nomor RJ */}
                   <div className="md:col-span-2">
                     <input
                       value={it.rj}
@@ -2147,6 +2153,7 @@ function ChecklistRow({
                     />
                   </div>
 
+                  {/* Hapus item */}
                   <div className="md:col-span-1 flex">
                     <button
                       onClick={() => {
@@ -2165,6 +2172,7 @@ function ChecklistRow({
             </div>
           </div>
         ) : (
+          // === Default: textarea keterangan umum
           <textarea
             ref={taRef}
             value={note}
@@ -2203,7 +2211,6 @@ function InlineAddRow({
   const [kind, setKind] = useState<AddedRowMeta["kind"]>("options");
   const [optionsCsv, setOptionsCsv] = useState("Cocok, Tidak Cocok");
   const [suffix, setSuffix] = useState("");
-
   const [exText, setExText] = useState(false);
   const [exCurr, setExCurr] = useState(false);
   const [exNum, setExNum] = useState(false);
@@ -2269,7 +2276,7 @@ function InlineAddRow({
           <input
             value={suffix}
             onChange={(e) => setSuffix(e.target.value)}
-            className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 fokus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+            className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
             placeholder="Suffix (pcs/faktur/…)"
           />
         )}
