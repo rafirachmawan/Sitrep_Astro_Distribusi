@@ -1,4 +1,3 @@
-// src/app/api/lampiran/list/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -43,29 +42,23 @@ export async function GET(req: NextRequest) {
       .eq("role", role)
       .order("date_iso", { ascending: false })
       .order("submitted_at", { ascending: false })
-      .returns<LampiranRow[]>(); // ← ini yang benar untuk typing
+      .returns<LampiranRow[]>();
 
-    if (error) {
+    if (error)
       return NextResponse.json({ error: error.message }, { status: 500 });
-    }
 
-    const rows = data ?? [];
-    const items = rows.map((row) => {
-      const { data: pub } = supabase.storage
-        .from(BUCKET)
-        .getPublicUrl(row.storage_key);
-
-      // URL aman yang akan dipakai di UI (same-origin, no CORS, no double-encode)
+    const items = (data ?? []).map((row) => {
+      // URL aman (same-origin) pakai proxy
       const downloadUrl = `/api/lampiran/file?key=${encodeURIComponent(
         row.storage_key
       )}&filename=${encodeURIComponent(row.filename)}`;
-
       return {
         filename: row.filename,
         dateISO: row.date_iso,
         key: row.storage_key,
-        url: pub.publicUrl, // opsional (referensi)
-        downloadUrl, // ← gunakan ini di UI
+        // publicUrl tidak dipakai untuk klik, tapi boleh dikirim kalau perlu referensi
+        url: "",
+        downloadUrl,
         submittedAt: row.submitted_at,
       };
     });

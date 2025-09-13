@@ -8,7 +8,6 @@ const BUCKET = process.env.SUPABASE_BUCKET || "Lampiran";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON, {
   auth: { persistSession: false },
 });
-
 function errMsg(e: unknown): string {
   if (e instanceof Error) return e.message;
   if (typeof e === "string") return e;
@@ -18,30 +17,31 @@ function errMsg(e: unknown): string {
     return "Unknown error";
   }
 }
+function safeDecode(s: string): string {
+  try {
+    return decodeURIComponent(s);
+  } catch {
+    return s;
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const rawKey = searchParams.get("key");
-    if (!rawKey) {
+    const raw = searchParams.get("key");
+    if (!raw)
       return NextResponse.json({ error: "Missing ?key=" }, { status: 400 });
-    }
 
-    // hapus dua kemungkinan: key mentah & yang sudah ter-decode
-    const candidates = Array.from(
-      new Set([rawKey, decodeURIComponent(rawKey)])
-    );
+    const candidates = Array.from(new Set([raw, safeDecode(raw)]));
 
-    await supabase.storage.from(BUCKET).remove(candidates);
+    // hapus file
+    await supabase.storage
+      .from(BUCKET)
+      .remove(candidates.map((k) => ({ name: k } as any)));
 
-    // bersihkan dari tabel
-    const { error } = await supabase
-      .from("lampiran_history")
-      .delete()
-      .in("storage_key", candidates);
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
+    // hapus row DB
+    for (const k of candidates) {
+      await supabase.from("lampiran_history").delete().eq("storage_key", k);
     }
 
     return NextResponse.json({ ok: true });

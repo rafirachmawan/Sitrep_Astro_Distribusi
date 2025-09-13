@@ -1,4 +1,3 @@
-// src/app/api/lampiran/file/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -19,7 +18,6 @@ function errMsg(e: unknown): string {
     return "Unknown error";
   }
 }
-
 function safeDecode(s: string): string {
   try {
     return decodeURIComponent(s);
@@ -28,21 +26,16 @@ function safeDecode(s: string): string {
   }
 }
 
-/**
- * GET /api/lampiran/file?key=...&filename=optional
- * key = persis seperti yang disimpan di DB (boleh sudah %xx-encoded).
- */
+/** GET /api/lampiran/file?key=...&filename=optional */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const raw = searchParams.get("key");
     const filename = searchParams.get("filename") || "lampiran.pdf";
-
-    if (!raw) {
+    if (!raw)
       return NextResponse.json({ error: "Missing ?key=" }, { status: 400 });
-    }
 
-    // Coba beberapa kandidat untuk kunci lama/baru (encoded vs non-encoded)
+    // Coba beberapa kandidat (untuk data lama yang sudah ter-encode)
     const candidates = Array.from(new Set([raw, safeDecode(raw)]));
 
     for (const key of candidates) {
@@ -52,12 +45,10 @@ export async function GET(req: NextRequest) {
           headers: {
             "Content-Type": "application/pdf",
             "Content-Disposition": `inline; filename="${filename}"`,
-            "Cache-Control": "private, max-age=0, must-revalidate",
           },
         });
       }
     }
-
     return NextResponse.json(
       { error: "File not found for provided key" },
       { status: 404 }

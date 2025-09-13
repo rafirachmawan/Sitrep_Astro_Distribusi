@@ -25,7 +25,7 @@ type PdfEntry = {
   submittedAt: string;
   name: string;
   role: string;
-  pdfDataUrl: string; // data:URL (local) atau http(s) (cloud)
+  pdfDataUrl: string; // data:URL (local) atau http(s) (cloud via proxy)
   storage?: "local" | "remote";
   key?: string;
 };
@@ -684,7 +684,8 @@ export default function Lampiran({ data }: { data: AppState }) {
         items: Array<{
           filename: string;
           dateISO: string;
-          url: string;
+          url?: string; // legacy, tidak dipakai
+          downloadUrl: string; // ← pakai proxy aman
           key: string;
           submittedAt?: string;
         }>;
@@ -697,7 +698,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         submittedAt: it.submittedAt || new Date().toISOString(),
         name: u.name || "-",
         role: role || "-",
-        pdfDataUrl: it.url,
+        pdfDataUrl: it.downloadUrl, // ← PENTING: gunakan proxy kita
         storage: "remote",
         key: it.key,
       }));
