@@ -1,3 +1,4 @@
+// src/app/api/lampiran/list/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest) {
       .eq("role", role)
       .order("date_iso", { ascending: false })
       .order("submitted_at", { ascending: false })
-      .returns<LampiranRow[]>();
+      .returns<LampiranRow[]>(); // ← ini yang benar untuk typing
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -50,16 +51,21 @@ export async function GET(req: NextRequest) {
 
     const rows = data ?? [];
     const items = rows.map((row) => {
-      // penting: decode untuk menormalkan entri lama yang terlanjur %3A dll
-      const normalizedKey = decodeURIComponent(row.storage_key);
       const { data: pub } = supabase.storage
         .from(BUCKET)
-        .getPublicUrl(normalizedKey);
+        .getPublicUrl(row.storage_key);
+
+      // URL aman yang akan dipakai di UI (same-origin, no CORS, no double-encode)
+      const downloadUrl = `/api/lampiran/file?key=${encodeURIComponent(
+        row.storage_key
+      )}&filename=${encodeURIComponent(row.filename)}`;
+
       return {
         filename: row.filename,
         dateISO: row.date_iso,
-        key: normalizedKey,
-        url: pub.publicUrl,
+        key: row.storage_key,
+        url: pub.publicUrl, // opsional (referensi)
+        downloadUrl, // ← gunakan ini di UI
         submittedAt: row.submitted_at,
       };
     });
