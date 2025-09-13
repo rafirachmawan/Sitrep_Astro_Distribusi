@@ -754,7 +754,7 @@ export default function Lampiran({ data }: { data: AppState }) {
 
     const base = doc.createElement("style");
     base.textContent = `*,*::before,*::after{box-sizing:border-box} html,body{margin:0;padding:0;background:#fff;color:#0f172a}
-      body{font-family:Inter, Arial, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;font-size:12px;line-height:1.5}`;
+      body{font-family:Inter, Arial, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;font-size:14px;line-height:1.55}`;
     doc.head.appendChild(base);
 
     return { doc, iframe, cleanup: () => iframe.remove() };
@@ -770,14 +770,14 @@ export default function Lampiran({ data }: { data: AppState }) {
     root.style.color = "#0f172a";
     root.style.fontFamily =
       'Inter, Arial, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
-    root.style.fontSize = "12px";
-    root.style.lineHeight = "1.5";
+    root.style.fontSize = "14px";
+    root.style.lineHeight = "1.55";
 
     const st = doc.createElement("style");
     st.textContent = `
   .page{width:794px;min-height:1123px;box-sizing:border-box;padding:24px;}
   .section{margin-top:18px;}
-  .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;}
+  .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;font-size:18px;}
   .muted{color:#64748b;}
   .page-break-avoid{break-inside:avoid;page-break-inside:avoid;}
   .table, .table *, thead, tbody, tr, th, td { break-inside: avoid; page-break-inside: avoid; }
@@ -790,24 +790,26 @@ export default function Lampiran({ data }: { data: AppState }) {
     padding:16px 18px;border-radius:16px;box-shadow:0 1px 0 rgba(16,24,40,.03);}
   .info-grid{display:flex;gap:12px;margin-top:12px;}
   .card{border:1px solid #e6e8f0;border-radius:12px;padding:10px 12px;flex:1;background:#fff;}
-  .card .label{color:#6b7280;font-size:12px;}
+  .card .label{color:#6b7280;font-size:13px;}
 
   .table{width:100%;border-collapse:separate;border-spacing:0;}
   .table th,.table td{border:1px solid #e9edf3;padding:8px 10px;vertical-align:middle;}
-  .table th{background:#f8fafc;color:#475569;text-align:left;font-weight:700;border-top:none;border-bottom:2px solid #cbd5e1;}
+  .table th{background:#f8fafc;color:#475569;text-align:left;font-weight:700;border-top:none;border-bottom:2px solid #cbd5e1;font-size:16px;}
+  .table td{font-size:14px;}
   .table.striped tbody tr:nth-child(even){background:#fbfdff;}
   .table.checklist{border:2px solid #cbd5e1;border-radius:12px;overflow:hidden;box-shadow:0 1px 0 rgba(16,24,40,.03);background:#fff;}
   .table.checklist td:first-child{font-weight:700;color:#0f172a;}
 
-  .subhead{font-weight:800;margin:6px 0 8px;color:#0f172a;text-transform:uppercase;letter-spacing:.2px;border-left:5px solid #0f172a;padding-left:10px;}
+  .subhead{font-weight:800;margin:6px 0 8px;color:#0f172a;text-transform:uppercase;letter-spacing:.2px;border-left:5px solid #0f172a;padding-left:10px;font-size:16px;}
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;}
   .chip{display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;font-size:11px;font-weight:700;line-height:1;}
   .chip.ok{background:#ecfdf5;border-color:#86efac;color:#065f46;}
   .chip.due{background:var(--due-bg);border-color:var(--due-bd);color:var(--due-fg);}
   .chip.over{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
 
-  .status-badge{display:inline-block;padding:2px 0;border-radius:0;border:none;background:transparent;color:#0f172a;font-size:12px;font-weight:600}
-  .status-badge.good,.status-badge.warn,.status-badge.bad,.status-badge.neutral{border:none;background:transparent;color:#0f172a}
+  /* Status/Hasil Kontrol: JANGAN bold */
+  .status-badge{display:inline-block;padding:2px 0;border-radius:0;border:none;background:transparent;color:#0f172a;font-size:14px;font-weight:400}
+  .status-badge.good,.status-badge.warn,.status-badge.bad,.status-badge.neutral{border:none;background:transparent;color:#0f172a;font-weight:400}
 
   .sigwrap{page-break-inside:avoid;margin-top:18px;}
   .sigtitle{text-align:right;margin:0 0 6px 0;}
@@ -820,7 +822,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;}
   .pro-card{border:1px solid #e6e8f0;border-radius:16px;background:#fff;padding:14px;box-shadow:0 1px 0 rgba(16,24,40,.02);}
   .pro-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
-  .pro-title{font-weight:800;color:#0f172a;}
+  .pro-title{font-weight:800;color:#0f172a;font-size:16px;}
   .steps-panel{border:1px solid #eef2f7;border-radius:12px;background:#fcfdff;padding:10px 12px;}
   .progress{height:10px;background:#eff3fb;border-radius:999px;overflow:hidden}
   .progress>div{height:100%;background:#2563eb;transition:width .2s ease}
@@ -946,7 +948,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     const header = doc.createElement("div");
     header.className = "banner";
     header.innerHTML = `
-      <div style="font-weight:800;font-size:14px;letter-spacing:.3px;">LEADER MONITORING DAILY</div>
+      <div style="font-weight:800;font-size:16px;letter-spacing:.3px;">LEADER MONITORING DAILY</div>
       <div class="muted" style="margin-top:2px;">Laporan Harian</div>
       <div class="muted">Tanggal: ${todayISO()}</div>`;
     appendBlock(header);
