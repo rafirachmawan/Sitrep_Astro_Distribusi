@@ -753,7 +753,7 @@ export default function ChecklistArea({
                 { type: "text", placeholder: "Nomor Faktur" },
               ],
             },
-            // ✅ Coret Nota — opsi Ada/Tidak di kolom Status; daftar item (alasan + Nomor RJ) di kolom Keterangan
+            // ✅ Coret Nota — opsi Ada/Tidak di kolom Hasil Kontrol; daftar item (alasan + Nomor RJ) di kolom Keterangan
             {
               kind: "compound",
               key: "coret-nota",
@@ -1522,8 +1522,8 @@ export default function ChecklistArea({
 
         {/* Header 4/3/5 */}
         <div className="hidden sm:grid grid-cols-12 text-[13px] font-medium text-slate-600 border-y bg-slate-50">
-          <div className="col-span-4 py-2.5 px-2">Area Tanggung Jawab</div>
-          <div className="col-span-3 py-2.5 px-2 pl-3">Status / Isian</div>
+          <div className="col-span-4 py-2.5 px-2">Tanggung Jawab</div>
+          <div className="col-span-3 py-2.5 px-2 pl-3">Hasil Kontrol</div>
           <div className="col-span-5 py-2.5 px-2">Keterangan</div>
         </div>
 
@@ -1832,7 +1832,7 @@ function ChecklistRow({
               value={row.label}
               onChange={(e) => onEditLabel(e.target.value)}
               className={INPUT_BASE}
-              placeholder="Nama area/pertanyaan…"
+              placeholder="Nama tanggung jawab/pertanyaan…"
             />
             <button
               onClick={onDelete}
@@ -1847,10 +1847,10 @@ function ChecklistRow({
         )}
       </div>
 
-      {/* Status / Isian */}
+      {/* Hasil Kontrol */}
       <div className="sm:col-span-3 py-3 px-2 pl-3">
         <div className="sm:hidden text-xs text-slate-500 mb-1">
-          Status / Isian
+          Hasil Kontrol
         </div>
 
         <div className="border border-slate-300 rounded-lg p-2 bg-slate-50">
@@ -1928,7 +1928,7 @@ function ChecklistRow({
                 }
               />
 
-              {/* === Faktur dibatalkan (tetap di kolom Status) === */}
+              {/* === Faktur dibatalkan (tetap di kolom Hasil Kontrol) === */}
               {isFakturDibatalkan ? (
                 <div className="space-y-2">
                   {/* Jumlah Faktur */}
