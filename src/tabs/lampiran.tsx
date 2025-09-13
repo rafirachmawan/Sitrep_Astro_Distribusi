@@ -378,6 +378,12 @@ const labelStatusChip = (filled: boolean) =>
     filled ? "Diisi" : "Kosong"
   }</span>`;
 
+// === NEW: Title Case untuk kolom "Area/Tanggung Jawab"
+const toTitleCase = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/(^|[\s/,-])([\p{L}])/gu, (_m, p1, p2) => p1 + p2.toUpperCase());
+
 /* =========================
    Evaluasi types
    ========================= */
@@ -1014,9 +1020,9 @@ export default function Lampiran({ data }: { data: AppState }) {
           )}</span>`;
           tb.insertAdjacentHTML(
             "beforeend",
-            `<tr><td>${r.label || ""}</td><td>${valueHtml}</td><td>${
-              r.note || ""
-            }</td></tr>`
+            `<tr><td>${toTitleCase(
+              r.label || ""
+            )}</td><td>${valueHtml}</td><td>${r.note || ""}</td></tr>`
           );
         });
         tbl.appendChild(tb);
