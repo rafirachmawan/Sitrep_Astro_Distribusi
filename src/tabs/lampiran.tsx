@@ -677,19 +677,22 @@ export default function Lampiran({ data }: { data: AppState }) {
       const res = await fetch(
         `/api/lampiran/list?userId=${encodeURIComponent(
           userId
-        )}&role=${encodeURIComponent(role)}`
+        )}&role=${encodeURIComponent(role)}&_ts=${Date.now()}`,
+        { cache: "no-store" } // ⟵ penting
       );
+
       if (!res.ok) return false;
       const json = (await res.json()) as {
         items: Array<{
           filename: string;
           dateISO: string;
-          url?: string; // legacy, tidak dipakai
-          downloadUrl: string; // ← pakai proxy aman
+          url?: string; // boleh ada
+          downloadUrl?: string; // boleh ada (jika pakai proxy /api/lampiran/file)
           key: string;
           submittedAt?: string;
         }>;
       };
+
       if (!json?.items) return false;
       const mapped: PdfEntry[] = json.items.map((it) => ({
         id: it.key,
@@ -698,10 +701,11 @@ export default function Lampiran({ data }: { data: AppState }) {
         submittedAt: it.submittedAt || new Date().toISOString(),
         name: u.name || "-",
         role: role || "-",
-        pdfDataUrl: it.downloadUrl, // ← PENTING: gunakan proxy kita
+        pdfDataUrl: it.downloadUrl ?? it.url ?? "#", // ← fallback aman
         storage: "remote",
         key: it.key,
       }));
+
       // MERGE dengan lokal + simpan
       const local = loadHistory();
       const merged = mergeHistoryLists(mapped, local);

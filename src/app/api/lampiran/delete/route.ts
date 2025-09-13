@@ -1,14 +1,25 @@
-// src/app/api/lampiran/delete/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE!; // gunakan server-side key
+const SERVICE_KEY =
+  process.env.SUPABASE_SERVICE_ROLE ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const BUCKET = process.env.SUPABASE_BUCKET || "Lampiran";
 
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE, {
+const supabase = createClient(SUPABASE_URL, SERVICE_KEY, {
   auth: { persistSession: false },
 });
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
+const noStoreHeaders = {
+  "Cache-Control":
+    "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0",
+  "CDN-Cache-Control": "no-store",
+  "Vercel-CDN-Cache-Control": "no-store",
+};
 
 function errMsg(e: unknown): string {
   if (e instanceof Error) return e.message;
@@ -32,36 +43,29 @@ export async function POST(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const raw = searchParams.get("key");
-    if (!raw)
-      return NextResponse.json({ error: "Missing ?key=" }, { status: 400 });
-
-    // siapkan kandidat path (raw + decoded), dedupe, semua bertipe string
-    const candidates: string[] = Array.from(new Set([raw, safeDecode(raw)]));
-
-    // Hapus file di storage (terima string[])
-    const { error: removeErr } = await supabase.storage
-      .from(BUCKET)
-      .remove(candidates);
-    if (removeErr) {
-      // tidak fatal; tetap lanjut hapus row DB, tapi kirim info error
-      console.warn("Storage remove error:", removeErr);
+    if (!raw) {
+      return NextResponse.json(
+        { error: "Missing ?key=" },
+        { status: 400, headers: noStoreHeaders }
+      );
     }
 
-    // Hapus row di DB sekaligus
-    const { error: dbErr } = await supabase
-      .from("lampiran_history")
-      .delete()
-      .in("storage_key", candidates);
-    if (dbErr) {
-      console.warn("DB delete error:", dbErr);
+    // hapus 2 versi: apa adanya & versi decoded
+    const candidates = Array.from(new Set([raw, safeDecode(raw)]));
+
+    // Hapus file di storage (API menerima string[])
+    await supabase.storage.from(BUCKET).remove(candidates);
+
+    // Hapus row DB yang cocok
+    for (const k of candidates) {
+      await supabase.from("lampiran_history").delete().eq("storage_key", k);
     }
 
-    return NextResponse.json({
-      ok: true,
-      storageError: removeErr ? errMsg(removeErr) : undefined,
-      dbError: dbErr ? errMsg(dbErr) : undefined,
-    });
+    return NextResponse.json({ ok: true }, { headers: noStoreHeaders });
   } catch (e: unknown) {
-    return NextResponse.json({ error: errMsg(e) }, { status: 500 });
+    return NextResponse.json(
+      { error: errMsg(e) },
+      { status: 500, headers: noStoreHeaders }
+    );
   }
 }
