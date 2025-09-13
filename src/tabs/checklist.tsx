@@ -120,11 +120,15 @@ async function fetchOverridesFromServer(
 }
 async function saveOverridesToServer(
   role: Role,
-  overrides: ChecklistOverrides
+  overrides: ChecklistOverrides,
+  editorRole?: string // <— tambahan: kirim role user yang sedang login (harus superadmin)
 ) {
   const res = await fetch(`/api/checklist/overrides?role=${role}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "X-User-Role": editorRole ?? "",
+    },
     body: JSON.stringify({ overrides }),
   });
   if (!res.ok) throw new Error(`PUT /overrides ${res.status}`);
@@ -413,7 +417,7 @@ export default function ChecklistArea({
         options: ["Ada", "Tidak"],
       });
       writeRoleOverrides(viewRole, next);
-      void saveOverridesToServer(viewRole, next).catch(() => {});
+      void saveOverridesToServer(viewRole, next, role).catch(() => {});
       setRev((x) => x + 1);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1140,7 +1144,7 @@ export default function ChecklistArea({
       next = mergeSectionTitle(cur, sec as SectionKey, title);
     }
     writeRoleOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
+    void saveOverridesToServer(viewRole, next, role).catch(console.error);
     setRev((x) => x + 1);
   };
 
@@ -1163,7 +1167,7 @@ export default function ChecklistArea({
     const cur = readRoleOverrides(viewRole);
     const next = mergeExtraSection(cur, key as `x_${string}`, { title: ttl });
     writeRoleOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
+    void saveOverridesToServer(viewRole, next, role).catch(console.error);
     setRev((x) => x + 1);
     setSecActive(key as AnySectionKey);
   };
@@ -1179,7 +1183,7 @@ export default function ChecklistArea({
     const cur = readRoleOverrides(viewRole);
     const next = deleteExtraSection(cur, key);
     writeRoleOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
+    void saveOverridesToServer(viewRole, next, role).catch(console.error);
     setRev((x) => x + 1);
     setSecActive("kas");
   };
@@ -1193,7 +1197,7 @@ export default function ChecklistArea({
     const cur = readRoleOverrides(viewRole);
     const next = mergeRowOverride(cur, sec, rowKey, { label });
     writeRoleOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
+    void saveOverridesToServer(viewRole, next, role).catch(console.error);
     setRev((x) => x + 1);
   };
   const updateRowOptions = (
@@ -1209,7 +1213,7 @@ export default function ChecklistArea({
     const cur = readRoleOverrides(viewRole);
     const next = mergeRowOverride(cur, sec, rowKey, { options: opts });
     writeRoleOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
+    void saveOverridesToServer(viewRole, next, role).catch(console.error);
     setRev((x) => x + 1);
   };
   const updateRowSuffix = (
@@ -1221,7 +1225,7 @@ export default function ChecklistArea({
     const cur = readRoleOverrides(viewRole);
     const next = mergeRowOverride(cur, sec, rowKey, { suffix });
     writeRoleOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
+    void saveOverridesToServer(viewRole, next, role).catch(console.error);
     setRev((x) => x + 1);
   };
   const deleteRow = (sec: AnySectionKey, rowKey: string) => {
@@ -1230,7 +1234,7 @@ export default function ChecklistArea({
     const cur = readRoleOverrides(viewRole);
     const next = mergeRowOverride(cur, sec, rowKey, { __delete: true });
     writeRoleOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
+    void saveOverridesToServer(viewRole, next, role).catch(console.error);
     setRev((x) => x + 1);
   };
   const addRow = (
@@ -1262,7 +1266,7 @@ export default function ChecklistArea({
     };
     const next = mergeRowOverride(cur, sec, key, patch);
     writeRoleOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
+    void saveOverridesToServer(viewRole, next, role).catch(console.error);
     setRev((x) => x + 1);
   };
 
@@ -1276,7 +1280,7 @@ export default function ChecklistArea({
       return;
     const next: ChecklistOverrides = {};
     writeRoleOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
+    void saveOverridesToServer(viewRole, next, role).catch(console.error);
     setRev((x) => x + 1);
   };
 
@@ -1338,7 +1342,7 @@ export default function ChecklistArea({
       next = mergeSectionHidden(cur, sec as SectionKey, hidden);
     }
     writeRoleOverrides(viewRole, next);
-    void saveOverridesToServer(viewRole, next).catch(console.error);
+    void saveOverridesToServer(viewRole, next, role).catch(console.error);
     setRev((x) => x + 1);
   };
 
@@ -1694,7 +1698,6 @@ function ChecklistRow({
           .filter(Boolean)
       : [];
     setInvoiceNumbers(parts);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFakturDibatalkan, compExtras?.text]);
 
   const syncInvoiceNumbers = (arr: string[]) => {
@@ -1736,7 +1739,7 @@ function ChecklistRow({
         const safe = parsed
           .map((it) => ({
             reason: String(it?.reason ?? ""),
-            // backward-compatible: jika data lama pakai 'detail', fallback ke situ
+            // backward-compatible
             rj: String(it?.rj ?? it?.detail ?? ""),
           }))
           .filter((it) => it.reason || it.rj);
@@ -1745,10 +1748,8 @@ function ChecklistRow({
         setCoretItems([]);
       }
     } catch {
-      // fallback jika bukan JSON — kosongkan agar tidak crash
       setCoretItems([]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isCoretNota, compExtras?.text]);
 
   const syncCoretItems = (items: CoretItem[]) => {
@@ -1780,7 +1781,6 @@ function ChecklistRow({
   useEffect(() => {
     if (!value) return;
     if (value.note === note) return;
-
     if (value.kind === "options") {
       onChange({ ...value, note });
     } else if (value.kind === "number") {
@@ -1790,8 +1790,7 @@ function ChecklistRow({
     } else if (value.kind === "compound") {
       onChange({ ...value, note });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [note]);
+  }, [note]); // eslint-disable-line
 
   useEffect(() => {
     adjustHeight();
@@ -1928,10 +1927,9 @@ function ChecklistRow({
                 }
               />
 
-              {/* === Faktur dibatalkan (tetap di kolom Hasil Kontrol) === */}
+              {/* === Faktur dibatalkan === */}
               {isFakturDibatalkan ? (
                 <div className="space-y-2">
-                  {/* Jumlah Faktur */}
                   {hasNumberExtra && (
                     <input
                       type="number"
@@ -1954,7 +1952,6 @@ function ChecklistRow({
                     />
                   )}
 
-                  {/* Tombol tambah nomor faktur */}
                   <button
                     onClick={() => setInvoiceNumbers((arr) => [...arr, ""])}
                     className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
@@ -1971,7 +1968,6 @@ function ChecklistRow({
                     </div>
                   )}
 
-                  {/* List input nomor faktur */}
                   <div className="space-y-2">
                     {invoiceNumbers.map((val, idx) => (
                       <div key={idx} className="flex items-center gap-2">
@@ -2004,10 +2000,8 @@ function ChecklistRow({
                   </div>
                 </div>
               ) : isCoretNota ? (
-                // === Coret nota: daftar item DIPINDAH ke kolom Keterangan (di sini tidak ada apa-apa lagi selain checkbox di atas)
                 <></>
               ) : (
-                // === Default extras (text / currency / number)
                 (hasTextExtra || hasCurrencyExtra || hasNumberExtra) && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     {hasTextExtra && (
@@ -2086,7 +2080,6 @@ function ChecklistRow({
       <div className="sm:col-span-5 py-3 px-2">
         <div className="sm:hidden text-xs text-slate-500 mb-1">Keterangan</div>
 
-        {/* === Khusus coret-nota: render daftar item (alasan + Nomor RJ) di sini dan sembunyikan textarea umum === */}
         {isCoretNota ? (
           <div className="border border-slate-300 rounded-lg p-2 bg-slate-50">
             <div className="flex items-center justify-between mb-2">
@@ -2120,7 +2113,6 @@ function ChecklistRow({
                   key={idx}
                   className="grid grid-cols-1 md:grid-cols-6 gap-2"
                 >
-                  {/* Dropdown alasan */}
                   <div className="md:col-span-3">
                     <select
                       value={it.reason}
@@ -2141,7 +2133,6 @@ function ChecklistRow({
                     </select>
                   </div>
 
-                  {/* Nomor RJ */}
                   <div className="md:col-span-2">
                     <input
                       value={it.rj}
@@ -2156,7 +2147,6 @@ function ChecklistRow({
                     />
                   </div>
 
-                  {/* Hapus item */}
                   <div className="md:col-span-1 flex">
                     <button
                       onClick={() => {
@@ -2175,7 +2165,6 @@ function ChecklistRow({
             </div>
           </div>
         ) : (
-          // === Default: textarea keterangan umum
           <textarea
             ref={taRef}
             value={note}
@@ -2214,6 +2203,7 @@ function InlineAddRow({
   const [kind, setKind] = useState<AddedRowMeta["kind"]>("options");
   const [optionsCsv, setOptionsCsv] = useState("Cocok, Tidak Cocok");
   const [suffix, setSuffix] = useState("");
+
   const [exText, setExText] = useState(false);
   const [exCurr, setExCurr] = useState(false);
   const [exNum, setExNum] = useState(false);

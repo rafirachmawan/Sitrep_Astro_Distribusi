@@ -6,14 +6,14 @@ const TABLE = "sitrep_checklist_overrides";
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const role = searchParams.get("role");
+    const role = (searchParams.get("role") || "").trim();
     if (!role) {
       return NextResponse.json({ error: "Missing role" }, { status: 400 });
     }
 
     const { data, error } = await supabaseAdmin
       .from(TABLE)
-      .select("*")
+      .select("overrides, updated_at")
       .eq("role", role)
       .maybeSingle();
 
@@ -33,9 +33,15 @@ export async function GET(req: Request) {
 export async function PUT(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const role = searchParams.get("role");
+    const role = (searchParams.get("role") || "").trim();
     if (!role) {
       return NextResponse.json({ error: "Missing role" }, { status: 400 });
+    }
+
+    // Proteksi: hanya superadmin yang boleh edit via UI
+    const editorRole = (req.headers.get("x-user-role") || "").toLowerCase();
+    if (editorRole !== "superadmin") {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const body = await req.json().catch(() => ({}));
