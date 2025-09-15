@@ -949,6 +949,11 @@ export default function Lampiran({ data }: { data: AppState }) {
   .logoBox{width:48px;height:48px;border-radius:12px;border:2px solid var(--brand-border);
     background:#fff;display:flex;align-items:center;justify-content:center;
     font-weight:800;color:#1e3a8a;font-size:11px;letter-spacing:.4px}
+    .logoImg{
+  width:48px;height:48px;border-radius:12px;object-fit:contain;
+  border:2px solid var(--brand-border);background:#fff;padding:6px;
+}
+
   .tag-title{font-weight:800;letter-spacing:.2px}
   .tag-sub{font-size:12px;color:#64748b}
 `;
@@ -1065,25 +1070,25 @@ export default function Lampiran({ data }: { data: AppState }) {
     const uRole = (user as AnyUser | undefined)?.role || "";
     const depoName = "TULUNGAGUNG";
 
+    const logoSrc = "/sitrep-logo.jpg"; // file di /public
     header.innerHTML = `
-      <div class="hdr-grid">
-        <div class="hdr-left">
-          <div style="font-weight:800;font-size:16px;letter-spacing:.3px;">LEADER MONITORING DAILY</div>
-          <div class="muted" style="margin-top:2px;">Laporan Harian</div>
-          <div class="muted">Tanggal: ${todayISO()}</div>
+  <div class="hdr-grid">
+    <div class="hdr-left">
+      <div style="font-weight:800;font-size:16px;letter-spacing:.3px;">LEADER MONITORING DAILY</div>
+      <div class="muted" style="margin-top:2px;">Laporan Harian</div>
+      <div class="muted">Tanggal: ${todayISO()}</div>
+    </div>
+    <div class="hdr-right">
+      <img class="logoImg" src="${logoSrc}" alt="Logo" />
+      <div>
+        <div class="tag-title">SITREP — Situation Report Harian</div>
+        <div class="tag-sub">Powered by ${escapeHtml(uName)}
+          <span class="muted">(${escapeHtml(uRole)})</span> • Depo ${depoName}
         </div>
-        <div class="hdr-right">
-          <div class="logoBox">LOGO</div>
-          <div>
-            <div class="tag-title">SITREP — Situation Report Harian</div>
-            <div class="tag-sub">Powered by ${escapeHtml(uName)}
-              <span class="muted">(${escapeHtml(
-                uRole
-              )})</span> • Depo ${depoName}
-            </div>
-          </div>
-        </div>
-      </div>`;
+      </div>
+    </div>
+  </div>`;
+
     appendBlock(header);
 
     const classifyStatus = (
