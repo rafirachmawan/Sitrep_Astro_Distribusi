@@ -316,7 +316,6 @@ function SignaturePad({
    Checklist → array text
    ========================= */
 function renderChecklist(checklist: ChecklistState) {
-  // helper: ringkas item object jadi "RJxxx - Alasan"
   const itemToStr = (it: any): string => {
     if (it == null) return "";
     if (typeof it === "string" || typeof it === "number") return String(it);
@@ -331,7 +330,6 @@ function renderChecklist(checklist: ChecklistState) {
     return String(it);
   };
 
-  // helper: format extras.text yang bisa berupa string/JSON/array/object
   const formatExtrasText = (x: any): string => {
     if (!x && x !== 0) return "";
     if (typeof x === "string") {
@@ -371,7 +369,7 @@ function renderChecklist(checklist: ChecklistState) {
       if (!v) continue;
 
       let value = "";
-      let noteOut = v.note ?? ""; // catatan final yang akan tampil di kolom "Catatan"
+      let noteOut = v.note ?? "";
 
       if (v.kind === "options") {
         value = String(v.value ?? "");
@@ -380,9 +378,6 @@ function renderChecklist(checklist: ChecklistState) {
       } else if (v.kind === "score") {
         value = String(v.value ?? "");
       } else if (v.kind === "compound") {
-        // ➜ Perbaikan:
-        //  - Status hanya nilai utama (mis. "Ada"/"Tidak"/"100%")
-        //  - Detail dari extras.text & extras.currency dipindah ke Catatan
         value = String(v.value ?? "");
         const extrasText = formatExtrasText((v.extras as any)?.text);
         const extrasCurrency =
@@ -443,7 +438,7 @@ const escapeHtml = (s: string) =>
       )[c]!)
   );
 
-// === NEW: Formatter Rupiah (separator ribuan) ===
+// Format Rupiah (separator ribuan)
 const fmtIDR = (v: unknown): string => {
   if (v == null || v === "") return "";
   const n =
@@ -467,7 +462,6 @@ const labelStatusChip = (filled: boolean) =>
     filled ? "Diisi" : "Kosong"
   }</span>`;
 
-// === NEW: Title Case untuk kolom "Area/Tanggung Jawab"
 const toTitleCase = (s: string) =>
   s
     .toLowerCase()
@@ -764,7 +758,6 @@ export default function Lampiran({ data }: { data: AppState }) {
   const [working, setWorking] = useState(false);
   const printRef = useRef<HTMLDivElement | null>(null);
 
-  // ⬇️ ubah fungsi ini: tambahkan argumen dateOnly, dan kirim ke query
   const refreshRiwayatFromSupabase = useCallback(
     async (dateOnly?: string) => {
       try {
@@ -777,7 +770,7 @@ export default function Lampiran({ data }: { data: AppState }) {
           role: String(role),
           _ts: String(Date.now()),
         });
-        if (dateOnly) qs.set("date", dateOnly); // filter per tanggal
+        if (dateOnly) qs.set("date", dateOnly);
 
         const res = await fetch(`/api/lampiran/list?${qs.toString()}`, {
           cache: "no-store",
@@ -820,7 +813,6 @@ export default function Lampiran({ data }: { data: AppState }) {
     [user]
   );
 
-  // panggil refresh dengan searchDate, dan fallback ke local kalau gagal
   useEffect(() => {
     (async () => {
       const ok = await refreshRiwayatFromSupabase(searchDate || undefined);
@@ -828,7 +820,6 @@ export default function Lampiran({ data }: { data: AppState }) {
     })();
   }, [refreshRiwayatFromSupabase, searchDate]);
 
-  // tampilkan hanya saat tanggal dipilih
   const filtered = useMemo(
     () => (searchDate ? history.filter((h) => h.dateISO === searchDate) : []),
     [history, searchDate]
@@ -886,12 +877,30 @@ export default function Lampiran({ data }: { data: AppState }) {
   .page-break-avoid{break-inside:avoid;page-break-inside:avoid;}
   .table, .table *, thead, tbody, tr, th, td { break-inside: avoid; page-break-inside: avoid; }
 
-  :root{--brand-bg:#eef2ff; --brand-bg2:#e9efff; --brand-border:#c7d2fe; --brand-fg:#0f172a;
-        --good-bg:#ecfdf5; --good-fg:#065f46; --due-bg:#eff6ff; --due-fg:#1d4ed8; --due-bd:#93c5fd;
-        --bad-bg:#fef2f2; --bad-fg:#7f1d1d; --neu-bg:#f1f5f9; --neu-fg:#475569;}
+  :root{
+    --brand-start:#f6f9ff;
+    --brand-end:#eef2ff;
+    --brand-border:#c7d2fe;
+    --brand-fg:#0f172a;
+    --accent:#1e40af;
 
-  .banner{background:linear-gradient(180deg,var(--brand-bg) 0%,var(--brand-bg2) 100%);color:var(--brand-fg);border:1px solid var(--brand-border);
-    padding:16px 18px;border-radius:16px;box-shadow:0 1px 0 rgba(16,24,40,.03);}
+    --good-bg:#ecfdf5; --good-fg:#065f46;
+    --due-bg:#eff6ff;  --due-fg:#1d4ed8; --due-bd:#93c5fd;
+    --bad-bg:#fef2f2;  --bad-fg:#7f1d1d;
+    --neu-bg:#f1f5f9;  --neu-fg:#475569;
+  }
+
+  /* Banner: gradient lembut + dekor radial tipis (print-friendly) */
+  .banner{
+    background:
+      radial-gradient(80% 140% at -10% -50%, rgba(37,99,235,.08) 0%, rgba(37,99,235,0) 60%),
+      linear-gradient(135deg,var(--brand-start) 0%, var(--brand-end) 100%);
+    color:var(--brand-fg);
+    border:1px solid var(--brand-border);
+    padding:18px 20px;border-radius:18px;
+    box-shadow:0 1px 0 rgba(16,24,40,.03);
+  }
+
   .info-grid{display:flex;gap:12px;margin-top:12px;}
   .card{border:1px solid #e6e8f0;border-radius:12px;padding:10px 12px;flex:1;background:#fff;}
   .card .label{color:#6b7280;font-size:13px;}
@@ -911,9 +920,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   .chip.due{background:var(--due-bg);border-color:var(--due-bd);color:var(--due-fg);}
   .chip.over{background:#fef2f2;border-color:#fca5a5;color:#7f1d1d;}
 
-  /* Status/Hasil Kontrol: JANGAN bold */
-  .status-badge{display:inline-block;padding:2px 0;border-radius:0;border:none;background:transparent;color:#0f172a;font-size:14px;font-weight:400}
-  .status-badge.good,.status-badge.warn,.status-badge.bad,.status-badge.neutral{border:none;background:transparent;color:#0f172a;font-weight:400}
+  .status-badge{display:inline-block;padding:2px 0;background:transparent;color:#0f172a;font-size:14px;font-weight:400}
 
   .sigwrap{page-break-inside:avoid;margin-top:18px;}
   .sigtitle{text-align:right;margin:0 0 6px 0;}
@@ -942,18 +949,14 @@ export default function Lampiran({ data }: { data: AppState }) {
 
   .ul-kv{margin:0;padding-left:18px}
 
-  /* Header custom */
-  .hdr-grid{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  /* Header grid (wrap-safe) */
+  .hdr-grid{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;row-gap:10px}
   .hdr-left{min-width:260px}
-  .hdr-right{display:flex;align-items:center;gap:12px}
-  .logoBox{width:48px;height:48px;border-radius:12px;border:2px solid var(--brand-border);
-    background:#fff;display:flex;align-items:center;justify-content:center;
-    font-weight:800;color:#1e3a8a;font-size:11px;letter-spacing:.4px}
-    .logoImg{
-  width:48px;height:48px;border-radius:12px;object-fit:contain;
-  border:2px solid var(--brand-border);background:#fff;padding:6px;
-}
-
+  .hdr-right{display:flex;align-items:center;gap:14px}
+  .logoImg{
+    width:72px;height:72px;border-radius:14px;object-fit:contain;
+    border:2px solid var(--brand-border);background:#fff;padding:8px;
+  }
   .tag-title{font-weight:800;letter-spacing:.2px}
   .tag-sub{font-size:12px;color:#64748b}
 `;
@@ -1063,18 +1066,18 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
     };
 
-    // ==== Header (versi dengan logo & penjelasan)
+    // ==== Header (profesional, logo besar, penjelasan)
     const header = doc.createElement("div");
     header.className = "banner";
     const uName = (user as AnyUser | undefined)?.name || "";
     const uRole = (user as AnyUser | undefined)?.role || "";
     const depoName = "TULUNGAGUNG";
 
-    const logoSrc = "/sitrep-logo.jpg"; // file di /public
+    const logoSrc = "/sitrep-logo.jpg"; // simpan file logo di /public
     header.innerHTML = `
   <div class="hdr-grid">
     <div class="hdr-left">
-      <div style="font-weight:800;font-size:16px;letter-spacing:.3px;">LEADER MONITORING DAILY</div>
+      <div style="font-weight:900;font-size:18px;letter-spacing:.3px;color:var(--accent)">LEADER MONITORING DAILY</div>
       <div class="muted" style="margin-top:2px;">Laporan Harian</div>
       <div class="muted">Tanggal: ${todayISO()}</div>
     </div>
@@ -1083,12 +1086,13 @@ export default function Lampiran({ data }: { data: AppState }) {
       <div>
         <div class="tag-title">SITREP — Situation Report Harian</div>
         <div class="tag-sub">Powered by ${escapeHtml(uName)}
-          <span class="muted">(${escapeHtml(uRole)})</span> • Depo ${depoName}
+          <span class="muted">(${escapeHtml(uRole)})</span> • Depo ${escapeHtml(
+      depoName
+    )}
         </div>
       </div>
     </div>
   </div>`;
-
     appendBlock(header);
 
     const classifyStatus = (
@@ -1943,10 +1947,9 @@ export default function Lampiran({ data }: { data: AppState }) {
         pdfDataUrl,
         storage: "local",
       };
-      // MERGE entry baru dengan state + localStorage (dedupe + urut)
       const next = mergeHistoryLists([entry], history, loadHistory());
       setHistory(next);
-      saveHistory(next); // aman: tidak serialisasi dataURI besar
+      saveHistory(next);
       pdf.save(filename);
     } catch (e) {
       console.error("PDF error:", e);
@@ -1976,7 +1979,6 @@ export default function Lampiran({ data }: { data: AppState }) {
           const msg = await res.json().catch(() => ({} as { error?: string }));
           alert(`Gagal hapus cloud: ${msg.error || res.statusText}`);
         } else {
-          // Bersihkan salinan remote dari localStorage juga
           const cur = loadHistory();
           const pruned = cur.filter(
             (e) => !(e.storage === "remote" && e.key === entry.key)
