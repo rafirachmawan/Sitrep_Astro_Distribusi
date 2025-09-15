@@ -878,11 +878,11 @@ export default function Lampiran({ data }: { data: AppState }) {
   .table, .table *, thead, tbody, tr, th, td { break-inside: avoid; page-break-inside: avoid; }
 
   :root{
-    --brand-start:#f6f9ff;
-    --brand-end:#eef2ff;
-    --brand-border:#c7d2fe;
-    --brand-fg:#0f172a;
-    --accent:#1e40af;
+    --brand-start:#0b122b; /* fallback gelap (kalau logo gagal load) */
+    --brand-end:#0b122b;
+    --brand-border:#1f2a44;
+    --brand-fg:#ffffff;
+    --accent:#ffffff;
 
     --good-bg:#ecfdf5; --good-fg:#065f46;
     --due-bg:#eff6ff;  --due-fg:#1d4ed8; --due-bd:#93c5fd;
@@ -890,16 +890,34 @@ export default function Lampiran({ data }: { data: AppState }) {
     --neu-bg:#f1f5f9;  --neu-fg:#475569;
   }
 
-  /* Banner: gradient lembut + dekor radial tipis (print-friendly) */
+  /* Banner: gunakan logo sebagai background + overlay gelap agar menyatu & kontras */
   .banner{
-    background:
-      radial-gradient(80% 140% at -10% -50%, rgba(37,99,235,.08) 0%, rgba(37,99,235,0) 60%),
-      linear-gradient(135deg,var(--brand-start) 0%, var(--brand-end) 100%);
-    color:var(--brand-fg);
-    border:1px solid var(--brand-border);
-    padding:18px 20px;border-radius:18px;
+    position: relative;
+    color:#fff;
+    border:0;
+    padding:22px 20px;border-radius:18px;
     box-shadow:0 1px 0 rgba(16,24,40,.03);
+    background: linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,.55));
+    background-size: cover;
+    background-position: center;
   }
+  .banner .muted, .banner .tag-sub{color:#e5e7eb}
+  .banner .shadowed{ text-shadow: 0 1px 1px rgba(0,0,0,.5), 0 2px 12px rgba(0,0,0,.25); }
+
+  /* Header stack: logo center, teks center, ukuran seragam */
+  .hdr-stack{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center
+  }
+  .logoImgCenter{
+    width:84px;height:84px;border-radius:16px;object-fit:contain;
+    background:#fff;border:2px solid rgba(255,255,255,.35);padding:8px;
+    box-shadow:0 2px 10px rgba(0,0,0,.15);
+  }
+  .title-main, .title-second{
+    font-weight:900; letter-spacing:.2px; font-size:18px; line-height:1.15;
+  }
+  .title-second{ opacity:.98; }
+  .tag-sub{font-size:12px;}
 
   .info-grid{display:flex;gap:12px;margin-top:12px;}
   .card{border:1px solid #e6e8f0;border-radius:12px;padding:10px 12px;flex:1;background:#fff;}
@@ -948,17 +966,6 @@ export default function Lampiran({ data }: { data: AppState }) {
   .cbx.on{background:#2563eb;border-color:#2563eb}
 
   .ul-kv{margin:0;padding-left:18px}
-
-  /* Header grid (wrap-safe) */
-  .hdr-grid{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;row-gap:10px}
-  .hdr-left{min-width:260px}
-  .hdr-right{display:flex;align-items:center;gap:14px}
-  .logoImg{
-    width:72px;height:72px;border-radius:14px;object-fit:contain;
-    border:2px solid var(--brand-border);background:#fff;padding:8px;
-  }
-  .tag-title{font-weight:800;letter-spacing:.2px}
-  .tag-sub{font-size:12px;color:#64748b}
 `;
     root.appendChild(st);
 
@@ -1066,7 +1073,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
     };
 
-    // ==== Header (profesional, logo besar, penjelasan)
+    // ==== Header (sesuai request: background logo + teks putih + logo center)
     const header = doc.createElement("div");
     header.className = "banner";
     const uName = (user as AnyUser | undefined)?.name || "";
@@ -1074,25 +1081,24 @@ export default function Lampiran({ data }: { data: AppState }) {
     const depoName = "TULUNGAGUNG";
 
     const logoSrc = "/sitrep-logo.jpg"; // simpan file logo di /public
+    // Set background gambar logo + overlay dari CSS .banner
+    header.setAttribute(
+      "style",
+      `background-image:linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,.55)), url('${logoSrc}');`
+    );
+
     header.innerHTML = `
-  <div class="hdr-grid">
-    <div class="hdr-left">
-      <div style="font-weight:900;font-size:18px;letter-spacing:.3px;color:var(--accent)">LEADER MONITORING DAILY</div>
-      <div class="muted" style="margin-top:2px;">Laporan Harian</div>
-      <div class="muted">Tanggal: ${todayISO()}</div>
-    </div>
-    <div class="hdr-right">
-      <img class="logoImg" src="${logoSrc}" alt="Logo" />
-      <div>
-        <div class="tag-title">SITREP — Situation Report Harian</div>
-        <div class="tag-sub">Powered by ${escapeHtml(uName)}
-          <span class="muted">(${escapeHtml(uRole)})</span> • Depo ${escapeHtml(
+      <div class="hdr-stack">
+        <img class="logoImgCenter" src="${logoSrc}" alt="Logo" />
+        <div class="title-main shadowed">LEADER MONITORING DAILY</div>
+        <div class="title-second shadowed">SITREP — Situation Report Harian</div>
+        <div class="tag-sub shadowed">Powered by ${escapeHtml(
+          uName
+        )} <span>( ${escapeHtml(uRole)} )</span> • Depo ${escapeHtml(
       depoName
-    )}
-        </div>
-      </div>
-    </div>
-  </div>`;
+    )}</div>
+        <div class="tag-sub shadowed">Tanggal: ${todayISO()}</div>
+      </div>`;
     appendBlock(header);
 
     const classifyStatus = (
