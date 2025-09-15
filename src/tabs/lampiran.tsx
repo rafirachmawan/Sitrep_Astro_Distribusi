@@ -105,16 +105,44 @@ function todayISO() {
 function uuid() {
   return crypto.randomUUID();
 }
+
+/** —— MIGRASI: bersihkan dataURI jumbo di storage lama —— */
 function loadHistory(): PdfEntry[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(STORE_KEY) || "[]");
+    const raw = localStorage.getItem(STORE_KEY) || "[]";
+    const parsed = JSON.parse(raw) as PdfEntry[];
+    // buang dataURI besar agar tidak bikin quota penuh
+    return (parsed || []).map((e) =>
+      e?.pdfDataUrl?.startsWith("data:") ? { ...e, pdfDataUrl: "" } : e
+    );
   } catch {
     return [];
   }
 }
+
+/** Simpan ringan: jangan serialisasi dataURI PDF ke localStorage */
 function saveHistory(items: PdfEntry[]) {
-  localStorage.setItem(STORE_KEY, JSON.stringify(items));
+  const sanitize = (arr: PdfEntry[]) =>
+    arr.map((it) =>
+      it.storage === "local" && it.pdfDataUrl?.startsWith("data:")
+        ? { ...it, pdfDataUrl: "" }
+        : it
+    );
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(sanitize(items)));
+  } catch {
+    // fallback: simpan remote-only (paling ringan)
+    try {
+      const remoteOnly = items
+        .filter((x) => x.storage === "remote")
+        .map((x) => ({ ...x, pdfDataUrl: x.pdfDataUrl || "" }));
+      localStorage.setItem(STORE_KEY, JSON.stringify(remoteOnly));
+    } catch {
+      // terakhir: bersihkan supaya tidak nge-loop error
+      localStorage.removeItem(STORE_KEY);
+    }
+  }
 }
 
 /* === MERGE HELPERS (gabungan cloud + lokal) === */
@@ -302,17 +330,65 @@ function renderChecklist(checklist: ChecklistState) {
       const v = rows[key] as RowValue | undefined;
       if (!v) continue;
       let value = "";
-      if (v.kind === "options") value = String(v.value ?? "");
-      else if (v.kind === "number")
+      if (v.kind === "options") {
+        value = String(v.value ?? "");
+      } else if (v.kind === "number") {
         value = [v.value ?? "", v.suffix ?? ""].filter(Boolean).join(" ");
-      else if (v.kind === "score") value = String(v.value ?? "");
-      else if (v.kind === "compound") {
-        // ⬇️ PERBAIKAN: rapikan extras.text bila berupa JSON (array/object)
-        const extraText = v.extras?.text ? prettifyJsonLike(v.extras.text) : "";
+      } else if (v.kind === "score") {
+        value = String(v.value ?? "");
+      } else if (v.kind === "compound") {
+        // —— PERAPIHAN "CORET NOTA" dkk: format extras.text agar tidak JSON mentah ——
+        const x = (v.extras as any)?.text;
+        let extraText = "";
+        if (Array.isArray(x)) {
+          extraText = x
+            .map((it) => {
+              if (typeof it === "string" || typeof it === "number") {
+                return String(it);
+              }
+              if (it && typeof it === "object") {
+                const rj =
+                  (it as any).rj ??
+                  (it as any).no ??
+                  (it as any).nomor ??
+                  (it as any).kode ??
+                  "";
+                const reason =
+                  (it as any).reason ??
+                  (it as any).alasan ??
+                  (it as any).keterangan ??
+                  (it as any).ket ??
+                  "";
+                const joined = [rj, reason].filter(Boolean).join(" - ");
+                return joined || JSON.stringify(it);
+              }
+              return String(it);
+            })
+            .join(", ");
+        } else if (x && typeof x === "object") {
+          const rj =
+            (x as any).rj ??
+            (x as any).no ??
+            (x as any).nomor ??
+            (x as any).kode ??
+            "";
+          const reason =
+            (x as any).reason ??
+            (x as any).alasan ??
+            (x as any).keterangan ??
+            (x as any).ket ??
+            "";
+          extraText =
+            [rj, reason].filter(Boolean).join(" - ") || JSON.stringify(x);
+        } else if (x != null && x !== "") {
+          extraText = String(x);
+        }
         value = [
           v.value ?? "",
           extraText ? `(${extraText})` : "",
-          v.extras?.currency ? `Rp ${fmtIDR(v.extras.currency)}` : "",
+          (v.extras as any)?.currency
+            ? `Rp ${fmtIDR((v.extras as any).currency)}`
+            : "",
         ]
           .filter(Boolean)
           .join(" ");
@@ -385,50 +461,6 @@ const toTitleCase = (s: string) =>
   s
     .toLowerCase()
     .replace(/(^|[\s/,-])([\p{L}])/gu, (_m, p1, p2) => p1 + p2.toUpperCase());
-
-/* === NEW: Rapikan teks JSON-like untuk extras.text (tanpa mengubah logika) === */
-function prettifyJsonLike(src: unknown): string {
-  const raw =
-    typeof src === "string" ? src.trim() : src == null ? "" : String(src);
-  if (!raw) return "";
-  try {
-    const j = JSON.parse(raw as string);
-
-    const formatObj = (o: unknown): string => {
-      if (!isRecord(o)) return isPrimitive(o) ? String(o) : JSON.stringify(o);
-      // Penanganan umum + kasus reason/RJ yang sering muncul
-      const reason = (o as any).reason ?? (o as any).alasan;
-      const rj =
-        (o as any).rj ??
-        (o as any).RJ ??
-        (o as any).no ??
-        (o as any).noRJ ??
-        (o as any).nomor;
-      if (reason != null && rj != null) {
-        return `${String(reason)} (${String(rj)})`;
-      }
-      // fallback generik: key1: val1, key2: val2
-      return Object.entries(o)
-        .map(
-          ([k, v]) =>
-            `${toTitleCase(k)}: ${
-              isPrimitive(v) ? String(v) : JSON.stringify(v)
-            }`
-        )
-        .join(", ");
-    };
-
-    if (Array.isArray(j)) {
-      return j
-        .map((item) => (isRecord(item) ? formatObj(item) : String(item)))
-        .join(" | ");
-    }
-    return formatObj(j);
-  } catch {
-    // bukan JSON valid → kembalikan apa adanya
-    return String(raw);
-  }
-}
 
 /* =========================
    Evaluasi types
@@ -734,7 +766,7 @@ export default function Lampiran({ data }: { data: AppState }) {
           role: String(role),
           _ts: String(Date.now()),
         });
-        if (dateOnly) qs.set("date", dateOnly); // ⬅️ penting: filter per tanggal (opsional, aman)
+        if (dateOnly) qs.set("date", dateOnly); // filter per tanggal
 
         const res = await fetch(`/api/lampiran/list?${qs.toString()}`, {
           cache: "no-store",
@@ -777,7 +809,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     [user]
   );
 
-  // ⬇️ panggil refresh dengan searchDate, dan fallback ke local kalau gagal
+  // panggil refresh dengan searchDate, dan fallback ke local kalau gagal
   useEffect(() => {
     (async () => {
       const ok = await refreshRiwayatFromSupabase(searchDate || undefined);
@@ -785,7 +817,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     })();
   }, [refreshRiwayatFromSupabase, searchDate]);
 
-  // ⬇️ ganti blok useMemo filtered kamu jadi ini
+  // tampilkan hanya saat tanggal dipilih
   const filtered = useMemo(
     () => (searchDate ? history.filter((h) => h.dateISO === searchDate) : []),
     [history, searchDate]
@@ -1409,7 +1441,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         targetTblWrap.appendChild(targetTbl);
         appendBlock(targetTblWrap);
 
-        // ===== Laporan mingguan (tanpa kolom deadline) =====
+        // ===== Laporan mingguan =====
         const reportBlock = doc.createElement("div");
         reportBlock.className = "section page-break-avoid";
         reportBlock.innerHTML = `<div class="subhead">Laporan Penjualan ke Prinsipal Mingguan</div>`;
@@ -1869,7 +1901,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       // MERGE entry baru dengan state + localStorage (dedupe + urut)
       const next = mergeHistoryLists([entry], history, loadHistory());
       setHistory(next);
-      saveHistory(next);
+      saveHistory(next); // aman: tidak serialisasi dataURI besar
       pdf.save(filename);
     } catch (e) {
       console.error("PDF error:", e);
@@ -1906,7 +1938,7 @@ export default function Lampiran({ data }: { data: AppState }) {
           );
           saveHistory(pruned);
         }
-        await refreshRiwayatFromSupabase();
+        await refreshRiwayatFromSupabase(searchDate || undefined);
       } else {
         const next = history.filter((h) => h.id !== id);
         setHistory(next);
