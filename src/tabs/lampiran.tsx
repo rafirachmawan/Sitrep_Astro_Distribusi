@@ -307,9 +307,11 @@ function renderChecklist(checklist: ChecklistState) {
         value = [v.value ?? "", v.suffix ?? ""].filter(Boolean).join(" ");
       else if (v.kind === "score") value = String(v.value ?? "");
       else if (v.kind === "compound") {
+        // ⬇️ PERBAIKAN: rapikan extras.text bila berupa JSON (array/object)
+        const extraText = v.extras?.text ? prettifyJsonLike(v.extras.text) : "";
         value = [
           v.value ?? "",
-          v.extras?.text ? `(${v.extras.text})` : "",
+          extraText ? `(${extraText})` : "",
           v.extras?.currency ? `Rp ${fmtIDR(v.extras.currency)}` : "",
         ]
           .filter(Boolean)
@@ -383,6 +385,50 @@ const toTitleCase = (s: string) =>
   s
     .toLowerCase()
     .replace(/(^|[\s/,-])([\p{L}])/gu, (_m, p1, p2) => p1 + p2.toUpperCase());
+
+/* === NEW: Rapikan teks JSON-like untuk extras.text (tanpa mengubah logika) === */
+function prettifyJsonLike(src: unknown): string {
+  const raw =
+    typeof src === "string" ? src.trim() : src == null ? "" : String(src);
+  if (!raw) return "";
+  try {
+    const j = JSON.parse(raw as string);
+
+    const formatObj = (o: unknown): string => {
+      if (!isRecord(o)) return isPrimitive(o) ? String(o) : JSON.stringify(o);
+      // Penanganan umum + kasus reason/RJ yang sering muncul
+      const reason = (o as any).reason ?? (o as any).alasan;
+      const rj =
+        (o as any).rj ??
+        (o as any).RJ ??
+        (o as any).no ??
+        (o as any).noRJ ??
+        (o as any).nomor;
+      if (reason != null && rj != null) {
+        return `${String(reason)} (${String(rj)})`;
+      }
+      // fallback generik: key1: val1, key2: val2
+      return Object.entries(o)
+        .map(
+          ([k, v]) =>
+            `${toTitleCase(k)}: ${
+              isPrimitive(v) ? String(v) : JSON.stringify(v)
+            }`
+        )
+        .join(", ");
+    };
+
+    if (Array.isArray(j)) {
+      return j
+        .map((item) => (isRecord(item) ? formatObj(item) : String(item)))
+        .join(" | ");
+    }
+    return formatObj(j);
+  } catch {
+    // bukan JSON valid → kembalikan apa adanya
+    return String(raw);
+  }
+}
 
 /* =========================
    Evaluasi types
