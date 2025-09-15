@@ -315,21 +315,68 @@ function SignaturePad({
 /* =========================
    Checklist → array text
    ========================= */
+/* =========================
+   Checklist → array text
+   ========================= */
 function renderChecklist(checklist: ChecklistState) {
+  // helper: ringkas item object jadi "RJxxx - Alasan"
+  const itemToStr = (it: any): string => {
+    if (it == null) return "";
+    if (typeof it === "string" || typeof it === "number") return String(it);
+    if (typeof it === "object") {
+      const rj =
+        it.rj ?? it.RJ ?? it.no ?? it.nomor ?? it.kode ?? it.id ?? it.doc ?? "";
+      const reason =
+        it.reason ?? it.alasan ?? it.keterangan ?? it.ket ?? it.desc ?? "";
+      const joined = [rj, reason].filter(Boolean).join(" - ");
+      return joined || JSON.stringify(it);
+    }
+    return String(it);
+  };
+
+  // helper: format extras.text yang bisa berupa string/JSON/array/object
+  const formatExtrasText = (x: any): string => {
+    if (!x && x !== 0) return "";
+    // kalau string tapi terlihat JSON → parse
+    if (typeof x === "string") {
+      const s = x.trim();
+      if (
+        (s.startsWith("{") && s.endsWith("}")) ||
+        (s.startsWith("[") && s.endsWith("]"))
+      ) {
+        try {
+          const parsed = JSON.parse(s);
+          return formatExtrasText(parsed);
+        } catch {
+          return s; // kalau gagal parse, pakai apa adanya
+        }
+      }
+      return s;
+    }
+    if (Array.isArray(x)) return x.map(itemToStr).filter(Boolean).join(", ");
+    if (typeof x === "object") return itemToStr(x);
+    return String(x);
+  };
+
   const out: {
     section: string;
     rows: Array<{ label: string; value: string; note?: string }>;
   }[] = [];
+
   const sectionKeys = Object.keys(checklist) as Array<keyof ChecklistState>;
   for (const sec of sectionKeys) {
     const rows = checklist[sec];
     if (!rows) continue;
     const lineItems: Array<{ label: string; value: string; note?: string }> =
       [];
+
     for (const key of Object.keys(rows)) {
       const v = rows[key] as RowValue | undefined;
       if (!v) continue;
+
       let value = "";
+      let noteOut = v.note ?? ""; // catatan final yang akan tampil di kolom "Catatan"
+
       if (v.kind === "options") {
         value = String(v.value ?? "");
       } else if (v.kind === "number") {
@@ -337,73 +384,41 @@ function renderChecklist(checklist: ChecklistState) {
       } else if (v.kind === "score") {
         value = String(v.value ?? "");
       } else if (v.kind === "compound") {
-        // —— PERAPIHAN "CORET NOTA" dkk: format extras.text agar tidak JSON mentah ——
-        const x = (v.extras as any)?.text;
-        let extraText = "";
-        if (Array.isArray(x)) {
-          extraText = x
-            .map((it) => {
-              if (typeof it === "string" || typeof it === "number") {
-                return String(it);
-              }
-              if (it && typeof it === "object") {
-                const rj =
-                  (it as any).rj ??
-                  (it as any).no ??
-                  (it as any).nomor ??
-                  (it as any).kode ??
-                  "";
-                const reason =
-                  (it as any).reason ??
-                  (it as any).alasan ??
-                  (it as any).keterangan ??
-                  (it as any).ket ??
-                  "";
-                const joined = [rj, reason].filter(Boolean).join(" - ");
-                return joined || JSON.stringify(it);
-              }
-              return String(it);
-            })
-            .join(", ");
-        } else if (x && typeof x === "object") {
-          const rj =
-            (x as any).rj ??
-            (x as any).no ??
-            (x as any).nomor ??
-            (x as any).kode ??
-            "";
-          const reason =
-            (x as any).reason ??
-            (x as any).alasan ??
-            (x as any).keterangan ??
-            (x as any).ket ??
-            "";
-          extraText =
-            [rj, reason].filter(Boolean).join(" - ") || JSON.stringify(x);
-        } else if (x != null && x !== "") {
-          extraText = String(x);
-        }
-        value = [
-          v.value ?? "",
-          extraText ? `(${extraText})` : "",
-          (v.extras as any)?.currency
+        // ➜ Perbaikan utama:
+        //  - Status hanya nilai utama (mis. "Ada"/"Tidak"/"100%")
+        //  - Detail dari extras.text & extras.currency dipindah ke Catatan
+        value = String(v.value ?? "");
+        const extrasText = formatExtrasText((v.extras as any)?.text);
+        const extrasCurrency =
+          (v.extras as any)?.currency != null
             ? `Rp ${fmtIDR((v.extras as any).currency)}`
-            : "",
-        ]
+            : "";
+        const extraNote = [extrasText, extrasCurrency]
           .filter(Boolean)
-          .join(" ");
+          .join(" | ");
+        noteOut = [noteOut, extraNote]
+          .filter((s) => String(s).trim().length > 0)
+          .join(" • ");
       }
-      lineItems.push({ label: key.replace(/[-_]/g, " "), value, note: v.note });
+
+      lineItems.push({
+        label: key.replace(/[-_]/g, " "),
+        value,
+        note: noteOut,
+      });
     }
+
     if (lineItems.length === 0)
       lineItems.push({ label: "", value: "", note: "" });
     out.push({ section: String(sec), rows: lineItems });
   }
-  if (out.length === 0)
+
+  if (out.length === 0) {
     out.push({
       section: "Checklist",
       rows: [{ label: "", value: "", note: "" }],
     });
+  }
   return out;
 }
 
