@@ -675,64 +675,73 @@ export default function Lampiran({ data }: { data: AppState }) {
   const [working, setWorking] = useState(false);
   const printRef = useRef<HTMLDivElement | null>(null);
 
-  const refreshRiwayatFromSupabase = useCallback(async () => {
-    try {
-      const u = (user ?? {}) as AnyUser;
-      const userId = u.id || u.email || u.name || "unknown";
-      const role = u.role || "admin";
-      const res = await fetch(
-        `/api/lampiran/list?userId=${encodeURIComponent(
-          userId
-        )}&role=${encodeURIComponent(role)}&_ts=${Date.now()}`,
-        { cache: "no-store" } // ⟵ penting
-      );
+  // ⬇️ ubah fungsi ini: tambahkan argumen dateOnly, dan kirim ke query
+  const refreshRiwayatFromSupabase = useCallback(
+    async (dateOnly?: string) => {
+      try {
+        const u = (user ?? {}) as AnyUser;
+        const userId = u.id || u.email || u.name || "unknown";
+        const role = u.role || "admin";
 
-      if (!res.ok) return false;
-      const json = (await res.json()) as {
-        items: Array<{
-          filename: string;
-          dateISO: string;
-          url?: string; // boleh ada
-          downloadUrl?: string; // boleh ada (jika pakai proxy /api/lampiran/file)
-          key: string;
-          submittedAt?: string;
-        }>;
-      };
+        const qs = new URLSearchParams({
+          userId: String(userId),
+          role: String(role),
+          _ts: String(Date.now()),
+        });
+        if (dateOnly) qs.set("date", dateOnly); // ⬅️ penting: filter per tanggal (opsional, aman)
 
-      if (!json?.items) return false;
-      const mapped: PdfEntry[] = json.items.map((it) => ({
-        id: it.key,
-        filename: it.filename,
-        dateISO: it.dateISO,
-        submittedAt: it.submittedAt || new Date().toISOString(),
-        name: u.name || "-",
-        role: role || "-",
-        pdfDataUrl: it.downloadUrl ?? it.url ?? "#", // ← fallback aman
-        storage: "remote",
-        key: it.key,
-      }));
+        const res = await fetch(`/api/lampiran/list?${qs.toString()}`, {
+          cache: "no-store",
+        });
 
-      // MERGE dengan lokal + simpan
-      const local = loadHistory();
-      const merged = mergeHistoryLists(mapped, local);
-      setHistory(merged);
-      saveHistory(merged);
-      return true;
-    } catch {
-      return false;
-    }
-  }, [user]);
+        if (!res.ok) return false;
+        const json = (await res.json()) as {
+          items: Array<{
+            filename: string;
+            dateISO: string;
+            url?: string;
+            downloadUrl?: string;
+            key: string;
+            submittedAt?: string;
+          }>;
+        };
+        if (!json?.items) return false;
 
+        const mapped: PdfEntry[] = json.items.map((it) => ({
+          id: it.key,
+          filename: it.filename,
+          dateISO: it.dateISO,
+          submittedAt: it.submittedAt || new Date().toISOString(),
+          name: u.name || "-",
+          role: role || "-",
+          pdfDataUrl: it.downloadUrl ?? it.url ?? "#",
+          storage: "remote",
+          key: it.key,
+        }));
+
+        const local = loadHistory();
+        const merged = mergeHistoryLists(mapped, local);
+        setHistory(merged);
+        saveHistory(merged);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    [user]
+  );
+
+  // ⬇️ panggil refresh dengan searchDate, dan fallback ke local kalau gagal
   useEffect(() => {
     (async () => {
-      const ok = await refreshRiwayatFromSupabase();
+      const ok = await refreshRiwayatFromSupabase(searchDate || undefined);
       if (!ok) setHistory(loadHistory());
     })();
-  }, [refreshRiwayatFromSupabase]);
+  }, [refreshRiwayatFromSupabase, searchDate]);
 
+  // ⬇️ ganti blok useMemo filtered kamu jadi ini
   const filtered = useMemo(
-    () =>
-      searchDate ? history.filter((h) => h.dateISO === searchDate) : history,
+    () => (searchDate ? history.filter((h) => h.dateISO === searchDate) : []),
     [history, searchDate]
   );
 
