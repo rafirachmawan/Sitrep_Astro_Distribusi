@@ -315,9 +315,6 @@ function SignaturePad({
 /* =========================
    Checklist → array text
    ========================= */
-/* =========================
-   Checklist → array text
-   ========================= */
 function renderChecklist(checklist: ChecklistState) {
   // helper: ringkas item object jadi "RJxxx - Alasan"
   const itemToStr = (it: any): string => {
@@ -337,7 +334,6 @@ function renderChecklist(checklist: ChecklistState) {
   // helper: format extras.text yang bisa berupa string/JSON/array/object
   const formatExtrasText = (x: any): string => {
     if (!x && x !== 0) return "";
-    // kalau string tapi terlihat JSON → parse
     if (typeof x === "string") {
       const s = x.trim();
       if (
@@ -348,7 +344,7 @@ function renderChecklist(checklist: ChecklistState) {
           const parsed = JSON.parse(s);
           return formatExtrasText(parsed);
         } catch {
-          return s; // kalau gagal parse, pakai apa adanya
+          return s;
         }
       }
       return s;
@@ -384,7 +380,7 @@ function renderChecklist(checklist: ChecklistState) {
       } else if (v.kind === "score") {
         value = String(v.value ?? "");
       } else if (v.kind === "compound") {
-        // ➜ Perbaikan utama:
+        // ➜ Perbaikan:
         //  - Status hanya nilai utama (mis. "Ada"/"Tidak"/"100%")
         //  - Detail dari extras.text & extras.currency dipindah ke Catatan
         value = String(v.value ?? "");
@@ -945,6 +941,16 @@ export default function Lampiran({ data }: { data: AppState }) {
   .cbx.on{background:#2563eb;border-color:#2563eb}
 
   .ul-kv{margin:0;padding-left:18px}
+
+  /* Header custom */
+  .hdr-grid{display:flex;align-items:center;justify-content:space-between;gap:16px}
+  .hdr-left{min-width:260px}
+  .hdr-right{display:flex;align-items:center;gap:12px}
+  .logoBox{width:48px;height:48px;border-radius:12px;border:2px solid var(--brand-border);
+    background:#fff;display:flex;align-items:center;justify-content:center;
+    font-weight:800;color:#1e3a8a;font-size:11px;letter-spacing:.4px}
+  .tag-title{font-weight:800;letter-spacing:.2px}
+  .tag-sub{font-size:12px;color:#64748b}
 `;
     root.appendChild(st);
 
@@ -1052,13 +1058,32 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
     };
 
-    // ==== Header
+    // ==== Header (versi dengan logo & penjelasan)
     const header = doc.createElement("div");
     header.className = "banner";
+    const uName = (user as AnyUser | undefined)?.name || "";
+    const uRole = (user as AnyUser | undefined)?.role || "";
+    const depoName = "TULUNGAGUNG";
+
     header.innerHTML = `
-      <div style="font-weight:800;font-size:16px;letter-spacing:.3px;">LEADER MONITORING DAILY</div>
-      <div class="muted" style="margin-top:2px;">Laporan Harian</div>
-      <div class="muted">Tanggal: ${todayISO()}</div>`;
+      <div class="hdr-grid">
+        <div class="hdr-left">
+          <div style="font-weight:800;font-size:16px;letter-spacing:.3px;">LEADER MONITORING DAILY</div>
+          <div class="muted" style="margin-top:2px;">Laporan Harian</div>
+          <div class="muted">Tanggal: ${todayISO()}</div>
+        </div>
+        <div class="hdr-right">
+          <div class="logoBox">LOGO</div>
+          <div>
+            <div class="tag-title">SITREP — Situation Report Harian</div>
+            <div class="tag-sub">Powered by ${escapeHtml(uName)}
+              <span class="muted">(${escapeHtml(
+                uRole
+              )})</span> • Depo ${depoName}
+            </div>
+          </div>
+        </div>
+      </div>`;
     appendBlock(header);
 
     const classifyStatus = (
