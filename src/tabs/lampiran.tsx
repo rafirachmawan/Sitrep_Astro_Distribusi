@@ -1080,14 +1080,29 @@ export default function Lampiran({ data }: { data: AppState }) {
 
     const appendBlock = (el: HTMLElement) => {
       page.appendChild(el);
+
       if (page.scrollHeight > PAGE_MAX_PX) {
+        // JANGAN langsung lempar seluruh section ke halaman baru.
+        // Kalau ada tabel, split baris untuk mengisi sisa halaman sekarang.
+        if (el.querySelector("table")) {
+          page.removeChild(el);
+          splitTableSection(el);
+          return;
+        }
+
+        // Tidak ada tabel → baru pindahkan whole section ke halaman baru
         page.removeChild(el);
         page = makePage();
         page.appendChild(el);
+
         if (page.scrollHeight > PAGE_MAX_PX) {
+          // Masih overflow → lakukan split generic (pecah child)
           page.removeChild(el);
-          if (el.querySelector("table")) splitTableSection(el);
-          else {
+
+          if (el.querySelector("table")) {
+            // (cadangan) kalau ternyata di dalam nested ada tabel
+            splitTableSection(el);
+          } else {
             const children = Array.from(el.children) as HTMLElement[];
             if (!children.length) {
               appendBlock(doc.createElement("div"));
