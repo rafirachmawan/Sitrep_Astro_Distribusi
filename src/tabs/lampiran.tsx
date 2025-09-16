@@ -479,7 +479,7 @@ function noteToHTML(note?: string): string {
   const raw = String(note ?? "").trim();
   if (!raw) return "";
 
-  // Normalisasi delimiter umum
+  // Normalisasi delimiter umum (tanpa mengubah jumlah item)
   const normalized = raw
     .replace(/\s*\|\s*/g, ", ") // "|" -> ", "
     .replace(/\s*•\s*/g, ", ")
@@ -488,28 +488,25 @@ function noteToHTML(note?: string): string {
   let items: string[] = [];
 
   if (/RJ\d+/i.test(normalized)) {
-    // Pisah tiap kemunculan RJnnnnnn, tanpa menghapus token "RJ"
+    // Pisah tiap kemunculan RJnnnnnn (jaga jumlah item)
     items = normalized
       .split(/(?=RJ\d+)/i)
       .map((s) => s.trim())
-      .filter(Boolean);
+      .filter((s) => s.length > 0);
   } else if (normalized.includes("\n")) {
     items = normalized
       .split(/\n+/)
       .map((s) => s.trim())
-      .filter(Boolean);
+      .filter((s) => s.length > 0);
   } else {
     items = normalized
       .split(/,\s*/)
       .map((s) => s.trim())
-      .filter(Boolean);
+      .filter((s) => s.length > 0);
   }
 
-  // Hilangkan prefix bullet jika sudah ada
+  // Hilangkan prefix bullet kalau ada, tapi JANGAN dedup
   items = items.map((s) => s.replace(/^[-•]\s*/, ""));
-
-  // Unik + buang kosong
-  items = Array.from(new Set(items)).filter(Boolean);
 
   if (!items.length) return "";
 
