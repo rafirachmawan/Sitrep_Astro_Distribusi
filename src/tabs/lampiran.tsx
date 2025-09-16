@@ -1847,7 +1847,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     // ========= Tanda Tangan =========
     {
       const sigWrap = doc.createElement("div");
-      sigWrap.className = "section sigwrap page-break-avoid";
+      sigWrap.className = "section sigwrap page-break-inside-avoid";
       const sigTitle = doc.createElement("div");
       sigTitle.className = "title sigtitle";
       sigTitle.textContent = "Tanda Tangan";
