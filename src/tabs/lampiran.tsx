@@ -324,11 +324,13 @@ function renderChecklist(checklist: ChecklistState) {
         it.rj ?? it.RJ ?? it.no ?? it.nomor ?? it.kode ?? it.id ?? it.doc ?? "";
       const reason =
         it.reason ?? it.alasan ?? it.keterangan ?? it.ket ?? it.desc ?? "";
+
       if (Array.isArray(it)) {
-        return it.map((i) => `- ${i}`).join("\n");
+        // gabungkan array menjadi baris (tanpa prefix '-')
+        return it.map(String).join("\n");
       }
       const joined = [rj, reason].filter(Boolean).join(" - ");
-      return joined ? `- ${joined}` : JSON.stringify(it);
+      return joined || JSON.stringify(it);
     }
     return String(it);
   };
@@ -350,7 +352,7 @@ function renderChecklist(checklist: ChecklistState) {
       }
       return s;
     }
-    if (Array.isArray(x)) return x.map(itemToStr).filter(Boolean).join(", ");
+    if (Array.isArray(x)) return x.map(itemToStr).filter(Boolean).join("\n"); // baris
     if (typeof x === "object") return itemToStr(x);
     return String(x);
   };
@@ -392,7 +394,7 @@ function renderChecklist(checklist: ChecklistState) {
           .join(" | ");
         noteOut = [noteOut, extraNote]
           .filter((s) => String(s).trim().length > 0)
-          .join("\n- "); // ⬅️ setiap item baru jadi baris dengan '-'
+          .join("\n"); // baris, nanti jadi <li> saat render
       }
 
       lineItems.push({
@@ -469,6 +471,52 @@ const toTitleCase = (s: string) =>
   s
     .toLowerCase()
     .replace(/(^|[\s/,-])([\p{L}])/gu, (_m, p1, p2) => p1 + p2.toUpperCase());
+
+/** =========================
+ *  NOTE → HTML bullet list
+ *  ========================= */
+function noteToHTML(note?: string): string {
+  const raw = String(note ?? "").trim();
+  if (!raw) return "";
+
+  // Normalisasi delimiter umum
+  const normalized = raw
+    .replace(/\s*\|\s*/g, ", ") // "|" -> ", "
+    .replace(/\s*•\s*/g, ", ")
+    .replace(/\s*-\s*RJ/gi, ", RJ"); // " - RJ" -> ", RJ"
+
+  let items: string[] = [];
+
+  if (/RJ\d+/i.test(normalized)) {
+    // Pisah tiap kemunculan RJnnnnnn, tanpa menghapus token "RJ"
+    items = normalized
+      .split(/(?=RJ\d+)/i)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  } else if (normalized.includes("\n")) {
+    items = normalized
+      .split(/\n+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  } else {
+    items = normalized
+      .split(/,\s*/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  // Hilangkan prefix bullet jika sudah ada
+  items = items.map((s) => s.replace(/^[-•]\s*/, ""));
+
+  // Unik + buang kosong
+  items = Array.from(new Set(items)).filter(Boolean);
+
+  if (!items.length) return "";
+
+  return `<ul class="ul-kv">${items
+    .map((x) => `<li>${escapeHtml(x)}</li>`)
+    .join("")}</ul>`;
+}
 
 /* =========================
    Evaluasi types
@@ -881,7 +929,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   .table, .table *, thead, tbody, tr, th, td { break-inside: avoid; page-break-inside: avoid; }
 
   :root{
-    --brand-start:#0b122b; /* fallback gelap (kalau logo gagal load) */
+    --brand-start:#0b122b;
     --brand-end:#0b122b;
     --brand-border:#1f2a44;
     --brand-fg:#ffffff;
@@ -893,7 +941,6 @@ export default function Lampiran({ data }: { data: AppState }) {
     --neu-bg:#f1f5f9;  --neu-fg:#475569;
   }
 
-  /* Banner: gunakan logo sebagai background + overlay gelap agar menyatu & kontras */
   .banner{
     position: relative;
     color:#fff;
@@ -907,7 +954,6 @@ export default function Lampiran({ data }: { data: AppState }) {
   .banner .muted, .banner .tag-sub{color:#e5e7eb}
   .banner .shadowed{ text-shadow: 0 1px 1px rgba(0,0,0,.5), 0 2px 12px rgba(0,0,0,.25); }
 
-  /* Header stack: logo center, teks center, ukuran seragam */
   .hdr-stack{
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center
   }
@@ -969,6 +1015,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   .cbx.on{background:#2563eb;border-color:#2563eb}
 
   .ul-kv{margin:0;padding-left:18px}
+  .ul-kv li{margin:0;padding:0}
 `;
     root.appendChild(st);
 
@@ -1076,15 +1123,14 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
     };
 
-    // ==== Header (sesuai request: background logo + teks putih + logo center)
+    // ==== Header
     const header = doc.createElement("div");
     header.className = "banner";
     const uName = (user as AnyUser | undefined)?.name || "";
     const uRole = (user as AnyUser | undefined)?.role || "";
     const depoName = "TULUNGAGUNG";
 
-    const logoSrc = "/sitrep-logo.jpg"; // simpan file logo di /public
-    // Set background gambar logo + overlay dari CSS .banner
+    const logoSrc = "/sitrep-logo.jpg";
     header.setAttribute(
       "style",
       `background-image:linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,.55)), url('${logoSrc}');`
@@ -1167,7 +1213,7 @@ export default function Lampiran({ data }: { data: AppState }) {
             "beforeend",
             `<tr><td>${toTitleCase(
               r.label || ""
-            )}</td><td>${valueHtml}</td><td>${r.note || ""}</td></tr>`
+            )}</td><td>${valueHtml}</td><td>${noteToHTML(r.note)}</td></tr>`
           );
         });
         tbl.appendChild(tb);
