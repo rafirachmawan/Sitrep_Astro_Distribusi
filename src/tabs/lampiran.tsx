@@ -324,8 +324,11 @@ function renderChecklist(checklist: ChecklistState) {
         it.rj ?? it.RJ ?? it.no ?? it.nomor ?? it.kode ?? it.id ?? it.doc ?? "";
       const reason =
         it.reason ?? it.alasan ?? it.keterangan ?? it.ket ?? it.desc ?? "";
+      if (Array.isArray(it)) {
+        return it.map((i) => `- ${i}`).join("\n");
+      }
       const joined = [rj, reason].filter(Boolean).join(" - ");
-      return joined || JSON.stringify(it);
+      return joined ? `- ${joined}` : JSON.stringify(it);
     }
     return String(it);
   };
@@ -389,7 +392,7 @@ function renderChecklist(checklist: ChecklistState) {
           .join(" | ");
         noteOut = [noteOut, extraNote]
           .filter((s) => String(s).trim().length > 0)
-          .join(" • ");
+          .join("\n- "); // ⬅️ setiap item baru jadi baris dengan '-'
       }
 
       lineItems.push({
