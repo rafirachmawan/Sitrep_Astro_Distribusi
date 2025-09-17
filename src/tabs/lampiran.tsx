@@ -929,26 +929,27 @@ export default function Lampiran({ data }: { data: AppState }) {
     --neu-bg:#f1f5f9;  --neu-fg:#475569;
   }
 
-  /* === HEADER BAR: polos, logo menyatu === */
-  .banner{
-    position: relative;
-    color: var(--brand-fg);
-    border:0;
-    padding:18px 20px;
-    border-radius:18px;
-    box-shadow:0 1px 0 rgba(16,24,40,.03);
-    background: var(--brand-start); /* benar-benar flat */
-  }
-  .hdr-row{
-    display:flex;align-items:center;gap:14px;justify-content:flex-start;
-  }
-  .logoInline{
-    width:56px;height:56px;border-radius:12px;object-fit:contain;
-    display:block;
-    background: transparent;
-    border: 0;
-    box-shadow: none;
-  }
+ /* === HEADER BAR: flat, no hero === */
+.banner{
+  position: relative !important;
+  color: var(--brand-fg) !important;
+  border: 0 !important;
+  padding: 18px 20px !important;
+  border-radius: 18px !important;
+  box-shadow: 0 1px 0 rgba(16,24,40,.03) !important;
+  background: #0b122b !important;          /* flat */
+  background-image: none !important;       /* pastikan tanpa hero */
+}
+.banner::before,
+.banner::after{
+  content: none !important;                 /* taklukkan pseudo dari CSS lama */
+}
+
+.logoInline{
+  width:56px;height:56px;border-radius:12px;object-fit:contain;display:block;
+  background: transparent !important; border:0 !important; box-shadow:none !important;
+}
+
   .titles{
     display:flex;flex-direction:column;gap:4px;
   }
@@ -1127,8 +1128,8 @@ export default function Lampiran({ data }: { data: AppState }) {
     const uName = (user as AnyUser | undefined)?.name || "";
     const uRole = (user as AnyUser | undefined)?.role || "";
     const depoName = "TULUNGAGUNG";
-    // gunakan file PNG transparan
-    const logoSrc = "/sitrep-logo.png";
+    // PNG transparan + cache buster supaya tak ambil JPG lama dari cache
+    const logoSrc = "/sitrep-logo.png?v=2";
 
     header.innerHTML = `
       <div class="hdr-row">
