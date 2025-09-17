@@ -908,7 +908,7 @@ export default function Lampiran({ data }: { data: AppState }) {
 
     //
     // === BRAND CONFIG (samakan dengan background logo) ===
-    const BRAND_HEX = "#0b122b"; // GANTI ke hex bg logo kamu, mis: "#001b4e"
+    const BRAND_HEX = "#103a7b"; // biru lebih cerah ~12%
     const LOGO_URL = "/sitrep-logo.png?v=2"; // path logo PNG transparan
 
     const root = doc.createElement("div");
@@ -965,7 +965,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   gap:8px;text-align:center; margin:0 auto; max-width:520px; width:100%;
 }
 .logoImgCenter{
-  width:84px;height:84px;border-radius:16px;object-fit:contain;
+  width:110;height:110px;border-radius:16px;object-fit:contain;
   background: transparent !important; border:0 !important; padding:0;
   box-shadow:none !important;
 }
@@ -991,7 +991,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center
   }
   .logoImgCenter{
-    width:84px;height:84px;border-radius:16px;object-fit:contain;
+    width:110px;height:110px;border-radius:16px;object-fit:contain;
     background: transparent !important; border:0 !important; padding:0;
     box-shadow:none !important;
   }
