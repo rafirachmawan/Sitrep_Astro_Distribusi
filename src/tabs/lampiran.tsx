@@ -917,8 +917,8 @@ export default function Lampiran({ data }: { data: AppState }) {
   .table, .table *, thead, tbody, tr, th, td { break-inside: avoid; page-break-inside: avoid; }
 
   :root{
-    --brand-start:#0b122b;
-    --brand-end:#0b122b;
+    --brand-start:#0b122b; /* ganti sesuai warna brand */
+    --brand-end:#0b122b;   /* disamakan agar polos */
     --brand-border:#1f2a44;
     --brand-fg:#ffffff;
     --accent:#ffffff;
@@ -937,7 +937,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     padding:18px 20px;
     border-radius:18px;
     box-shadow:0 1px 0 rgba(16,24,40,.03);
-    background: linear-gradient(135deg, var(--brand-start), var(--brand-end));
+    background: var(--brand-start); /* benar-benar flat */
   }
   .hdr-row{
     display:flex;align-items:center;gap:14px;justify-content:flex-start;
@@ -945,7 +945,9 @@ export default function Lampiran({ data }: { data: AppState }) {
   .logoInline{
     width:56px;height:56px;border-radius:12px;object-fit:contain;
     display:block;
-    /* tanpa background/border agar menyatu dengan banner */
+    background: transparent;
+    border: 0;
+    box-shadow: none;
   }
   .titles{
     display:flex;flex-direction:column;gap:4px;
@@ -1125,7 +1127,8 @@ export default function Lampiran({ data }: { data: AppState }) {
     const uName = (user as AnyUser | undefined)?.name || "";
     const uRole = (user as AnyUser | undefined)?.role || "";
     const depoName = "TULUNGAGUNG";
-    const logoSrc = "/sitrep-logo.jpg";
+    // gunakan file PNG transparan
+    const logoSrc = "/sitrep-logo.png";
 
     header.innerHTML = `
       <div class="hdr-row">
