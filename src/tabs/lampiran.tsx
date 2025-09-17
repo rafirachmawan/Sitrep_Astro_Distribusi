@@ -904,7 +904,17 @@ export default function Lampiran({ data }: { data: AppState }) {
   }
 
   const buildPrintLayout = (doc: Document) => {
+    //
+
+    //
+    // === BRAND CONFIG (samakan dengan background logo) ===
+    const BRAND_HEX = "#0b122b"; // GANTI ke hex bg logo kamu, mis: "#001b4e"
+    const LOGO_URL = "/sitrep-logo.png?v=2"; // path logo PNG transparan
+
     const root = doc.createElement("div");
+    // set brand color agar nyatu sama bg logo
+    root.style.setProperty("--brand-color", BRAND_HEX);
+
     root.id = "pdf-print-root";
     (root.style as any).all = "initial";
     root.style.display = "block";
@@ -926,28 +936,56 @@ export default function Lampiran({ data }: { data: AppState }) {
   .table, .table *, thead, tbody, tr, th, td { break-inside: avoid; page-break-inside: avoid; }
 
   :root{
-    --brand-color:#0b122b;  /* SAMAKAN dengan warna utama logo */
-    --brand-fg:#ffffff;
-    --accent:#ffffff;
+  --brand-color: /* AKAN di-set via JS */ #0b122b; 
+  --brand-fg:#ffffff;
+  --accent:#ffffff;
 
-    --good-bg:#ecfdf5; --good-fg:#065f46;
-    --due-bg:#eff6ff;  --due-fg:#1d4ed8; --due-bd:#93c5fd;
-    --bad-bg:#fef2f2;  --bad-fg:#7f1d1d;
-    --neu-bg:#f1f5f9;  --neu-fg:#475569;
-  }
+  --good-bg:#ecfdf5; --good-fg:#065f46;
+  --due-bg:#eff6ff;  --due-fg:#1d4ed8; --due-bd:#93c5fd;
+  --bad-bg:#fef2f2;  --bad-fg:#7f1d1d;
+  --neu-bg:#f1f5f9;  --neu-fg:#475569;
+}
 
-  /* === HEADER: flat, warna = brand, logo transparan === */
-  .banner{
-    position: relative !important;
-    color: var(--brand-fg) !important;
-    border: 0 !important;
-    padding: 22px 20px !important;
-    border-radius: 18px !important;
-    box-shadow: 0 1px 0 rgba(16,24,40,.03) !important;
-    background: var(--brand-color) !important;   /* flat, no image */
-    background-image: none !important;
-  }
-  .banner::before, .banner::after{ content:none !important; }
+/* === HEADER: flat, warna = brand, logo transparan === */
+.banner{
+  position: relative !important;
+  color: var(--brand-fg) !important;
+  border: 0 !important;
+  padding: 22px 20px !important;
+  border-radius: 18px !important;
+  box-shadow: 0 1px 0 rgba(16,24,40,.03) !important;
+  background: var(--brand-color) !important;   /* flat, no image */
+  background-image: none !important;
+}
+.banner::before, .banner::after{ content:none !important; }
+
+/* STACK center, judul auto-shrink bila kepanjangan */
+.hdr-stack{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:8px;text-align:center; margin:0 auto; max-width:520px; width:100%;
+}
+.logoImgCenter{
+  width:84px;height:84px;border-radius:16px;object-fit:contain;
+  background: transparent !important; border:0 !important; padding:0;
+  box-shadow:none !important;
+}
+
+/* semua header text putih + responsive clamp */
+.title-main, .title-second, .tag-sub{ color:#fff !important; }
+.title-main{
+  font-weight:900; letter-spacing:.2px; line-height:1.15;
+  font-size: clamp(16px, 2.6vw, 20px);  /* auto mengecil jika sempit */
+}
+.title-second{
+  font-weight:900; letter-spacing:.2px; line-height:1.15;
+  font-size: clamp(15px, 2.2vw, 18px);
+  opacity:.98;
+}
+.tag-sub{
+  font-size: clamp(11px, 1.6vw, 12px);
+  opacity:.95;
+}
+
 
   .hdr-stack{
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center
@@ -1134,20 +1172,22 @@ export default function Lampiran({ data }: { data: AppState }) {
     const depoName = "TULUNGAGUNG";
 
     // PNG transparan + cache buster
-    const logoSrc = "/sitrep-logo.png?v=2";
+    // PNG transparan + cache buster
+    const logoSrc = LOGO_URL;
 
     header.innerHTML = `
-      <div class="hdr-stack">
-        <img class="logoImgCenter" src="${logoSrc}" alt="Logo" />
-        <div class="title-main">LEADER MONITORING DAILY</div>
-        <div class="title-second">SITREP — Situation Report Harian</div>
-        <div class="tag-sub">Powered by ${escapeHtml(
-          uName
-        )} <span>( ${escapeHtml(uRole)} )</span> • Depo ${escapeHtml(
-      depoName
-    )}</div>
-        <div class="tag-sub">Tanggal: ${todayISO()}</div>
-      </div>`;
+  <div class="hdr-stack">
+    <img class="logoImgCenter" src="${logoSrc}" alt="Logo" />
+    <div class="title-main">LEADER MONITORING DAILY</div>
+    <div class="title-second">SITREP — Situation Report Harian</div>
+    <div class="tag-sub">
+      Powered by ${escapeHtml(uName)} <span>( ${escapeHtml(
+      uRole
+    )} )</span> • Depo ${escapeHtml(depoName)}
+    </div>
+    <div class="tag-sub">Tanggal: ${todayISO()}</div>
+  </div>`;
+
     appendBlock(header);
 
     const classifyStatus = (
