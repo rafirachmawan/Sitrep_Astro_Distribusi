@@ -962,12 +962,12 @@ export default function Lampiran({ data }: { data: AppState }) {
 
 /* STACK center, judul auto-shrink bila kepanjangan */
 
-.logoImgCenter{
-  width:120px;height:120px;  /* logo lebih besar + px dibenerin */
-  border-radius:16px;object-fit:contain;
-  background: transparent !important; border:0 !important; padding:0;
-  box-shadow:none !important;
-}
+// .logoImgCenter{
+//   width:120px;height:120px;  /* logo lebih besar + px dibenerin */
+//   border-radius:16px;object-fit:contain;
+//   background: transparent !important; border:0 !important; padding:0;
+//   box-shadow:none !important;
+// }
 
 
 
@@ -1021,13 +1021,44 @@ export default function Lampiran({ data }: { data: AppState }) {
   .title-group{ align-items:center; }
 }
 // 
-  .logoImgCenter{
-  width:120px;height:120px;  /* logo lebih besar + px dibenerin */
-  border-radius:16px;object-fit:contain;
-  background: transparent !important; border:0 !important; padding:0;
-  box-shadow:none !important;
+//   .logoImgCenter{
+//   width:120px;height:120px;  /* logo lebih besar + px dibenerin */
+//   border-radius:16px;object-fit:contain;
+//   background: transparent !important; border:0 !important; padding:0;
+//   box-shadow:none !important;
+// }
+
+/* --- HEADER: row sejajar, center --- */
+.hdr-row{
+  display:flex; align-items:center; justify-content:center;
+  gap:20px; margin:0 auto; max-width:640px; width:100%;
+  text-align:left;
+}
+.logoImg{
+  width:120px; height:120px; object-fit:contain; border-radius:16px;
+  background:transparent !important; border:0 !important; padding:0; box-shadow:none !important;
+}
+.title-group{ display:flex; flex-direction:column; gap:6px; }
+
+.title-main{
+  color:#fff !important; font-weight:900; letter-spacing:.2px; line-height:1.15;
+  font-size:clamp(18px, 2.6vw, 22px);
+}
+.title-second{
+  color:#fff !important; font-weight:800; opacity:.98; line-height:1.15;
+  font-size:clamp(14px, 2.2vw, 18px);
 }
 
+/* Tanggal polos di bawah header */
+.date-text{
+  margin-top:10px; text-align:center; color:#fff; font-size:12px; font-weight:600; opacity:.95;
+}
+
+/* Responsif: sempit → stack vertikal dan center */
+@media (max-width:560px){
+  .hdr-row{ flex-direction:column; text-align:center; }
+  .title-group{ align-items:center; }
+}
 
 
   .title-main, .title-second{font-weight:900; letter-spacing:.2px; font-size:18px; line-height:1.15;}
@@ -1219,6 +1250,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   </div>
 </div>
 <div class="date-text">Tanggal: ${todayISO()}</div>
+
 
 
   </div>`;
