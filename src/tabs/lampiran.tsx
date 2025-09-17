@@ -908,7 +908,8 @@ export default function Lampiran({ data }: { data: AppState }) {
 
     //
     // === BRAND CONFIG (samakan dengan background logo) ===
-    const BRAND_HEX = "#103a7b"; // biru lebih cerah ~12%
+    const BRAND_HEX = "#106aa6"; // biru sedikit lebih cerah
+
     const LOGO_URL = "/sitrep-logo.png?v=2"; // path logo PNG transparan
 
     const root = doc.createElement("div");
@@ -965,10 +966,17 @@ export default function Lampiran({ data }: { data: AppState }) {
   gap:8px;text-align:center; margin:0 auto; max-width:520px; width:100%;
 }
 .logoImgCenter{
-  width:110;height:110px;border-radius:16px;object-fit:contain;
+  width:120px;height:120px;  /* logo lebih besar + px dibenerin */
+  border-radius:16px;object-fit:contain;
   background: transparent !important; border:0 !important; padding:0;
   box-shadow:none !important;
 }
+.date-pill{
+  display:inline-block;padding:6px 14px;border:1.5px solid rgba(255,255,255,.85);
+  border-radius:10px;font-weight:700;color:#fff;background:transparent;
+  font-size:12px; letter-spacing:.2px;
+}
+
 
 /* semua header text putih + responsive clamp */
 .title-main, .title-second, .tag-sub{ color:#fff !important; }
@@ -991,10 +999,14 @@ export default function Lampiran({ data }: { data: AppState }) {
     display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center
   }
   .logoImgCenter{
-    width:110px;height:110px;border-radius:16px;object-fit:contain;
-    background: transparent !important; border:0 !important; padding:0;
-    box-shadow:none !important;
-  }
+  width:120px;height:120px;  /* logo lebih besar + px dibenerin */
+  border-radius:16px;object-fit:contain;
+  background: transparent !important; border:0 !important; padding:0;
+  box-shadow:none !important;
+}
+
+
+
   .title-main, .title-second{font-weight:900; letter-spacing:.2px; font-size:18px; line-height:1.15;}
   .title-second{opacity:.98;}
   .tag-sub{font-size:12px;opacity:.95;}
@@ -1180,12 +1192,8 @@ export default function Lampiran({ data }: { data: AppState }) {
     <img class="logoImgCenter" src="${logoSrc}" alt="Logo" />
     <div class="title-main">LEADER MONITORING DAILY</div>
     <div class="title-second">SITREP — Situation Report Harian</div>
-    <div class="tag-sub">
-      Powered by ${escapeHtml(uName)} <span>( ${escapeHtml(
-      uRole
-    )} )</span> • Depo ${escapeHtml(depoName)}
-    </div>
-    <div class="tag-sub">Tanggal: ${todayISO()}</div>
+   <div class="date-pill">Tanggal: ${todayISO()}</div>
+
   </div>`;
 
     appendBlock(header);
