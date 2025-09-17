@@ -908,7 +908,7 @@ export default function Lampiran({ data }: { data: AppState }) {
 
     //
     // === BRAND CONFIG (samakan dengan background logo) ===
-    const BRAND_HEX = "#106aa6"; // biru sedikit lebih cerah
+    const BRAND_HEX = "#103a7b";
 
     const LOGO_URL = "/sitrep-logo.png?v=2"; // path logo PNG transparan
 
@@ -961,21 +961,14 @@ export default function Lampiran({ data }: { data: AppState }) {
 .banner::before, .banner::after{ content:none !important; }
 
 /* STACK center, judul auto-shrink bila kepanjangan */
-.hdr-stack{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:8px;text-align:center; margin:0 auto; max-width:520px; width:100%;
-}
+
 .logoImgCenter{
   width:120px;height:120px;  /* logo lebih besar + px dibenerin */
   border-radius:16px;object-fit:contain;
   background: transparent !important; border:0 !important; padding:0;
   box-shadow:none !important;
 }
-.date-pill{
-  display:inline-block;padding:6px 14px;border:1.5px solid rgba(255,255,255,.85);
-  border-radius:10px;font-weight:700;color:#fff;background:transparent;
-  font-size:12px; letter-spacing:.2px;
-}
+
 
 
 /* semua header text putih + responsive clamp */
@@ -995,9 +988,39 @@ export default function Lampiran({ data }: { data: AppState }) {
 }
 
 
-  .hdr-stack{
-    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center
-  }
+//  
+/* --- HEADER ROW: logo & judul sejajar --- */
+.hdr-row{
+  display:flex; align-items:center; justify-content:center;
+  gap:16px; margin:0 auto; max-width:560px; width:100%;
+  text-align:left;
+}
+.logoImg{
+  width:120px; height:120px; object-fit:contain; border-radius:16px;
+  background:transparent !important; border:0 !important; padding:0;
+  box-shadow:none !important;
+}
+.title-group{ display:flex; flex-direction:column; gap:6px; }
+
+.title-main{ color:#fff !important; font-weight:900; letter-spacing:.2px; line-height:1.15;
+  font-size:clamp(18px, 2.6vw, 22px);
+}
+.title-second{ color:#fff !important; font-weight:800; opacity:.98; line-height:1.15;
+  font-size:clamp(14px, 2.2vw, 18px);
+}
+
+/* Tanggal polos (tanpa border) di bawah row */
+.date-text{
+  margin-top:10px; text-align:center; color:#fff; font-size:12px; font-weight:600;
+  opacity:.95;
+}
+
+/* Responsif: kalau sempit, tumpuk ke kolom dan center text */
+@media (max-width: 560px){
+  .hdr-row{ flex-direction:column; text-align:center; }
+  .title-group{ align-items:center; }
+}
+// 
   .logoImgCenter{
   width:120px;height:120px;  /* logo lebih besar + px dibenerin */
   border-radius:16px;object-fit:contain;
@@ -1188,11 +1211,15 @@ export default function Lampiran({ data }: { data: AppState }) {
     const logoSrc = LOGO_URL;
 
     header.innerHTML = `
-  <div class="hdr-stack">
-    <img class="logoImgCenter" src="${logoSrc}" alt="Logo" />
+  <div class="hdr-row">
+  <img class="logoImg" src="${logoSrc}" alt="Logo" />
+  <div class="title-group">
     <div class="title-main">LEADER MONITORING DAILY</div>
     <div class="title-second">SITREP — Situation Report Harian</div>
-   <div class="date-pill">Tanggal: ${todayISO()}</div>
+  </div>
+</div>
+<div class="date-text">Tanggal: ${todayISO()}</div>
+
 
   </div>`;
 
