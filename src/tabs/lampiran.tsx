@@ -51,8 +51,8 @@ const DAY_THEME: Record<1 | 2 | 3 | 4 | 5 | 6, Theme> = {
   2: "kompetensi",
   3: "kosong",
   4: "prestasi",
-  5: "kepatuhan",
-  6: "prestasi",
+  5: "kepatuhan", // Jumat = Kepatuhan
+  6: "prestasi", // Sabtu = Prestasi
 };
 const THEME_LABEL: Record<Theme, string> = {
   attitude: "Attitude (HEBAT)",
@@ -112,6 +112,7 @@ function loadHistory(): PdfEntry[] {
   try {
     const raw = localStorage.getItem(STORE_KEY) || "[]";
     const parsed = JSON.parse(raw) as PdfEntry[];
+    // buang dataURI besar agar tidak bikin quota penuh
     return (parsed || []).map((e) =>
       e?.pdfDataUrl?.startsWith("data:") ? { ...e, pdfDataUrl: "" } : e
     );
@@ -131,12 +132,14 @@ function saveHistory(items: PdfEntry[]) {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(sanitize(items)));
   } catch {
+    // fallback: simpan remote-only (paling ringan)
     try {
       const remoteOnly = items
         .filter((x) => x.storage === "remote")
         .map((x) => ({ ...x, pdfDataUrl: x.pdfDataUrl || "" }));
       localStorage.setItem(STORE_KEY, JSON.stringify(remoteOnly));
     } catch {
+      // terakhir: bersihkan supaya tidak nge-loop error
       localStorage.removeItem(STORE_KEY);
     }
   }
@@ -323,6 +326,7 @@ function renderChecklist(checklist: ChecklistState) {
         it.reason ?? it.alasan ?? it.keterangan ?? it.ket ?? it.desc ?? "";
 
       if (Array.isArray(it)) {
+        // gabungkan array menjadi baris (tanpa prefix '-')
         return it.map(String).join("\n");
       }
       const joined = [rj, reason].filter(Boolean).join(" - ");
@@ -348,7 +352,7 @@ function renderChecklist(checklist: ChecklistState) {
       }
       return s;
     }
-    if (Array.isArray(x)) return x.map(itemToStr).filter(Boolean).join("\n");
+    if (Array.isArray(x)) return x.map(itemToStr).filter(Boolean).join("\n"); // baris
     if (typeof x === "object") return itemToStr(x);
     return String(x);
   };
@@ -390,7 +394,7 @@ function renderChecklist(checklist: ChecklistState) {
           .join(" | ");
         noteOut = [noteOut, extraNote]
           .filter((s) => String(s).trim().length > 0)
-          .join("\n");
+          .join("\n"); // baris, nanti jadi <li> saat render
       }
 
       lineItems.push({
@@ -475,14 +479,16 @@ function noteToHTML(note?: string): string {
   const raw = String(note ?? "").trim();
   if (!raw) return "";
 
+  // Normalisasi delimiter umum (tanpa mengubah jumlah item)
   const normalized = raw
-    .replace(/\s*\|\s*/g, ", ")
+    .replace(/\s*\|\s*/g, ", ") // "|" -> ", "
     .replace(/\s*•\s*/g, ", ")
-    .replace(/\s*-\s*RJ/gi, ", RJ");
+    .replace(/\s*-\s*RJ/gi, ", RJ"); // " - RJ" -> ", RJ"
 
   let items: string[] = [];
 
   if (/RJ\d+/i.test(normalized)) {
+    // Pisah tiap kemunculan RJnnnnnn (jaga jumlah item)
     items = normalized
       .split(/(?=RJ\d+)/i)
       .map((s) => s.trim())
@@ -499,8 +505,11 @@ function noteToHTML(note?: string): string {
       .filter((s) => s.length > 0);
   }
 
+  // Hilangkan prefix bullet kalau ada, tapi JANGAN dedup
   items = items.map((s) => s.replace(/^[-•]\s*/, ""));
+
   if (!items.length) return "";
+
   return `<ul class="ul-kv">${items
     .map((x) => `<li>${escapeHtml(x)}</li>`)
     .join("")}</ul>`;
@@ -917,8 +926,8 @@ export default function Lampiran({ data }: { data: AppState }) {
   .table, .table *, thead, tbody, tr, th, td { break-inside: avoid; page-break-inside: avoid; }
 
   :root{
-    --brand-start:#0b122b; /* ganti sesuai warna brand */
-    --brand-end:#0b122b;   /* disamakan agar polos */
+    --brand-start:#0b122b;
+    --brand-end:#0b122b;
     --brand-border:#1f2a44;
     --brand-fg:#ffffff;
     --accent:#ffffff;
@@ -929,33 +938,32 @@ export default function Lampiran({ data }: { data: AppState }) {
     --neu-bg:#f1f5f9;  --neu-fg:#475569;
   }
 
- /* === HEADER BAR: flat, no hero === */
-.banner{
-  position: relative !important;
-  color: var(--brand-fg) !important;
-  border: 0 !important;
-  padding: 18px 20px !important;
-  border-radius: 18px !important;
-  box-shadow: 0 1px 0 rgba(16,24,40,.03) !important;
-  background: #0b122b !important;          /* flat */
-  background-image: none !important;       /* pastikan tanpa hero */
-}
-.banner::before,
-.banner::after{
-  content: none !important;                 /* taklukkan pseudo dari CSS lama */
-}
-
-.logoInline{
-  width:56px;height:56px;border-radius:12px;object-fit:contain;display:block;
-  background: transparent !important; border:0 !important; box-shadow:none !important;
-}
-
-  .titles{
-    display:flex;flex-direction:column;gap:4px;
+  .banner{
+    position: relative;
+    color:#fff;
+    border:0;
+    padding:22px 20px;border-radius:18px;
+    box-shadow:0 1px 0 rgba(16,24,40,.03);
+    background: linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,.55));
+    background-size: cover;
+    background-position: center;
   }
-  .title-main{font-weight:900;letter-spacing:.2px;font-size:18px;line-height:1.15;}
-  .title-second{font-weight:800;opacity:.98;font-size:14px;}
-  .tag-sub{font-size:12px;margin-top:8px;opacity:.95;}
+  .banner .muted, .banner .tag-sub{color:#e5e7eb}
+  .banner .shadowed{ text-shadow: 0 1px 1px rgba(0,0,0,.5), 0 2px 12px rgba(0,0,0,.25); }
+
+  .hdr-stack{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center
+  }
+  .logoImgCenter{
+    width:84px;height:84px;border-radius:16px;object-fit:contain;
+    background:#fff;border:2px solid rgba(255,255,255,.35);padding:8px;
+    box-shadow:0 2px 10px rgba(0,0,0,.15);
+  }
+  .title-main, .title-second{
+    font-weight:900; letter-spacing:.2px; font-size:18px; line-height:1.15;
+  }
+  .title-second{ opacity:.98; }
+  .tag-sub{font-size:12px;}
 
   .info-grid{display:flex;gap:12px;margin-top:12px;}
   .card{border:1px solid #e6e8f0;border-radius:12px;padding:10px 12px;flex:1;background:#fff;}
@@ -1074,20 +1082,25 @@ export default function Lampiran({ data }: { data: AppState }) {
       page.appendChild(el);
 
       if (page.scrollHeight > PAGE_MAX_PX) {
+        // JANGAN langsung lempar seluruh section ke halaman baru.
+        // Kalau ada tabel, split baris untuk mengisi sisa halaman sekarang.
         if (el.querySelector("table")) {
           page.removeChild(el);
           splitTableSection(el);
           return;
         }
 
+        // Tidak ada tabel → baru pindahkan whole section ke halaman baru
         page.removeChild(el);
         page = makePage();
         page.appendChild(el);
 
         if (page.scrollHeight > PAGE_MAX_PX) {
+          // Masih overflow → lakukan split generic (pecah child)
           page.removeChild(el);
 
           if (el.querySelector("table")) {
+            // (cadangan) kalau ternyata di dalam nested ada tabel
             splitTableSection(el);
           } else {
             const children = Array.from(el.children) as HTMLElement[];
@@ -1122,28 +1135,31 @@ export default function Lampiran({ data }: { data: AppState }) {
       }
     };
 
-    // ==== Header (polos, logo menyatu)
+    // ==== Header
     const header = doc.createElement("div");
     header.className = "banner";
     const uName = (user as AnyUser | undefined)?.name || "";
     const uRole = (user as AnyUser | undefined)?.role || "";
     const depoName = "TULUNGAGUNG";
-    // PNG transparan + cache buster supaya tak ambil JPG lama dari cache
-    const logoSrc = "/sitrep-logo.png?v=2";
+
+    const logoSrc = "/sitrep-logo.jpg";
+    header.setAttribute(
+      "style",
+      `background-image:linear-gradient(0deg, rgba(0,0,0,.55), rgba(0,0,0,.55)), url('${logoSrc}');`
+    );
 
     header.innerHTML = `
-      <div class="hdr-row">
-        <img class="logoInline" src="${logoSrc}" alt="Logo" />
-        <div class="titles">
-          <div class="title-main">LEADER MONITORING DAILY</div>
-          <div class="title-second">SITREP — Situation Report Harian</div>
-        </div>
-      </div>
-      <div class="tag-sub">Powered by ${escapeHtml(uName)} <span>( ${escapeHtml(
-      uRole
-    )} )</span> • Depo ${escapeHtml(depoName)}</div>
-      <div class="tag-sub">Tanggal: ${todayISO()}</div>
-    `;
+      <div class="hdr-stack">
+        <img class="logoImgCenter" src="${logoSrc}" alt="Logo" />
+        <div class="title-main shadowed">LEADER MONITORING DAILY</div>
+        <div class="title-second shadowed">SITREP — Situation Report Harian</div>
+        <div class="tag-sub shadowed">Powered by ${escapeHtml(
+          uName
+        )} <span>( ${escapeHtml(uRole)} )</span> • Depo ${escapeHtml(
+      depoName
+    )}</div>
+        <div class="tag-sub shadowed">Tanggal: ${todayISO()}</div>
+      </div>`;
     appendBlock(header);
 
     const classifyStatus = (
@@ -1467,6 +1483,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         (rawTarget as any)?.deadline !== undefined;
 
       if (looksLikeUI) {
+        // ===== Klaim bulanan (Deadline → Selesai) =====
         const klaimBlock = doc.createElement("div");
         klaimBlock.className = "section page-break-avoid";
         klaimBlock.innerHTML = `<div class="subhead">Penyelesaian Klaim Bulan Ini <span class="muted" style="font-weight:600;font-size:11px">(reset setiap awal bulan)</span></div>`;
@@ -1509,6 +1526,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         klaimBlock.appendChild(klaimTable);
         appendBlock(klaimBlock);
 
+        // Target selesai (tetap)
         const targetCount =
           (isRecord(tgtBulananSrc)
             ? (["targetCount", "jumlah", "count", "value"] as const)
@@ -1539,6 +1557,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         targetTblWrap.appendChild(targetTbl);
         appendBlock(targetTblWrap);
 
+        // ===== Laporan mingguan =====
         const reportBlock = doc.createElement("div");
         reportBlock.className = "section page-break-avoid";
         reportBlock.innerHTML = `<div class="subhead">Laporan Penjualan ke Prinsipal Mingguan</div>`;
@@ -1563,6 +1582,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         reportBlock.appendChild(repTbl);
         appendBlock(reportBlock);
       } else {
+        // ---- Fallback generic
         const tv = extractTarget(rawTarget);
 
         const valueToHTML = (v: unknown): string => {
