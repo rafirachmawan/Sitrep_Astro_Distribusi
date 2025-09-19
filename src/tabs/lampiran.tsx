@@ -38,19 +38,50 @@ type AnyUser = Partial<{
 }>;
 
 //
-function getUserRole(u?: AnyUser | null): string {
-  const pick = (v: unknown) => (typeof v === "string" ? v : "");
-  if (!u) return "";
+function getUserRole(u?: any): string {
+  const pick = (v: unknown) =>
+    typeof v === "string" && v.trim() ? v.trim() : "";
+
+  // Kumpulkan semua jalur umum tempat "role" sering disimpan
   const candidates = [
-    u.role,
-    (u as any)?.currentRole,
-    (u as any)?.roleId,
-    (u as any)?.claims?.role,
-    (u as any)?.metadata?.role,
-    (u as any)?.user_metadata?.role,
-    (u as any)?.app_metadata?.role,
-  ].map(pick);
-  return candidates.find(Boolean) || "";
+    u?.role,
+    u?.currentRole,
+    u?.roleId,
+    u?.claims?.role,
+    u?.metadata?.role,
+    u?.user_metadata?.role,
+    u?.app_metadata?.role,
+    u?.app_metadata?.claims?.role,
+    u?.user?.role,
+    u?.user?.user_metadata?.role,
+    u?.session?.user?.role,
+    u?.session?.user?.user_metadata?.role,
+    u?.data?.user?.role,
+    u?.profile?.role,
+    u?.profiles?.[0]?.role,
+    u?.roles?.[0],
+    u?.["https://hasura.io/jwt/claims"]?.["x-hasura-default-role"],
+    // fallback terakhir: simpanan localStorage (kalau pernah di-set app)
+    (typeof window !== "undefined"
+      ? localStorage.getItem("sitrep-user-role")
+      : "") || "",
+  ]
+    .map(pick)
+    .filter(Boolean);
+
+  const raw = candidates[0] || "";
+  if (!raw) return "";
+
+  // Normalisasi beberapa bentuk umum (angka/slug)
+  const s = raw.toLowerCase();
+  if (["1", "admin"].includes(s)) return "admin";
+  if (["2", "sales"].includes(s)) return "sales";
+  if (["3", "gudang", "warehouse"].includes(s)) return "gudang";
+  if (["superadmin", "super-admin", "super_admin"].includes(s))
+    return "superadmin";
+
+  // Default: kembalikan apa adanya
+  return raw;
 }
 
 const PERSONS = ["laras", "emi", "novi"] as const;
@@ -1250,7 +1281,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     const header = doc.createElement("div");
     header.className = "banner";
     const uName = (user as AnyUser | undefined)?.name || "";
-    const uRole = getUserRole(user as AnyUser) || "";
+    const uRole = getUserRole(user as AnyUser) || "-";
 
     const depoName = "TULUNGAGUNG";
 
