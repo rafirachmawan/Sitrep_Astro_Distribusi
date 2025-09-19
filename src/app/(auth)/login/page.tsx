@@ -39,10 +39,13 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       // Simpan ke AuthProvider
+      // Simpan ke AuthProvider
       signIn({ name: acc.displayName, role: acc.role });
 
-      // Opsional: pastikan tidak ada override
+      // Persist agar bisa di-pickup PDF (kalau context belum sempat terisi)
       if (typeof window !== "undefined") {
+        localStorage.setItem("sitrep-user-role", acc.role);
+        localStorage.setItem("sitrep-user-name", acc.displayName);
         localStorage.removeItem("sitrep-force-account-id");
       }
 

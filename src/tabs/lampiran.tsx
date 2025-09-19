@@ -2071,9 +2071,8 @@ export default function Lampiran({ data }: { data: AppState }) {
       foot.className = "foot";
       foot.textContent = `Ditandatangani oleh ${
         (user as AnyUser | undefined)?.name || ""
-      } (${
-        getUserRole(user as AnyUser) || ""
-      }) • ${new Date().toLocaleString()}`;
+      }(${getUserRole(user as AnyUser) || "-"})
+ • ${new Date().toLocaleString()}`;
 
       sigWrap.appendChild(foot);
       appendBlock(sigWrap);
