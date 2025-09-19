@@ -37,6 +37,22 @@ type AnyUser = Partial<{
   role: string;
 }>;
 
+//
+function getUserRole(u?: AnyUser | null): string {
+  const pick = (v: unknown) => (typeof v === "string" ? v : "");
+  if (!u) return "";
+  const candidates = [
+    u.role,
+    (u as any)?.currentRole,
+    (u as any)?.roleId,
+    (u as any)?.claims?.role,
+    (u as any)?.metadata?.role,
+    (u as any)?.user_metadata?.role,
+    (u as any)?.app_metadata?.role,
+  ].map(pick);
+  return candidates.find(Boolean) || "";
+}
+
 const PERSONS = ["laras", "emi", "novi"] as const;
 type Person = (typeof PERSONS)[number];
 const PERSON_LABEL: Record<Person, string> = {
@@ -811,7 +827,7 @@ export default function Lampiran({ data }: { data: AppState }) {
       try {
         const u = (user ?? {}) as AnyUser;
         const userId = u.id || u.email || u.name || "unknown";
-        const role = u.role || "admin";
+        const role = getUserRole(u) || "admin";
 
         const qs = new URLSearchParams({
           userId: String(userId),
@@ -1234,7 +1250,8 @@ export default function Lampiran({ data }: { data: AppState }) {
     const header = doc.createElement("div");
     header.className = "banner";
     const uName = (user as AnyUser | undefined)?.name || "";
-    const uRole = (user as AnyUser | undefined)?.role || "";
+    const uRole = getUserRole(user as AnyUser) || "";
+
     const depoName = "TULUNGAGUNG";
 
     // PNG transparan + cache buster
@@ -1285,13 +1302,10 @@ export default function Lampiran({ data }: { data: AppState }) {
     const info = doc.createElement("div");
     info.className = "info-grid";
     info.innerHTML = `
-      <div class="card"><div class="label">Nama</div><div style="font-weight:700">${
-        (user as AnyUser | undefined)?.name || ""
-      }</div></div>
-      <div class="card"><div class="label">Role</div><div style="font-weight:700">${
-        (user as AnyUser | undefined)?.role || ""
-      }</div></div>
-      <div class="card"><div class="label">Depo</div><div style="font-weight:700">TULUNGAGUNG</div></div>`;
+      <div class="card"><div class="label">Nama</div><div style="font-weight:700">${uName}</div></div>
+<div class="card"><div class="label">Role</div><div style="font-weight:700">${uRole}</div></div>
+<div class="card"><div class="label">Depo</div><div style="font-weight:700">TULUNGAGUNG</div></div>
+`;
     appendBlock(info);
 
     /* ========= Rangkuman Checklist ========= */
@@ -1833,7 +1847,7 @@ export default function Lampiran({ data }: { data: AppState }) {
 
       const projectList = extractProjectsFromSparta(
         (data as any).sparta,
-        (user as AnyUser | undefined)?.role
+        getUserRole(user as AnyUser)
       );
 
       const renderCard = (
@@ -2027,8 +2041,9 @@ export default function Lampiran({ data }: { data: AppState }) {
       foot.textContent = `Ditandatangani oleh ${
         (user as AnyUser | undefined)?.name || ""
       } (${
-        (user as AnyUser | undefined)?.role || ""
+        getUserRole(user as AnyUser) || ""
       }) • ${new Date().toLocaleString()}`;
+
       sigWrap.appendChild(foot);
       appendBlock(sigWrap);
     }
@@ -2080,7 +2095,8 @@ export default function Lampiran({ data }: { data: AppState }) {
         const arrayBuffer = pdf.output("arraybuffer") as ArrayBuffer;
         const u = (user ?? {}) as AnyUser;
         const userId = u.id || u.email || u.name || "unknown";
-        const role = u.role || "admin";
+        const role = getUserRole(u) || "admin";
+
         const res = await fetch(
           `/api/lampiran/upload?userId=${encodeURIComponent(
             userId
@@ -2105,7 +2121,8 @@ export default function Lampiran({ data }: { data: AppState }) {
         dateISO: date,
         submittedAt: new Date().toISOString(),
         name: (user as AnyUser | undefined)?.name || "-",
-        role: (user as AnyUser | undefined)?.role || "-",
+        role: getUserRole(user as AnyUser) || "-",
+
         pdfDataUrl,
         storage: "local",
       };
