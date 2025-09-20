@@ -241,8 +241,12 @@ async function loadPdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
    ========================= */
 function SignaturePad({
   onChange,
+  name,
+  onNameChange,
 }: {
   onChange: (dataUrl: string | null) => void;
+  name?: string;
+  onNameChange?: (v: string) => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingRef = useRef(false);
@@ -336,6 +340,19 @@ function SignaturePad({
         className="rounded-xl border bg-white p-2"
         style={{ userSelect: "none" }}
       >
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-slate-600 min-w-[120px]">
+            Nama Penandatangan
+          </label>
+          <input
+            type="text"
+            value={name ?? ""}
+            onChange={(e) => onNameChange?.(e.target.value)}
+            placeholder="Tulis nama di sini"
+            className="flex-1 rounded-md border px-2 py-1 text-sm"
+          />
+        </div>
+
         <canvas
           ref={canvasRef}
           className="block w-full rounded-lg"
@@ -848,6 +865,9 @@ type AppLike = AppState &
 export default function Lampiran({ data }: { data: AppState }) {
   const { user } = useAuth();
   const [sigDataUrl, setSigDataUrl] = useState<string | null>(null);
+  const initialName = ((user as AnyUser | undefined)?.name || "").trim();
+  const [signerName, setSignerName] = useState<string>(initialName);
+
   const [history, setHistory] = useState<PdfEntry[]>([]);
   const [searchDate, setSearchDate] = useState<string>("");
   const [working, setWorking] = useState(false);
@@ -2069,10 +2089,14 @@ export default function Lampiran({ data }: { data: AppState }) {
       sigWrap.appendChild(sigRow);
       const foot = doc.createElement("div");
       foot.className = "foot";
-      foot.textContent = `Ditandatangani oleh ${
-        (user as AnyUser | undefined)?.name || ""
-      }(${getUserRole(user as AnyUser) || "-"})
- • ${new Date().toLocaleString()}`;
+      const displayName = (
+        signerName ||
+        (user as AnyUser | undefined)?.name ||
+        ""
+      ).trim();
+      foot.textContent = `Ditandatangani oleh ${displayName} (${
+        getUserRole(user as AnyUser) || "-"
+      }) • ${new Date().toLocaleString()}`;
 
       sigWrap.appendChild(foot);
       appendBlock(sigWrap);
@@ -2150,7 +2174,8 @@ export default function Lampiran({ data }: { data: AppState }) {
         filename,
         dateISO: date,
         submittedAt: new Date().toISOString(),
-        name: (user as AnyUser | undefined)?.name || "-",
+        name: (signerName || (user as AnyUser | undefined)?.name || "-").trim(),
+
         role: getUserRole(user as AnyUser) || "-",
 
         pdfDataUrl,
@@ -2241,7 +2266,12 @@ export default function Lampiran({ data }: { data: AppState }) {
 
           <div className="lg:col-span-1">
             <div className="space-y-4">
-              <SignaturePad onChange={setSigDataUrl} />
+              <SignaturePad
+                onChange={setSigDataUrl}
+                name={signerName}
+                onNameChange={setSignerName}
+              />
+
               <button
                 type="button"
                 onClick={submitAndGenerate}
