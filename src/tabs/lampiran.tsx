@@ -1157,13 +1157,15 @@ export default function Lampiran({ data }: { data: AppState }) {
   .sigtitle{text-align:right;margin:0 0 6px 0;}
   .sigrow{display:flex;justify-content:flex-end;}
   .sigbox{position:relative;width:360px;margin-top:6px;border:1px dashed #cbd5e1;border-radius:12px;padding:12px;height:140px;display:flex;align-items:center;justify-content:center;background:#fcfdff;}
-  .sigbox img{max-height:96px;display:block;margin:auto;object-fit:contain;}
+ .sigbox img{max-height:84px;display:block;margin:auto;object-fit:contain;}
+
   .sigline{position:absolute;left:12px;right:12px;bottom:12px;height:2px;background:#0f172a;opacity:.85;}
-    .sigcap{
-    position:absolute; left:12px; right:12px; bottom:24px;
-    text-align:center; font-size:12px; color:#334155; font-weight:600;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
+ .sigcap{
+  position:absolute; left:12px; right:12px; bottom:36px; /* WAS 24px */
+  text-align:center; font-size:12px; line-height:1.1; color:#334155; font-weight:600;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
 
   .foot{margin-top:6px;color:#64748b;font-size:11px;text-align:right;}
 
