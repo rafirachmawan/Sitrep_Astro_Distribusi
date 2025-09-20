@@ -1168,17 +1168,18 @@ export default function Lampiran({ data }: { data: AppState }) {
   .sigline{position:absolute;left:12px;right:12px;bottom:12px;height:2px;background:#0f172a;opacity:.85;}
 .sigcap{
   position:absolute;
-  left:14px;          /* rata kiri */
-  right:auto;         /* jangan center lagi */
-  bottom:18px;        /* tepat di atas .sigline (yang bottom:12px) */
-  text-align:left;    /* rata kiri */
-  font-size:11px;
+  left:14px;
+  right:auto;
+  bottom:26px;     /* dari 18px → naik 8px biar ga mepet garis */
+  text-align:left;
+  font-size:13px;  /* dari 11px → sedikit lebih besar */
   line-height:1;
   color:#334155;
   font-weight:600;
-  z-index:2;          /* supaya di atas <img> tanda tangan */
+  z-index:2;
   pointer-events:none;
 }
+
 
 
 
