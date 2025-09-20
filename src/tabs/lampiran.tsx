@@ -1159,6 +1159,12 @@ export default function Lampiran({ data }: { data: AppState }) {
   .sigbox{position:relative;width:360px;margin-top:6px;border:1px dashed #cbd5e1;border-radius:12px;padding:12px;height:140px;display:flex;align-items:center;justify-content:center;background:#fcfdff;}
   .sigbox img{max-height:96px;display:block;margin:auto;object-fit:contain;}
   .sigline{position:absolute;left:12px;right:12px;bottom:12px;height:2px;background:#0f172a;opacity:.85;}
+    .sigcap{
+    position:absolute; left:12px; right:12px; bottom:24px;
+    text-align:center; font-size:12px; color:#334155; font-weight:600;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+
   .foot{margin-top:6px;color:#64748b;font-size:11px;text-align:right;}
 
   .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;}
@@ -2066,12 +2072,22 @@ export default function Lampiran({ data }: { data: AppState }) {
     }
 
     // ========= Tanda Tangan =========
+    // ========= Tanda Tangan =========
     {
       const sigWrap = doc.createElement("div");
       sigWrap.className = "section sigwrap page-break-inside-avoid";
+
+      // NAMA PENANDATANGAN untuk kotak & footer
+      const displayName = (
+        signerName ||
+        (user as AnyUser | undefined)?.name ||
+        ""
+      ).trim();
+
       const sigTitle = doc.createElement("div");
       sigTitle.className = "title sigtitle";
       sigTitle.textContent = "Tanda Tangan";
+
       const sigRow = doc.createElement("div");
       sigRow.className = "sigrow";
       const sigBox = doc.createElement("div");
@@ -2081,19 +2097,23 @@ export default function Lampiran({ data }: { data: AppState }) {
         img.src = sigDataUrl;
         sigBox.appendChild(img);
       } else sigBox.appendChild(doc.createTextNode(" "));
+
       const line = doc.createElement("div");
       line.className = "sigline";
       sigBox.appendChild(line);
+
+      // NEW: teks nama di dalam kotak, tepat di atas garis
+      const cap = doc.createElement("div");
+      cap.className = "sigcap";
+      cap.textContent = displayName || "";
+      sigBox.appendChild(cap);
+
       sigRow.appendChild(sigBox);
+
       sigWrap.appendChild(sigTitle);
       sigWrap.appendChild(sigRow);
       const foot = doc.createElement("div");
       foot.className = "foot";
-      const displayName = (
-        signerName ||
-        (user as AnyUser | undefined)?.name ||
-        ""
-      ).trim();
       foot.textContent = `Ditandatangani oleh ${displayName} (${
         getUserRole(user as AnyUser) || "-"
       }) • ${new Date().toLocaleString()}`;
