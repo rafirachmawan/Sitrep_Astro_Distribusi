@@ -236,6 +236,82 @@ function CurrencyField({
     </div>
   );
 }
+//
+function OptionsEditor({
+  options,
+  onChange,
+}: {
+  options: string[];
+  onChange: (opts: string[]) => void;
+}) {
+  const [items, setItems] = React.useState<string[]>(
+    (options && options.length ? options : ["", ""]).slice()
+  );
+
+  // Sinkron bila options dari luar berubah
+  useEffect(() => {
+    setItems((options && options.length ? options : ["", ""]).slice());
+  }, [JSON.stringify(options)]);
+
+  // Notifikasi keluar setiap kali items berubah (dibersihkan)
+  useEffect(() => {
+    const cleaned = items.map((s) => s.trim()).filter(Boolean);
+    onChange(cleaned);
+  }, [items, onChange]);
+
+  const addItem = () => setItems((arr) => [...arr, ""]);
+  const removeItem = (idx: number) =>
+    setItems((arr) => arr.filter((_, i) => i !== idx));
+  const updateItem = (idx: number, val: string) =>
+    setItems((arr) => {
+      const next = [...arr];
+      next[idx] = val;
+      return next;
+    });
+
+  return (
+    <div className="mb-2 rounded-lg border border-slate-300 bg-white p-2">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-xs font-medium text-slate-600">
+          Pilihan Checkbox
+        </div>
+        <button
+          type="button"
+          onClick={addItem}
+          className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+          title="Tambah pilihan"
+        >
+          <Plus className="h-3.5 w-3.5" /> Tambah
+        </button>
+      </div>
+
+      {items.length === 0 && (
+        <div className="text-xs text-slate-500 px-1">Belum ada pilihan.</div>
+      )}
+
+      <div className="space-y-2">
+        {items.map((it, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <input
+              value={it}
+              onChange={(e) => updateItem(idx, e.target.value)}
+              placeholder={`Pilihan #${idx + 1}`}
+              className="flex-1 rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+            />
+            <button
+              type="button"
+              onClick={() => removeItem(idx)}
+              className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+              title="Hapus pilihan ini"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /* =============== SERIALIZER utk SECTION AKTIF SAJA =============== */
 type TidyChecklistRow = {
@@ -1932,13 +2008,12 @@ function ChecklistRow({
         </div>
         <div className="border border-slate-300 rounded-lg p-2 bg-slate-50">
           {editable && (isOptions(row) || isCompound(row)) && (
-            <input
-              defaultValue={(row.options || []).join(", ")}
-              onBlur={(e) => onEditOptions(e.target.value)}
-              className={`${INPUT_BASE} mb-2`}
-              placeholder="Opsi dipisah koma (mis: Cocok, Tidak Cocok)"
+            <OptionsEditor
+              options={row.options || []}
+              onChange={(opts) => onEditOptions(opts.join(", "))}
             />
           )}
+
           {editable && isNumber(row) && (
             <input
               defaultValue={row.suffix || ""}
