@@ -1925,13 +1925,11 @@ function ChecklistRow({
           row.label
         )}
       </div>
-
       {/* Hasil Kontrol */}
       <div className="sm:col-span-3 py-3 px-2 pl-3">
         <div className="sm:hidden text-xs text-slate-500 mb-1">
           Hasil Kontrol
         </div>
-
         <div className="border border-slate-300 rounded-lg p-2 bg-slate-50">
           {editable && (isOptions(row) || isCompound(row)) && (
             <input
@@ -1991,176 +1989,271 @@ function ChecklistRow({
             />
           )}
 
-          {/* Compound */}
-          {isCompound(row) && (
+          {/* === Repeatable (+) generic list === */}
+          {isListCompound ? (
             <div className="space-y-2">
-              <MultiCheckGroup
-                options={row.options}
-                valueJoined={compVal?.value ?? null}
-                onChangeJoined={(joined) =>
-                  onChange({
-                    kind: "compound",
-                    value: joined,
-                    note,
-                    extras: compExtras,
-                  } as RVCompound)
-                }
-              />
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-medium text-slate-600">
+                  {row.listLabels?.text ||
+                  row.listLabels?.currency ||
+                  row.listLabels?.number
+                    ? "Item"
+                    : "Daftar Item"}
+                </div>
+                <button
+                  onClick={() => {
+                    const next = [
+                      ...listItems,
+                      {
+                        ...(hasTextExtra ? { text: "" } : {}),
+                        ...(hasCurrencyExtra ? { currency: "" } : {}),
+                        ...(hasNumberExtra ? { number: "" } : {}),
+                      },
+                    ];
+                    setListItems(next);
+                    syncListItems(next);
+                  }}
+                  className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                  title="Tambah item"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Tambah Item
+                </button>
+              </div>
 
-              {/* === Faktur dibatalkan (tetap di kolom Hasil Kontrol) === */}
-              {isFakturDibatalkan ? (
-                <div className="space-y-2">
-                  {/* Jumlah Faktur */}
-                  {hasNumberExtra && (
+              {listItems.length === 0 && (
+                <div className="text-xs text-slate-500 px-1">
+                  Belum ada item. Klik{" "}
+                  <span className="font-medium">Tambah Item</span>.
+                  {/* catatan: pastikan kolom (Text/Currency/Number) dicentang saat membuat baris */}
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {listItems.map((it, idx) => (
+                  <div
+                    key={idx}
+                    className="grid grid-cols-1 md:grid-cols-6 gap-2"
+                  >
+                    {/* Text */}
+                    {hasTextExtra && (
+                      <input
+                        value={it.text || ""}
+                        onChange={(e) => {
+                          const next = [...listItems];
+                          next[idx] = { ...next[idx], text: e.target.value };
+                          setListItems(next);
+                          syncListItems(next);
+                        }}
+                        className={INPUT_BASE + " md:col-span-2"}
+                        placeholder={
+                          row.listLabels?.text || textPlaceholder || "Teks"
+                        }
+                      />
+                    )}
+
+                    {/* Currency */}
+                    {hasCurrencyExtra && (
+                      <div className={"md:col-span-2"}>
+                        <CurrencyField
+                          valueDigits={it.currency || ""}
+                          onChangeDigits={(digits) => {
+                            const next = [...listItems];
+                            next[idx] = { ...next[idx], currency: digits };
+                            setListItems(next);
+                            syncListItems(next);
+                          }}
+                          placeholder={
+                            row.listLabels?.currency ||
+                            currencyPlaceholder ||
+                            "contoh: 4.235.523"
+                          }
+                        />
+                      </div>
+                    )}
+
+                    {/* Number */}
+                    {hasNumberExtra && (
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={it.number || ""}
+                        onChange={(e) => {
+                          const next = [...listItems];
+                          next[idx] = { ...next[idx], number: e.target.value };
+                          setListItems(next);
+                          syncListItems(next);
+                        }}
+                        className={INPUT_BASE + " md:col-span-1"}
+                        placeholder={
+                          row.listLabels?.number ||
+                          numberPlaceholder ||
+                          "Jumlah"
+                        }
+                      />
+                    )}
+
+                    {/* Hapus item */}
+                    <div className="md:col-span-1 flex">
+                      <button
+                        onClick={() => {
+                          const next = listItems.filter((_, i) => i !== idx);
+                          setListItems(next);
+                          syncListItems(next);
+                        }}
+                        className="w-full md:w-auto h-9 px-3 inline-flex items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+                        title="Hapus item"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : isFakturDibatalkan ? (
+            // === cabang faktur-dibatalkan (yang lama) ===
+            <div className="space-y-2">
+              {hasNumberExtra && (
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  placeholder={numberPlaceholder || "Jumlah Faktur"}
+                  value={compExtras?.number ?? ""}
+                  onChange={(e) =>
+                    onChange({
+                      kind: "compound",
+                      value: compVal?.value ?? null,
+                      note,
+                      extras: {
+                        text: compExtras?.text,
+                        currency: compExtras?.currency,
+                        number: e.target.value,
+                      },
+                    } as RVCompound)
+                  }
+                  className={INPUT_BASE}
+                />
+              )}
+
+              <button
+                onClick={() => setInvoiceNumbers((arr) => [...arr, ""])}
+                className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                title="Tambah nomor faktur dibatalkan"
+              >
+                <Plus className="h-3.5 w-3.5" /> Tambah Nomor Faktur
+              </button>
+
+              {invoiceNumbers.length === 0 && (
+                <div className="text-xs text-slate-500 px-1">
+                  Klik <span className="font-medium">Tambah Nomor Faktur</span>{" "}
+                  untuk memasukkan nomor faktur yang dibatalkan.
+                </div>
+              )}
+
+              <div className="space-y-2">
+                {invoiceNumbers.map((val, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
                     <input
-                      type="number"
-                      inputMode="numeric"
-                      placeholder={numberPlaceholder || "Jumlah Faktur"}
-                      value={compExtras?.number ?? ""}
-                      onChange={(e) =>
+                      value={val}
+                      onChange={(e) => {
+                        const next = [...invoiceNumbers];
+                        next[idx] = e.target.value;
+                        setInvoiceNumbers(next);
+                        syncInvoiceNumbers(next);
+                      }}
+                      className={INPUT_BASE}
+                      placeholder={`Nomor Faktur #${idx + 1}`}
+                    />
+                    <button
+                      onClick={() => {
+                        const next = invoiceNumbers.filter((_, i) => i !== idx);
+                        setInvoiceNumbers(next);
+                        syncInvoiceNumbers(next);
+                      }}
+                      className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
+                      title="Hapus nomor ini"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : isCoretNota ? (
+            <></>
+          ) : (
+            // === Default extras (text / currency / number) ===
+            (hasTextExtra || hasCurrencyExtra || hasNumberExtra) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {hasTextExtra && (
+                  <input
+                    placeholder={textPlaceholder}
+                    value={compExtras?.text ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        kind: "compound",
+                        value: compVal?.value ?? null,
+                        note,
+                        extras: {
+                          text: e.target.value,
+                          currency: compExtras?.currency,
+                          number: compExtras?.number,
+                        },
+                      } as RVCompound)
+                    }
+                    className={INPUT_BASE}
+                  />
+                )}
+
+                {hasCurrencyExtra && (
+                  <div className="md:col-span-2">
+                    <CurrencyField
+                      valueDigits={compExtras?.currency}
+                      onChangeDigits={(digits) =>
                         onChange({
                           kind: "compound",
                           value: compVal?.value ?? null,
                           note,
                           extras: {
                             text: compExtras?.text,
-                            currency: compExtras?.currency,
-                            number: e.target.value,
+                            currency: digits,
+                            number: compExtras?.number,
                           },
                         } as RVCompound)
                       }
-                      className={INPUT_BASE}
+                      placeholder={currencyPlaceholder || "contoh: 4.235.523"}
                     />
-                  )}
-
-                  {/* Tombol tambah nomor faktur */}
-                  <button
-                    onClick={() => setInvoiceNumbers((arr) => [...arr, ""])}
-                    className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
-                    title="Tambah nomor faktur dibatalkan"
-                  >
-                    <Plus className="h-3.5 w-3.5" /> Tambah Nomor Faktur
-                  </button>
-
-                  {invoiceNumbers.length === 0 && (
-                    <div className="text-xs text-slate-500 px-1">
-                      Klik{" "}
-                      <span className="font-medium">Tambah Nomor Faktur</span>{" "}
-                      untuk memasukkan nomor faktur yang dibatalkan.
-                    </div>
-                  )}
-
-                  {/* List input nomor faktur */}
-                  <div className="space-y-2">
-                    {invoiceNumbers.map((val, idx) => (
-                      <div key={idx} className="flex items-center gap-2">
-                        <input
-                          value={val}
-                          onChange={(e) => {
-                            const next = [...invoiceNumbers];
-                            next[idx] = e.target.value;
-                            setInvoiceNumbers(next);
-                            syncInvoiceNumbers(next);
-                          }}
-                          className={INPUT_BASE}
-                          placeholder={`Nomor Faktur #${idx + 1}`}
-                        />
-                        <button
-                          onClick={() => {
-                            const next = invoiceNumbers.filter(
-                              (_, i) => i !== idx
-                            );
-                            setInvoiceNumbers(next);
-                            syncInvoiceNumbers(next);
-                          }}
-                          className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50"
-                          title="Hapus nomor ini"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    ))}
                   </div>
-                </div>
-              ) : isCoretNota ? (
-                // === Coret nota: daftar item DIPINDAH ke kolom Keterangan (di sini tidak ada apa-apa lagi selain checkbox di atas)
-                <></>
-              ) : (
-                // === Default extras (text / currency / number)
-                (hasTextExtra || hasCurrencyExtra || hasNumberExtra) && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {hasTextExtra && (
-                      <input
-                        placeholder={textPlaceholder}
-                        value={compExtras?.text ?? ""}
-                        onChange={(e) =>
-                          onChange({
-                            kind: "compound",
-                            value: compVal?.value ?? null,
-                            note,
-                            extras: {
-                              text: e.target.value,
-                              currency: compExtras?.currency,
-                              number: compExtras?.number,
-                            },
-                          } as RVCompound)
-                        }
-                        className={INPUT_BASE}
-                      />
-                    )}
+                )}
 
-                    {hasCurrencyExtra && (
-                      <div className="md:col-span-2">
-                        <CurrencyField
-                          valueDigits={compExtras?.currency}
-                          onChangeDigits={(digits) =>
-                            onChange({
-                              kind: "compound",
-                              value: compVal?.value ?? null,
-                              note,
-                              extras: {
-                                text: compExtras?.text,
-                                currency: digits,
-                                number: compExtras?.number,
-                              },
-                            } as RVCompound)
-                          }
-                          placeholder={
-                            currencyPlaceholder || "contoh: 4.235.523"
-                          }
-                        />
-                      </div>
-                    )}
-
-                    {hasNumberExtra && (
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        placeholder={numberPlaceholder || "Jumlah"}
-                        value={compExtras?.number ?? ""}
-                        onChange={(e) =>
-                          onChange({
-                            kind: "compound",
-                            value: compVal?.value ?? null,
-                            note,
-                            extras: {
-                              text: compExtras?.text,
-                              currency: compExtras?.currency,
-                              number: e.target.value,
-                            },
-                          } as RVCompound)
-                        }
-                        className={INPUT_BASE}
-                      />
-                    )}
-                  </div>
-                )
-              )}
-            </div>
+                {hasNumberExtra && (
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    placeholder={numberPlaceholder || "Jumlah"}
+                    value={compExtras?.number ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        kind: "compound",
+                        value: compVal?.value ?? null,
+                        note,
+                        extras: {
+                          text: compExtras?.text,
+                          currency: compExtras?.currency,
+                          number: e.target.value,
+                        },
+                      } as RVCompound)
+                    }
+                    className={INPUT_BASE}
+                  />
+                )}
+              </div>
+            )
           )}
-        </div>
-      </div>
-
+        </div>{" "}
+        {/* end: .border border-slate-300 ... */}
+      </div>{" "}
+      {/* end: .sm:col-span-3 (Hasil Kontrol) */}
       {/* Keterangan */}
       <div className="sm:col-span-5 py-3 px-2">
         <div className="sm:hidden text-xs text-slate-500 mb-1">Keterangan</div>
