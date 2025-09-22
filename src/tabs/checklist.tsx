@@ -35,7 +35,7 @@ type ChecklistOverrides = {
   extraSections?: Record<`x_${string}`, ExtraSectionMeta>;
 };
 
-const OV_KEY = "sitrep-checklist-copy-v2";
+const OV_KEY = "sitrep-checklist-copy-v3";
 const ROLES: Role[] = ["admin", "sales", "gudang"];
 
 /* ===== Helpers untuk override (WAJIB ADA) ===== */
