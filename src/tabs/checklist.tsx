@@ -20,6 +20,9 @@ type RowOverride = AddedRowMeta & {
   label?: string;
   options?: string[];
   suffix?: string;
+  // NEW: aktifkan mode daftar (+) generik untuk compound
+  list?: boolean;
+  listLabels?: { text?: string; currency?: string; number?: string };
 };
 
 // >>> dukung section custom (key diawali x_)
@@ -144,7 +147,11 @@ type RowDefCompound = RowBase & {
   kind: "compound";
   options: string[];
   extra?: { type: "text" | "currency" | "number"; placeholder?: string }[];
+  // NEW: jika true, kolom extra menjadi repeatable (+)
+  list?: boolean;
+  listLabels?: { text?: string; currency?: string; number?: string };
 };
+
 type RowDef = RowDefOptions | RowDefNumber | RowDefScore | RowDefCompound;
 
 function isOptions(r: RowDef): r is RowDefOptions {
@@ -252,6 +259,37 @@ function rowDefLabel(def: RowDef): string {
 type SectionState = Record<string, RowValue>;
 type ExtendedChecklistState = ChecklistState &
   Record<AnySectionKey, SectionState>;
+
+function parseListFromExtrasText(
+  raw?: string | null
+): Array<{ text?: string; currency?: string; number?: string }> {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) {
+      return arr.map((x) => ({
+        text: x?.text ? String(x.text) : "",
+        currency: x?.currency ? String(x.currency) : "",
+        number: x?.number ? String(x.number) : "",
+      }));
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+function stringifyListToExtrasText(
+  items: Array<{ text?: string; currency?: string; number?: string }>
+) {
+  return JSON.stringify(
+    items.map((x) => ({
+      text: (x.text || "").trim(),
+      currency: (x.currency || "").trim(),
+      number: (x.number || "").trim(),
+    }))
+  );
+}
 
 function toTidyRowsForSection(
   data: ExtendedChecklistState,
@@ -1016,15 +1054,19 @@ export default function ChecklistArea({
               rn.options = p.options;
             }
             if (isCompound(rn) && p.extras) {
-              const extrasArr: {
-                type: "text" | "currency" | "number";
-                placeholder?: string;
-              }[] = [];
-              if (p.extras.text) extrasArr.push({ type: "text" });
-              if (p.extras.currency) extrasArr.push({ type: "currency" });
-              if (p.extras.number) extrasArr.push({ type: "number" });
+              const extrasArr = [];
+              if (p.extras.text) extrasArr.push({ type: "text" as const });
+              if (p.extras.currency)
+                extrasArr.push({ type: "currency" as const });
+              if (p.extras.number) extrasArr.push({ type: "number" as const });
               rn.extra = extrasArr;
             }
+            // NEW: support daftar (+)
+            if (isCompound(rn)) {
+              if (p.list !== undefined) rn.list = p.list;
+              if (p.listLabels) rn.listLabels = { ...p.listLabels };
+            }
+
             return rn;
           });
 
@@ -1063,7 +1105,11 @@ export default function ChecklistArea({
                         ? [{ type: "number" as const }]
                         : []),
                     ],
+                    // NEW:
+                    list: Boolean(p.list),
+                    listLabels: p.listLabels ? { ...p.listLabels } : undefined,
                   };
+
             patched.push(def);
           }
         });
@@ -1239,6 +1285,9 @@ export default function ChecklistArea({
       optionsCsv?: string;
       suffix?: string;
       extras?: AddedRowMeta["extras"];
+      // NEW:
+      list?: boolean;
+      listLabels?: { text?: string; currency?: string; number?: string };
     }
   ) => {
     if (!isSuper) return;
@@ -1256,7 +1305,11 @@ export default function ChecklistArea({
       options: options.length ? options : undefined,
       suffix: payload.suffix,
       extras: payload.extras,
+      // NEW:
+      list: payload.list,
+      listLabels: payload.listLabels,
     };
+
     const next = mergeRowOverride(cur, sec, key, patch);
     writeRoleOverrides(viewRole, next);
     void saveOverridesToServer(viewRole, next, role).catch(console.error);
@@ -1815,6 +1868,35 @@ function ChecklistRow({
   const numStr = value?.kind === "number" ? String(value.value ?? "") : "";
   const scoreVal = value?.kind === "score" ? value.value : 3;
 
+  const isListCompound = isCompound(row) && row.list === true;
+
+  const [listItems, setListItems] = useState<
+    Array<{ text?: string; currency?: string; number?: string }>
+  >([]);
+
+  useEffect(() => {
+    if (!isListCompound) return;
+    const parsed = parseListFromExtrasText(compExtras?.text);
+    setListItems(parsed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isListCompound, compExtras?.text]);
+
+  const syncListItems = (
+    items: Array<{ text?: string; currency?: string; number?: string }>
+  ) => {
+    const json = stringifyListToExtrasText(items);
+    onChange({
+      kind: "compound",
+      value: compVal?.value ?? null,
+      note,
+      extras: {
+        text: json, // daftar disimpan sebagai JSON di text
+        currency: undefined, // kolom single tidak dipakai di mode list
+        number: undefined,
+      },
+    } as RVCompound);
+  };
+
   const INPUT_BASE =
     "w-full rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 text-center " +
     "placeholder:text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500";
@@ -2203,9 +2285,17 @@ function InlineAddRow({
     optionsCsv?: string;
     suffix?: string;
     extras?: AddedRowMeta["extras"];
+    // NEW
+    list?: boolean;
+    listLabels?: { text?: string; currency?: string; number?: string };
   }) => void;
   onCancel: () => void;
 }) {
+  const [repeatable, setRepeatable] = useState(false);
+  const [lblText, setLblText] = useState("");
+  const [lblCurr, setLblCurr] = useState("");
+  const [lblNum, setLblNum] = useState("");
+
   const [key, setKey] = useState("");
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState<AddedRowMeta["kind"]>("options");
@@ -2223,6 +2313,13 @@ function InlineAddRow({
       optionsCsv,
       suffix,
       extras: { text: exText, currency: exCurr, number: exNum },
+      // NEW:
+      list: repeatable,
+      listLabels: {
+        text: lblText || undefined,
+        currency: lblCurr || undefined,
+        number: lblNum || undefined,
+      },
     });
     setKey("");
     setLabel("");
@@ -2232,6 +2329,11 @@ function InlineAddRow({
     setExText(false);
     setExCurr(false);
     setExNum(false);
+    // reset NEW fields
+    setRepeatable(false);
+    setLblText("");
+    setLblCurr("");
+    setLblNum("");
   };
 
   return (
@@ -2282,7 +2384,7 @@ function InlineAddRow({
         )}
 
         {kind === "compound" && (
-          <div className="md:col-span-5 flex items-center flex-wrap gap-4">
+          <div className="md:col-span-5 grid grid-cols-1 md:grid-cols-5 gap-2 items-center">
             <label className="flex items-center gap-2 text-xs">
               <input
                 type="checkbox"
@@ -2310,6 +2412,43 @@ function InlineAddRow({
               />
               Number
             </label>
+
+            {/* NEW: Repeatable (+) */}
+            <label className="flex items-center gap-2 text-xs md:col-span-2">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-blue-600"
+                checked={repeatable}
+                onChange={(e) => setRepeatable(e.target.checked)}
+              />
+              Repeatable (+)
+            </label>
+
+            {/* NEW: label kolom opsional kalau repeatable */}
+            {repeatable && exText && (
+              <input
+                value={lblText}
+                onChange={(e) => setLblText(e.target.value)}
+                className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                placeholder="Label Text (opsional)"
+              />
+            )}
+            {repeatable && exCurr && (
+              <input
+                value={lblCurr}
+                onChange={(e) => setLblCurr(e.target.value)}
+                className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                placeholder="Label Currency (opsional)"
+              />
+            )}
+            {repeatable && exNum && (
+              <input
+                value={lblNum}
+                onChange={(e) => setLblNum(e.target.value)}
+                className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                placeholder="Label Number (opsional)"
+              />
+            )}
           </div>
         )}
       </div>
@@ -2394,8 +2533,16 @@ function AddRowPanel({
     optionsCsv?: string;
     suffix?: string;
     extras?: AddedRowMeta["extras"];
+    // NEW
+    list?: boolean;
+    listLabels?: { text?: string; currency?: string; number?: string };
   }) => void;
 }) {
+  const [repeatable, setRepeatable] = useState(false);
+  const [lblText, setLblText] = useState("");
+  const [lblCurr, setLblCurr] = useState("");
+  const [lblNum, setLblNum] = useState("");
+
   const [key, setKey] = useState("");
   const [label, setLabel] = useState("");
   const [kind, setKind] = useState<AddedRowMeta["kind"]>("options");
@@ -2413,6 +2560,13 @@ function AddRowPanel({
       optionsCsv,
       suffix,
       extras: { text: exText, currency: exCurr, number: exNum },
+      // NEW:
+      list: repeatable,
+      listLabels: {
+        text: lblText || undefined,
+        currency: lblCurr || undefined,
+        number: lblNum || undefined,
+      },
     });
     setKey("");
     setLabel("");
@@ -2422,6 +2576,11 @@ function AddRowPanel({
     setExText(false);
     setExCurr(false);
     setExNum(false);
+    // reset NEW fields
+    setRepeatable(false);
+    setLblText("");
+    setLblCurr("");
+    setLblNum("");
   };
 
   return (
@@ -2477,34 +2636,77 @@ function AddRowPanel({
         )}
 
         {kind === "compound" && (
-          <div className="flex items-center gap-4">
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-blue-600"
-                checked={exText}
-                onChange={(e) => setExText(e.target.checked)}
-              />
-              Text
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-blue-600"
-                checked={exCurr}
-                onChange={(e) => setExCurr(e.target.checked)}
-              />
-              Currency
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-blue-600"
-                checked={exNum}
-                onChange={(e) => setExNum(e.target.checked)}
-              />
-              Number
-            </label>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-blue-600"
+                  checked={exText}
+                  onChange={(e) => setExText(e.target.checked)}
+                />
+                Text
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-blue-600"
+                  checked={exCurr}
+                  onChange={(e) => setExCurr(e.target.checked)}
+                />
+                Currency
+              </label>
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-blue-600"
+                  checked={exNum}
+                  onChange={(e) => setExNum(e.target.checked)}
+                />
+                Number
+              </label>
+
+              {/* NEW: Repeatable (+) */}
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 accent-blue-600"
+                  checked={repeatable}
+                  onChange={(e) => setRepeatable(e.target.checked)}
+                />
+                Repeatable (+)
+              </label>
+            </div>
+
+            {/* NEW: label kolom opsional kalau repeatable */}
+            {repeatable && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                {exText && (
+                  <input
+                    value={lblText}
+                    onChange={(e) => setLblText(e.target.value)}
+                    className="rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                    placeholder="Label Text (opsional)"
+                  />
+                )}
+                {exCurr && (
+                  <input
+                    value={lblCurr}
+                    onChange={(e) => setLblCurr(e.target.value)}
+                    className="rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                    placeholder="Label Currency (opsional)"
+                  />
+                )}
+                {exNum && (
+                  <input
+                    value={lblNum}
+                    onChange={(e) => setLblNum(e.target.value)}
+                    className="rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                    placeholder="Label Number (opsional)"
+                  />
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
