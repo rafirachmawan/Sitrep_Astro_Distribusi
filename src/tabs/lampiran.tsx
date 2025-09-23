@@ -1385,7 +1385,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     const appendBlock = (el: HTMLElement) => {
       page.appendChild(el);
 
-      // JANGAN biarkan judul menggantung
+      // Anti “orphans”: kalau judul minta ikut next block, jangan biarkan sendirian.
       const MIN_KEEP_WITH_NEXT = 220; // px
       const remaining = PAGE_MAX_PX - page.scrollHeight;
       if (
@@ -1397,8 +1397,22 @@ export default function Lampiran({ data }: { data: AppState }) {
         page.appendChild(el);
       }
 
+      // --- cek overflow setelah append ---
       if (page.scrollHeight > PAGE_MAX_PX) {
-        // Jika section berisi tabel: pakai logika split
+        // 🔗 NEW: kalau sebelumnya ada elemen 'keep-next', bawa keduanya ke halaman baru
+        const prev = el.previousElementSibling as HTMLElement | null;
+        if (prev && prev.classList.contains("keep-next")) {
+          page.removeChild(el);
+          page.removeChild(prev);
+          page = makePage();
+          page.appendChild(prev);
+          page.appendChild(el);
+        }
+
+        // Setelah dipindah berdua, kalau sudah muat, selesai.
+        if (page.scrollHeight <= PAGE_MAX_PX) return;
+
+        // Kalau masih overflow → logika lama (tabel di-split / pindah utuh / pecah child)
         if (el.querySelector("table")) {
           page.removeChild(el);
 
@@ -1415,51 +1429,48 @@ export default function Lampiran({ data }: { data: AppState }) {
             return;
           }
 
-          // Kalau tidak muat utuh, split per baris
+          // Tidak muat → split per baris
           splitTableSection(el);
           return;
         }
 
-        // Bukan tabel → pindahkan ke halaman berikutnya
+        // Bukan tabel → pindah ke halaman berikutnya
         page.removeChild(el);
         page = makePage();
         page.appendChild(el);
 
-        // Kalau tetap overflow (section besar berisi banyak child), pecah child
+        // Kalau masih overflow (container besar), pecah child
         if (page.scrollHeight > PAGE_MAX_PX) {
           page.removeChild(el);
 
-          if (el.querySelector("table")) {
-            splitTableSection(el);
-          } else {
-            const children = Array.from(el.children) as HTMLElement[];
-            if (!children.length) {
-              appendBlock(doc.createElement("div"));
-              return;
-            }
-            const newContainer = doc.createElement("div");
-            newContainer.className = el.className;
-            let i = 0;
-            while (i < children.length) {
-              const part = children[i].cloneNode(true) as HTMLElement;
-              newContainer.appendChild(part);
-              page.appendChild(newContainer);
-              if (page.scrollHeight > PAGE_MAX_PX) {
-                newContainer.removeChild(part);
-                page.removeChild(newContainer);
-                if (newContainer.childElementCount) appendBlock(newContainer);
-                page = makePage();
-                const nc = doc.createElement("div");
-                nc.className = el.className;
-                newContainer.replaceWith(nc);
-                (newContainer as unknown as { ref?: HTMLElement }).ref = nc;
-              } else {
-                page.removeChild(newContainer);
-                i++;
-              }
-            }
-            if (newContainer.childElementCount) appendBlock(newContainer);
+          const children = Array.from(el.children) as HTMLElement[];
+          if (!children.length) {
+            appendBlock(doc.createElement("div"));
+            return;
           }
+          const newContainer = doc.createElement("div");
+          newContainer.className = el.className;
+
+          let i = 0;
+          while (i < children.length) {
+            const part = children[i].cloneNode(true) as HTMLElement;
+            newContainer.appendChild(part);
+            page.appendChild(newContainer);
+            if (page.scrollHeight > PAGE_MAX_PX) {
+              newContainer.removeChild(part);
+              page.removeChild(newContainer);
+              if (newContainer.childElementCount) appendBlock(newContainer);
+              page = makePage();
+              const nc = doc.createElement("div");
+              nc.className = el.className;
+              newContainer.replaceWith(nc);
+              (newContainer as unknown as { ref?: HTMLElement }).ref = nc;
+            } else {
+              page.removeChild(newContainer);
+              i++;
+            }
+          }
+          if (newContainer.childElementCount) appendBlock(newContainer);
         }
       }
     };
