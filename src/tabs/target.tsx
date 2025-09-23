@@ -621,8 +621,10 @@ export default function TargetAchievement({
   const removeFodksItem = (id: string) => {
     setFodksListLocal((list) => {
       const target = list.find((it) => it.id === id);
-      // hanya superadmin atau pembuat item yang boleh
-      if (!(isSuper || target?.createdBy === role)) return list;
+      if (!target) return list;
+      if (!canEditItem(target)) return list; // pakai helper baru
+      // (opsional) konfirmasi
+      // if (!confirm("Hapus item ini?")) return list;
       return list.filter((it) => it.id !== id);
     });
   };
@@ -1013,7 +1015,7 @@ export default function TargetAchievement({
               <tr>
                 <th className="text-left py-2 px-2 w-[40%]">FODKS</th>
                 <th className="text-left py-2 px-2">Keterangan</th>
-                {isSuper && editMode ? (
+                {editMode ? (
                   <th className="text-left py-2 px-2 w-[80px]">Aksi</th>
                 ) : null}
               </tr>
