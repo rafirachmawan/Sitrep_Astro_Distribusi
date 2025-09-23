@@ -538,30 +538,58 @@ function renderChecklist(checklist: ChecklistState) {
 
     for (const key of Object.keys(rows)) {
       const v = rows[key] as RowValue | undefined;
-      if (!v) continue;
+      const rawAny = rows[key] as any;
+      if (rawAny == null) continue;
 
       let value = "";
-      let noteOut = v.note ?? "";
+      let noteOut = "";
 
-      if (v.kind === "options") {
-        value = String(v.value ?? "");
-      } else if (v.kind === "number") {
-        value = [v.value ?? "", v.suffix ?? ""].filter(Boolean).join(" ");
-      } else if (v.kind === "score") {
-        value = String(v.value ?? "");
-      } else if (v.kind === "compound") {
-        value = String(v.value ?? "");
-        const extrasText = formatExtrasText((v.extras as any)?.text);
-        const extrasCurrency =
-          (v.extras as any)?.currency != null
-            ? `Rp ${fmtIDR((v.extras as any).currency)}`
-            : "";
-        const extraNote = [extrasText, extrasCurrency]
-          .filter(Boolean)
-          .join(" | ");
-        noteOut = [noteOut, extraNote]
-          .filter((s) => String(s).trim().length > 0)
-          .join("\n");
+      if (
+        rawAny &&
+        typeof rawAny === "object" &&
+        typeof rawAny.kind === "string"
+      ) {
+        // RowValue standar
+        const v = rawAny as RowValue;
+        noteOut = v.note ?? "";
+        if (v.kind === "options") {
+          value = String(v.value ?? "");
+        } else if (v.kind === "number") {
+          value = [v.value ?? "", v.suffix ?? ""].filter(Boolean).join(" ");
+        } else if (v.kind === "score") {
+          value = String(v.value ?? "");
+        } else if (v.kind === "compound") {
+          value = String(v.value ?? "");
+          const extrasText = formatExtrasText((v.extras as any)?.text);
+          const extrasCurrency =
+            (v.extras as any)?.currency != null
+              ? `Rp ${fmtIDR((v.extras as any).currency)}`
+              : "";
+          const extraNote = [extrasText, extrasCurrency]
+            .filter(Boolean)
+            .join(" | ");
+          noteOut = [noteOut, extraNote]
+            .filter((s) => String(s).trim().length > 0)
+            .join("\n");
+        }
+      } else {
+        // Fallback untuk primitif / array / objek biasa
+        const toStr = (x: any): string => {
+          if (x == null) return "";
+          if (
+            typeof x === "string" ||
+            typeof x === "number" ||
+            typeof x === "boolean"
+          )
+            return String(x);
+          if (Array.isArray(x)) return x.map(toStr).join("\n");
+          try {
+            return JSON.stringify(x);
+          } catch {
+            return String(x);
+          }
+        };
+        value = toStr(rawAny);
       }
 
       // >>> ambil label baris dari overrides (fallback: key yang dirapikan)
@@ -968,6 +996,75 @@ type AppLike = AppState &
       }>;
     };
   }>;
+
+//
+// ====== Generic renderer untuk objek/array yg bukan RowValue ======
+function objToRows(payload: unknown): Array<{ k: string; v: string }> {
+  const rows: Array<{ k: string; v: string }> = [];
+
+  const toStr = (x: any): string => {
+    if (x == null) return "";
+    if (
+      typeof x === "string" ||
+      typeof x === "number" ||
+      typeof x === "boolean"
+    )
+      return String(x);
+    if (Array.isArray(x)) return x.map(toStr).join("\n");
+    try {
+      return JSON.stringify(x, null, 2);
+    } catch {
+      return String(x);
+    }
+  };
+
+  if (Array.isArray(payload)) {
+    payload.forEach((it, i) => rows.push({ k: String(i + 1), v: toStr(it) }));
+  } else if (payload && typeof payload === "object") {
+    Object.entries(payload as Record<string, unknown>).forEach(([k, v]) =>
+      rows.push({ k, v: toStr(v) })
+    );
+  } else {
+    rows.push({ k: "Nilai", v: toStr(payload) });
+  }
+  return rows;
+}
+
+function renderGenericSection(
+  doc: Document,
+  title: string,
+  payload: unknown,
+  appendBlock: (el: HTMLElement) => void
+) {
+  // kosong? skip
+  if (payload == null) return;
+
+  const rows = objToRows(payload);
+  if (rows.length === 0) return;
+
+  const secEl = doc.createElement("div");
+  secEl.className = "section page-break-avoid";
+  secEl.innerHTML = `<div class="subhead">${escapeHtml(title)}</div>`;
+
+  const tbl = doc.createElement("table");
+  tbl.className = "table striped";
+  tbl.innerHTML = `<colgroup><col style="width:30%"><col style="width:70%"></colgroup>
+    <thead><tr><th>Field</th><th>Isi</th></tr></thead>`;
+  const tb = doc.createElement("tbody");
+  rows.forEach((r) =>
+    tb.insertAdjacentHTML(
+      "beforeend",
+      `<tr><td>${escapeHtml(
+        r.k
+      )}</td><td><pre style="margin:0; white-space:pre-wrap">${escapeHtml(
+        r.v
+      )}</pre></td></tr>`
+    )
+  );
+  tbl.appendChild(tb);
+  secEl.appendChild(tbl);
+  appendBlock(secEl);
+}
 
 export default function Lampiran({ data }: { data: AppState }) {
   const { user } = useAuth();
@@ -1585,6 +1682,23 @@ export default function Lampiran({ data }: { data: AppState }) {
         appendBlock(secEl);
       });
     }
+
+    //
+    /* ========= Data Tambahan (di luar checklist) ========= */
+    // Contoh kunci yang sering dipakai di app kamu; tambah/ubah sesuai kebutuhan
+    const extras: Array<[string, unknown]> = [
+      [
+        "Proses Pembelian",
+        (data as any).prosesPembelian ?? (data as any).pembelian,
+      ],
+      ["Proses Penjualan", (data as any).prosesPenjualan],
+      ["Gudang / Stok", (data as any).gudang ?? (data as any).stock],
+      ["Catatan Operasional", (data as any).operasional ?? (data as any).notes],
+    ];
+
+    extras.forEach(([title, payload]) => {
+      renderGenericSection(doc, title, payload, appendBlock);
+    });
 
     /* ========= Evaluasi ========= */
     {
