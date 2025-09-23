@@ -1371,6 +1371,12 @@ export default function Lampiran({ data }: { data: AppState }) {
           }
         }
 
+        // ⛑️ NEW: kalau belum ada satupun baris yang terpasang di section ini,
+        // jangan render section kosong—lanjutkan loop tanpa mengubah "first".
+        if (tb.childElementCount === 0) {
+          continue; // tetap biarkan 'first' = true agar judul utama tidak jadi "(lanjutan)"
+        }
+
         appendBlock(sec);
         first = false;
       }
@@ -1379,11 +1385,24 @@ export default function Lampiran({ data }: { data: AppState }) {
     const appendBlock = (el: HTMLElement) => {
       page.appendChild(el);
 
+      // JANGAN biarkan judul menggantung
+      const MIN_KEEP_WITH_NEXT = 220; // px
+      const remaining = PAGE_MAX_PX - page.scrollHeight;
+      if (
+        el.classList.contains("keep-next") &&
+        remaining < MIN_KEEP_WITH_NEXT
+      ) {
+        page.removeChild(el);
+        page = makePage();
+        page.appendChild(el);
+      }
+
       if (page.scrollHeight > PAGE_MAX_PX) {
+        // Jika section berisi tabel: pakai logika split
         if (el.querySelector("table")) {
           page.removeChild(el);
 
-          // Coba dulu: kalau seluruh section muat di halaman baru, pindahkan saja (tanpa split)
+          // Coba: apakah muat utuh di halaman baru?
           const test = makePage();
           test.appendChild(el);
           const fits = test.scrollHeight <= PAGE_MAX_PX;
@@ -1396,14 +1415,17 @@ export default function Lampiran({ data }: { data: AppState }) {
             return;
           }
 
-          // Baru split kalau memang lebih dari satu halaman
+          // Kalau tidak muat utuh, split per baris
           splitTableSection(el);
           return;
         }
+
+        // Bukan tabel → pindahkan ke halaman berikutnya
         page.removeChild(el);
         page = makePage();
         page.appendChild(el);
 
+        // Kalau tetap overflow (section besar berisi banyak child), pecah child
         if (page.scrollHeight > PAGE_MAX_PX) {
           page.removeChild(el);
 
@@ -1456,17 +1478,14 @@ export default function Lampiran({ data }: { data: AppState }) {
 
     header.innerHTML = `
   <div class="hdr-row">
-  <img class="logoImg" src="${logoSrc}" alt="Logo" />
-  <div class="title-group">
-    <div class="title-main">LEADER MONITORING DAILY</div>
-    <div class="title-second">SITREP — Situation Report Harian</div>
+    <img class="logoImg" src="${logoSrc}" alt="Logo" />
+    <div class="title-group">
+      <div class="title-main">LEADER MONITORING DAILY</div>
+      <div class="title-second">SITREP — Situation Report Harian</div>
+    </div>
   </div>
-</div>
-<div class="date-text">Tanggal: ${todayISO()}</div>
-
-
-
-  </div>`;
+  <div class="date-text">Tanggal: ${todayISO()}</div>
+`;
 
     appendBlock(header);
 
@@ -1507,7 +1526,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     /* ========= Rangkuman Checklist ========= */
     {
       const head = doc.createElement("div");
-      head.className = "section";
+      head.className = "section keep-next"; // ⬅️ tambah keep-next
       head.innerHTML = `<div class="title">Rangkuman Checklist</div>`;
       appendBlock(head);
 
@@ -1552,7 +1571,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         kosong: "Evaluasi Tim",
       };
       const head = doc.createElement("div");
-      head.className = "section";
+      head.className = "section keep-next";
       head.innerHTML = `<div class="title">${titleMap[theme]}</div>`;
       appendBlock(head);
 
@@ -1702,7 +1721,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     /* ========= Target & Achievement (UI-aware) ========= */
     {
       const head = doc.createElement("div");
-      head.className = "section";
+      head.className = "section keep-next";
       head.innerHTML = `<div class="title">Target & Achievement</div>`;
       appendBlock(head);
 
@@ -1962,7 +1981,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     /* ========= Project Tracking ========= */
     {
       const head = doc.createElement("div");
-      head.className = "section";
+      head.className = "section keep-next";
       head.innerHTML = `<div class="title">Project Tracking (SPARTA)</div>`;
       appendBlock(head);
 
@@ -2078,7 +2097,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     /* ========= Agenda ========= */
     {
       const head = doc.createElement("div");
-      head.className = "section";
+      head.className = "section keep-next";
       head.innerHTML = `<div class="title">Agenda & Jadwal</div>`;
       appendBlock(head);
 
