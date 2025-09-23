@@ -492,6 +492,8 @@ export default function ChecklistArea({
   const [targetRole, setTargetRole] = useState<Role>("admin");
   const viewRole = (isSuper ? targetRole : (role as Role)) || "admin";
   const [editMode, setEditMode] = useState(false);
+  const [simpleMode, setSimpleMode] = useState(true);
+
   const [rev, setRev] = useState(0);
 
   // UI states
@@ -1490,45 +1492,65 @@ export default function ChecklistArea({
           <h2 className="text-slate-800 font-semibold">Checklist Area</h2>
         </div>
 
+        {/* kanan: toolbar superadmin */}
         {isSuper && (
           <div className="flex items-center gap-2 flex-wrap justify-end">
-            <label className="text-sm text-slate-600">Role:</label>
-            <select
-              className="rounded-xl border-2 border-slate-300 text-sm bg-white px-2 py-1 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-              value={targetRole}
-              onChange={(e) => setTargetRole(e.target.value as Role)}
-            >
-              {ROLES.map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-            <label className="flex items-center gap-1 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-slate-600">Role target:</span>
+              <select
+                className="rounded-xl border-2 border-slate-300 text-sm bg-white px-2 py-1 text-center focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+                value={targetRole}
+                onChange={(e) => setTargetRole(e.target.value as Role)}
+              >
+                {ROLES.map((r) => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <label className="flex items-center gap-2 text-sm">
               <input
                 type="checkbox"
                 className="h-4 w-4 accent-blue-600"
                 checked={editMode}
                 onChange={(e) => setEditMode(e.target.checked)}
               />
-              Mode Edit
+              <span className="font-medium">Mode Editor</span>
             </label>
+
             {editMode && (
-              <button
-                onClick={() => setShowAddSection(true)}
-                className="text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
-                title="Tambah Section (tab) baru"
-              >
-                + Section
-              </button>
+              <>
+                {/* Toggle Mode Sederhana (dipakai PATCH 7) */}
+                <label className="text-xs flex items-center gap-2 border rounded-md px-2 py-1">
+                  <input
+                    type="checkbox"
+                    checked={simpleMode}
+                    onChange={(e) => setSimpleMode(e.target.checked)}
+                    className="h-4 w-4 accent-blue-600"
+                  />
+                  Mode Sederhana
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowAddSection(true)}
+                    className="text-xs px-2 py-1 rounded-md border border-blue-200 text-blue-700 hover:bg-blue-50"
+                    title="Tambah Section (tab) baru"
+                  >
+                    + Section
+                  </button>
+                  <button
+                    onClick={resetOverrides}
+                    className="text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
+                    title="Reset semua pengaturan role ini"
+                  >
+                    Reset Pengaturan
+                  </button>
+                </div>
+              </>
             )}
-            <button
-              onClick={resetOverrides}
-              className="text-xs px-2 py-1 rounded-md border border-rose-200 text-rose-600 hover:bg-rose-50"
-              title="Reset semua override role ini"
-            >
-              Reset
-            </button>
           </div>
         )}
       </div>
@@ -1648,9 +1670,24 @@ export default function ChecklistArea({
 
         {/* Header 4/3/5 */}
         <div className="hidden sm:grid grid-cols-12 text-[13px] font-medium text-slate-600 border-y bg-slate-50">
-          <div className="col-span-4 py-2.5 px-2">Tanggung Jawab</div>
-          <div className="col-span-3 py-2.5 px-2 pl-3">Hasil Kontrol</div>
-          <div className="col-span-5 py-2.5 px-2">Keterangan</div>
+          <div className="col-span-4 py-2.5 px-2">
+            Tanggung Jawab
+            <div className="text-[11px] font-normal text-slate-500">
+              Nama pertanyaan
+            </div>
+          </div>
+          <div className="col-span-3 py-2.5 px-2 pl-3">
+            Hasil Kontrol
+            <div className="text-[11px] font-normal text-slate-500">
+              Centang/angka/score
+            </div>
+          </div>
+          <div className="col-span-5 py-2.5 px-2">
+            Keterangan
+            <div className="text-[11px] font-normal text-slate-500">
+              Catatan tambahan (opsional)
+            </div>
+          </div>
         </div>
 
         {!section || section.rows.length === 0 ? (
@@ -1691,13 +1728,13 @@ export default function ChecklistArea({
         )}
 
         {/* Bottom actions: 1 tombol Submit */}
-        <div className="mt-4 flex items-center justify-end">
+        <div className="sticky bottom-3 flex justify-end px-3 sm:px-6 mt-4">
           <button
             onClick={submitCurrentSectionAndNext}
-            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
-            title="Kirim section aktif ke Spreadsheet, lalu lanjut ke section berikutnya dan scroll ke kontennya"
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 shadow"
+            title="Kirim section aktif, lanjut ke berikutnya"
           >
-            Submit
+            Submit Section →
           </button>
         </div>
       </div>
@@ -2518,10 +2555,19 @@ function InlineAddRow({
         />
         <input
           value={label}
-          onChange={(e) => setLabel(e.target.value)}
-          className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-          placeholder="Label tampilan"
-        />
+          onChange={(e) => {
+            const v = e.target.value;
+            setLabel(v);
+            if (!key) {
+              const slug = v
+                .toLowerCase()
+                .trim()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/(^-|-$)/g, "");
+              setKey(slug);
+            }
+          }}
+        ></input>
         <select
           value={kind}
           onChange={(e) => setKind(e.target.value as AddedRowMeta["kind"])}
@@ -2658,9 +2704,15 @@ function AddSectionInline({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         <input
           value={key}
-          onChange={(e) => setKey(e.target.value)}
-          className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-          placeholder="Key (contoh: x_kas-cabang)"
+          onChange={(e) => {
+            const raw = e.target.value;
+            let v = raw
+              .toLowerCase()
+              .trim()
+              .replace(/[^a-z0-9_-]+/g, "-");
+            if (!v.startsWith("x_")) v = "x_" + v.replace(/^x-/, "");
+            setKey(v);
+          }}
         />
         <input
           value={title}
