@@ -1385,38 +1385,55 @@ export default function Lampiran({ data }: { data: AppState }) {
     const appendBlock = (el: HTMLElement) => {
       page.appendChild(el);
 
-      // Anti “orphans”: kalau judul minta ikut next block, jangan biarkan sendirian.
-      const MIN_KEEP_WITH_NEXT = 220; // px
+      const PAGE_FIRST = root.querySelector(".page") === page;
+      const MIN_KEEP_WITH_NEXT = 220;
+
+      const isKeepStrict = el.classList.contains("keep-next");
+      const isKeepSoft = el.classList.contains("keep-next-soft");
+
+      // HANYA untuk keep-next (ketat). Soft tidak dipaksa pindah.
       const remaining = PAGE_MAX_PX - page.scrollHeight;
-      if (
-        el.classList.contains("keep-next") &&
-        remaining < MIN_KEEP_WITH_NEXT
-      ) {
+      if (isKeepStrict && remaining < MIN_KEEP_WITH_NEXT) {
         page.removeChild(el);
         page = makePage();
         page.appendChild(el);
       }
 
-      // --- cek overflow setelah append ---
       if (page.scrollHeight > PAGE_MAX_PX) {
-        // 🔗 NEW: kalau sebelumnya ada elemen 'keep-next', bawa keduanya ke halaman baru
         const prev = el.previousElementSibling as HTMLElement | null;
-        if (prev && prev.classList.contains("keep-next")) {
+        const prevIsKeepStrict = !!prev && prev.classList.contains("keep-next");
+        const prevIsKeepSoft =
+          !!prev && prev.classList.contains("keep-next-soft");
+
+        // ==== SOFT: kalau overflow & sebelumnya soft, JANGAN bawa judulnya,
+        //            tapi split tabelnya sehingga judul tetap di halaman 1.
+        if (prevIsKeepSoft) {
+          if (el.querySelector("table")) {
+            page.removeChild(el);
+            splitTableSection(el); // judul tetap, tabel dipotong per-baris
+            return;
+          }
+          // kalau bukan tabel dan tetap overflow, terakhir-terpaksa pindah utuh
+          page.removeChild(el);
+          page = makePage();
+          page.appendChild(el);
+          return;
+        }
+
+        // ==== STRICT: kalau sebelumnya keep-next ketat → pindahkan berdua
+        if (prevIsKeepStrict) {
           page.removeChild(el);
           page.removeChild(prev);
           page = makePage();
           page.appendChild(prev);
           page.appendChild(el);
+          if (page.scrollHeight <= PAGE_MAX_PX) return;
         }
 
-        // Setelah dipindah berdua, kalau sudah muat, selesai.
-        if (page.scrollHeight <= PAGE_MAX_PX) return;
-
-        // Kalau masih overflow → logika lama (tabel di-split / pindah utuh / pecah child)
+        // ==== Logika lama (fit utuh / split / pecah child)
         if (el.querySelector("table")) {
           page.removeChild(el);
 
-          // Coba: apakah muat utuh di halaman baru?
           const test = makePage();
           test.appendChild(el);
           const fits = test.scrollHeight <= PAGE_MAX_PX;
@@ -1429,17 +1446,14 @@ export default function Lampiran({ data }: { data: AppState }) {
             return;
           }
 
-          // Tidak muat → split per baris
           splitTableSection(el);
           return;
         }
 
-        // Bukan tabel → pindah ke halaman berikutnya
         page.removeChild(el);
         page = makePage();
         page.appendChild(el);
 
-        // Kalau masih overflow (container besar), pecah child
         if (page.scrollHeight > PAGE_MAX_PX) {
           page.removeChild(el);
 
@@ -1537,7 +1551,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     /* ========= Rangkuman Checklist ========= */
     {
       const head = doc.createElement("div");
-      head.className = "section keep-next"; // ⬅️ tambah keep-next
+      head.className = "section keep-next-soft";
       head.innerHTML = `<div class="title">Rangkuman Checklist</div>`;
       appendBlock(head);
 
@@ -1582,7 +1596,7 @@ export default function Lampiran({ data }: { data: AppState }) {
         kosong: "Evaluasi Tim",
       };
       const head = doc.createElement("div");
-      head.className = "section keep-next";
+      head.className = "section keep-next-soft";
       head.innerHTML = `<div class="title">${titleMap[theme]}</div>`;
       appendBlock(head);
 
@@ -1732,7 +1746,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     /* ========= Target & Achievement (UI-aware) ========= */
     {
       const head = doc.createElement("div");
-      head.className = "section keep-next";
+      head.className = "section keep-next-soft";
       head.innerHTML = `<div class="title">Target & Achievement</div>`;
       appendBlock(head);
 
@@ -1992,7 +2006,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     /* ========= Project Tracking ========= */
     {
       const head = doc.createElement("div");
-      head.className = "section keep-next";
+      head.className = "section keep-next-soft";
       head.innerHTML = `<div class="title">Project Tracking (SPARTA)</div>`;
       appendBlock(head);
 
@@ -2108,7 +2122,7 @@ export default function Lampiran({ data }: { data: AppState }) {
     /* ========= Agenda ========= */
     {
       const head = doc.createElement("div");
-      head.className = "section keep-next";
+      head.className = "section keep-next-soft";
       head.innerHTML = `<div class="title">Agenda & Jadwal</div>`;
       appendBlock(head);
 
