@@ -1665,19 +1665,30 @@ export default function Lampiran({ data }: { data: AppState }) {
         tbl.innerHTML = `<colgroup><col style="width:26%"><col style="width:18%"><col style="width:56%"></colgroup>
           <thead><tr><th>Area</th><th>Status</th><th>Catatan</th></tr></thead>`;
         const tb = doc.createElement("tbody");
-        sec.rows.forEach((r) => {
-          const cls = classifyStatus(r.value);
-          const valueHtml = `<span class="status-badge ${cls}">${escapeHtml(
-            String(r.value || "")
-          )}</span>`;
+
+        if (!sec.rows || sec.rows.length === 0) {
+          // tampilkan satu baris kosong agar section terlihat
           tb.insertAdjacentHTML(
             "beforeend",
-            `<tr><td>${toTitleCase(
-              r.label || ""
-            )}</td><td>${valueHtml}</td><td>${noteToHTML(r.note)}</td></tr>`
+            `<tr><td></td><td></td><td></td></tr>`
           );
-        });
+        } else {
+          sec.rows.forEach((r) => {
+            const cls = classifyStatus(r.value);
+            const valueHtml = `<span class="status-badge ${cls}">${escapeHtml(
+              String(r.value || "")
+            )}</span>`;
+            tb.insertAdjacentHTML(
+              "beforeend",
+              `<tr><td>${toTitleCase(
+                r.label || ""
+              )}</td><td>${valueHtml}</td><td>${noteToHTML(r.note)}</td></tr>`
+            );
+          });
+        }
+
         tbl.appendChild(tb);
+
         secEl.appendChild(tbl);
         appendBlock(secEl);
       });

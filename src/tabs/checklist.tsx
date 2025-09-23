@@ -1104,6 +1104,27 @@ export default function ChecklistArea({
         title: sec.title,
         rows: sec.rows.map((r) => ({ ...r })) as RowDef[],
       };
+
+      // Pastikan semua section minimal punya objek kosong di data.checklist,
+      // agar PDF Lampiran bisa melihat & merender judulnya meski belum ada isian.
+      useEffect(() => {
+        const prev = data as ExtendedChecklistState;
+        const next: ExtendedChecklistState = { ...prev };
+        let changed = false;
+
+        (Object.keys(FINAL_MAP) as AnySectionKey[]).forEach((k) => {
+          if (!next[k]) {
+            next[k] = {}; // seed objek kosong untuk section itu
+            changed = true;
+          }
+        });
+
+        if (changed) {
+          onChange(next as unknown as ChecklistState);
+        }
+        // aman: tergantung FINAL_MAP & data; tidak loop karena hanya seed sekali
+      }, [FINAL_MAP, data, onChange]);
+
       return acc;
     }, {} as Record<AnySectionKey, { title: string; rows: RowDef[] }>);
 
