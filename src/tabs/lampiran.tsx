@@ -442,6 +442,41 @@ function resolveRowOrderFromOv(
   return null;
 }
 
+//
+// === Target overrides (ambil dari localStorage seperti di TargetAchievement) ===
+type TargetOverridesLite = {
+  copy?: {
+    klaimTitle?: string;
+    targetSelesaiLabel?: string;
+    weeklyTitle?: string;
+    fodksTitle?: string;
+    deadlineLabel?: string;
+  };
+  principals?: Record<string, { label?: string }>;
+  extraPrincipals?: Record<string, { label: string }>;
+  deadlines?: {
+    klaim?: Record<string, string>;
+    weekly?: Record<string, string>;
+    targetSelesai?: string;
+    fodks?: string;
+  };
+};
+
+const TARGET_OV_KEY = "sitrep-target-copy-v2";
+
+function readTargetOv(role: string): TargetOverridesLite {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(`${TARGET_OV_KEY}:${role}`) || "";
+    return raw ? (JSON.parse(raw) as TargetOverridesLite) : {};
+  } catch {
+    return {};
+  }
+}
+
+const principalLabelFromOv = (ov: TargetOverridesLite, p: string) =>
+  ov.principals?.[p]?.label ?? ov.extraPrincipals?.[p]?.label ?? p;
+
 const prettify = (s: string) => s.replace(/[-_]/g, " ");
 
 /* =========================
@@ -533,7 +568,11 @@ function renderChecklist(checklist: ChecklistState) {
       const label =
         resolveRowLabelFromOv(String(sec), key) ?? prettify(String(key));
 
-      lineItems.sort((a, b) => (a.ord ?? 9999) - (b.ord ?? 9999));
+      // ⬇️ TAMBAHKAN 2 BARIS INI DI SINI:
+      const ord = resolveRowOrderFromOv(String(sec), key) ?? undefined;
+      lineItems.push({ label, value, note: noteOut, ord });
+
+      // (jangan sort di dalam loop)
     }
 
     (lineItems as any[]).sort((a, b) => (a.ord ?? 9999) - (b.ord ?? 9999));
@@ -1682,16 +1721,17 @@ export default function Lampiran({ data }: { data: AppState }) {
               v.trim().toLowerCase()
             )
           : !!v;
+      const clamp4 = (a: boolean[]) => [0, 1, 2, 3].map((i) => !!a[i]);
       const toWeeks = (v: any): boolean[] => {
-        if (Array.isArray(v)) return clampBools(v.map(toBool), 4);
-        if (isRecord(v)) {
+        if (Array.isArray(v)) return clamp4(v.map(toBool));
+        if (v && typeof v === "object") {
           const a = [
-            pick(v, ["w1", "1"]),
-            pick(v, ["w2", "2"]),
-            pick(v, ["w3", "3"]),
-            pick(v, ["w4", "4"]),
+            v.w1 ?? v["1"],
+            v.w2 ?? v["2"],
+            v.w3 ?? v["3"],
+            v.w4 ?? v["4"],
           ].map(toBool);
-          return clampBools(a, 4);
+          return clamp4(a as boolean[]);
         }
         return [false, false, false, false];
       };
@@ -1706,281 +1746,202 @@ export default function Lampiran({ data }: { data: AppState }) {
         }
       };
 
-      const klaimSrc =
-        pick(rawTarget, ["klaimSelesai"]) ||
-        pick(rawTarget, [
-          "klaimBulanan",
-          "klaim",
-          "penyelesaianKlaim",
-          "claims",
-        ]);
-      const laporanSrc =
-        pick(rawTarget, ["weekly"]) ||
-        pick(rawTarget, [
-          "laporanMingguan",
-          "laporanPrinsipal",
-          "weeklyReports",
-        ]);
-      const tgtBulananSrc =
-        pick(rawTarget, ["targetSelesai"]) ||
-        pick(rawTarget, [
-          "klaimBulananTarget",
-          "targetBulanan",
-          "targetSelesaiBulanIni",
-        ]);
-      const deadlinesSrc = pick(rawTarget, ["deadlines", "deadline", "dues"]);
+      // baca overrides target sesuai role user (sama seperti UI)
+      const userRole = getUserRole(user as AnyUser) || "admin";
+      const tov = readTargetOv(userRole);
 
-      const looksLikeUI =
-        isRecord(klaimSrc) ||
-        isRecord(laporanSrc) ||
-        tgtBulananSrc !== undefined ||
-        (rawTarget as any)?.target !== undefined ||
-        (rawTarget as any)?.deadline !== undefined;
+      const klaimSrc = pick(rawTarget, [
+        "klaimSelesai",
+        "klaimBulanan",
+        "klaim",
+        "penyelesaianKlaim",
+        "claims",
+      ]);
+      const laporanSrc = pick(rawTarget, [
+        "weekly",
+        "laporanMingguan",
+        "laporanPrinsipal",
+        "weeklyReports",
+      ]);
+      const tgtBulananSrc = pick(rawTarget, [
+        "targetSelesai",
+        "klaimBulananTarget",
+        "targetBulanan",
+        "targetSelesaiBulanIni",
+      ]);
+      const deadlinesSrc =
+        pick(rawTarget, ["deadlines", "deadline", "dues"]) || {};
 
-      if (looksLikeUI) {
-        // ===== Klaim bulanan (Deadline → Selesai) =====
-        const klaimBlock = doc.createElement("div");
-        klaimBlock.className = "section page-break-avoid";
-        klaimBlock.innerHTML = `<div class="subhead">Penyelesaian Klaim Bulan Ini <span class="muted" style="font-weight:600;font-size:11px">(reset setiap awal bulan)</span></div>`;
-        const klaimTable = doc.createElement("table");
-        klaimTable.className = "table striped";
-        klaimTable.innerHTML = `<thead><tr><th>Jenis</th><th style="width:30%">Deadline</th><th style="width:18%">Selesai</th></tr></thead>`;
-        const kbody = doc.createElement("tbody");
-        (["FRI", "SPJ", "APA", "WPL"] as const).forEach((p) => {
-          const row =
-            (klaimSrc && (klaimSrc[p] ?? (klaimSrc as any)[p.toLowerCase()])) ??
-            {};
-          const selesai = toBool(
-            isRecord(row)
-              ? (["selesai", "done", "value", "checked"] as const)
-                  .map((k) => (row as any)[k])
-                  .find((v) => v !== undefined)
-              : row
+      // principal yang muncul di PDF = base + yang ada di data + yang ada di overrides extra (sama seperti UI)
+      const baseP = ["FRI", "SPJ", "APA", "WPL"];
+      const fromK =
+        klaimSrc && typeof klaimSrc === "object" ? Object.keys(klaimSrc) : [];
+      const fromW =
+        laporanSrc && typeof laporanSrc === "object"
+          ? Object.keys(laporanSrc)
+          : [];
+      const fromOv = Object.keys(tov.extraPrincipals || {});
+      const principals = Array.from(
+        new Set([...baseP, ...fromK, ...fromW, ...fromOv])
+      );
+
+      const klaimTitle = tov.copy?.klaimTitle ?? "Penyelesaian Klaim Bulan Ini";
+      const weeklyTitle =
+        tov.copy?.weeklyTitle ?? "Laporan Penjualan ke Prinsipal Mingguan";
+      const deadlineLabel = tov.copy?.deadlineLabel ?? "Deadline";
+      const targetSelesaiLabel =
+        tov.copy?.targetSelesaiLabel ?? "Target Selesai (bulan ini)";
+      const fodksTitle = tov.copy?.fodksTitle ?? "Input FODKS";
+
+      // ===== Klaim bulanan
+      {
+        const block = doc.createElement("div");
+        block.className = "section page-break-avoid";
+        block.innerHTML = `<div class="subhead">${klaimTitle} <span class="muted" style="font-weight:600;font-size:11px">(reset setiap awal bulan)</span></div>`;
+        const tbl = doc.createElement("table");
+        tbl.className = "table striped";
+        tbl.innerHTML = `<thead><tr><th>Jenis</th><th style="width:30%">${deadlineLabel}</th><th style="width:18%">Selesai</th></tr></thead>`;
+        const tb = doc.createElement("tbody");
+
+        principals.forEach((pRaw) => {
+          const p = String(pRaw);
+          const rowVal =
+            klaimSrc && typeof klaimSrc === "object"
+              ? (klaimSrc as any)[p] ?? (klaimSrc as any)[p.toLowerCase()]
+              : klaimSrc;
+          const selesai = toBool(rowVal);
+          const deadlineFromData =
+            rowVal && typeof rowVal === "object"
+              ? rowVal.deadline ?? rowVal.due ?? rowVal.tanggal
+              : undefined;
+          const deadline = fmtDate(
+            deadlineFromData ??
+              tov.deadlines?.klaim?.[p] ??
+              (deadlinesSrc?.klaim?.[p] ||
+                deadlinesSrc?.klaim?.[p?.toLowerCase?.()])
           );
-          const rowDeadline =
-            (isRecord(row) &&
-              (["deadline", "due", "tanggal"] as const)
-                .map((k) => (row as any)[k])
-                .find((v) => v !== undefined)) ||
-            (isRecord(deadlinesSrc) &&
-              isRecord((deadlinesSrc as any).klaim) &&
-              ((deadlinesSrc as any).klaim[p] ??
-                (deadlinesSrc as any).klaim[p.toLowerCase()])) ||
-            (isRecord(deadlinesSrc) && (deadlinesSrc as any).klaim);
-          const deadline = fmtDate(rowDeadline);
-          kbody.insertAdjacentHTML(
+          tb.insertAdjacentHTML(
             "beforeend",
-            `<tr><td>${p}</td><td>${escapeHtml(
-              deadline
-            )}</td><td><span class="cbx ${
-              selesai ? "on" : ""
-            }"></span> <span class="muted" style="font-weight:600;font-size:11px">Selesai</span></td></tr>`
+            `<tr>
+          <td>${principalLabelFromOv(tov, p)}</td>
+          <td>${escapeHtml(deadline || "")}</td>
+          <td><span class="cbx ${
+            selesai ? "on" : ""
+          }"></span> <span class="muted" style="font-weight:600;font-size:11px">Selesai</span></td>
+        </tr>`
           );
         });
-        klaimTable.appendChild(kbody);
-        klaimBlock.appendChild(klaimTable);
-        appendBlock(klaimBlock);
 
-        // Target selesai (tetap)
+        tbl.appendChild(tb);
+        block.appendChild(tbl);
+        appendBlock(block);
+      }
+
+      // ===== Target selesai
+      {
         const targetCount =
-          (isRecord(tgtBulananSrc)
-            ? (["targetCount", "jumlah", "count", "value"] as const)
-                .map((k) => (tgtBulananSrc as any)[k])
-                .find((v) => v !== undefined)
+          (tgtBulananSrc && typeof tgtBulananSrc === "object"
+            ? (tgtBulananSrc as any).targetCount ??
+              (tgtBulananSrc as any).jumlah ??
+              (tgtBulananSrc as any).count ??
+              (tgtBulananSrc as any).value
             : tgtBulananSrc) ??
           (rawTarget as any)?.target ??
           "";
+
         const targetDeadline = fmtDate(
-          (isRecord(tgtBulananSrc) &&
-            (["deadline", "due"] as const)
-              .map((k) => (tgtBulananSrc as any)[k])
-              .find((v) => v !== undefined)) ||
-            (isRecord(deadlinesSrc) && (deadlinesSrc as any).targetSelesai) ||
+          (tgtBulananSrc && typeof tgtBulananSrc === "object"
+            ? (tgtBulananSrc as any).deadline ?? (tgtBulananSrc as any).due
+            : undefined) ??
+            tov.deadlines?.targetSelesai ??
+            (deadlinesSrc as any)?.targetSelesai ??
             (rawTarget as any)?.deadline
         );
-        const targetTblWrap = doc.createElement("div");
-        targetTblWrap.className = "section page-break-avoid";
-        const targetTbl = doc.createElement("table");
-        targetTbl.className = "table";
-        targetTbl.innerHTML = `<colgroup><col style="width:40%"><col style="width:60%"></colgroup>
-          <tbody><tr><th>Target Selesai (bulan ini)</th><td>${escapeHtml(
-            String(targetCount ?? "")
-          )} <span class="muted" style="font-size:11px">mis. 10</span></td></tr>
-                 <tr><th>Deadline</th><td>${escapeHtml(
-                   targetDeadline
-                 )}</td></tr></tbody>`;
-        targetTblWrap.appendChild(targetTbl);
-        appendBlock(targetTblWrap);
 
-        // ===== Laporan mingguan =====
-        const reportBlock = doc.createElement("div");
-        reportBlock.className = "section page-break-avoid";
-        reportBlock.innerHTML = `<div class="subhead">Laporan Penjualan ke Prinsipal Mingguan</div>`;
-        const repTbl = doc.createElement("table");
-        repTbl.className = "table striped";
-        repTbl.innerHTML = `<thead><tr><th>Prinsipal</th><th>Minggu 1</th><th>Minggu 2</th><th>Minggu 3</th><th>Minggu 4</th></tr></thead>`;
-        const rbody = doc.createElement("tbody");
-        (["FRI", "SPJ", "APA", "WPL"] as const).forEach((p) => {
+        const wrap = doc.createElement("div");
+        wrap.className = "section page-break-avoid";
+        const tbl = doc.createElement("table");
+        tbl.className = "table";
+        tbl.innerHTML = `<colgroup><col style="width:40%"><col style="width:60%"></colgroup>
+      <tbody>
+        <tr><th>${escapeHtml(targetSelesaiLabel)}</th><td>${escapeHtml(
+          String(targetCount ?? "")
+        )}</td></tr>
+        <tr><th>${escapeHtml(deadlineLabel)}</th><td>${escapeHtml(
+          targetDeadline
+        )}</td></tr>
+      </tbody>`;
+        wrap.appendChild(tbl);
+        appendBlock(wrap);
+      }
+
+      // ===== Laporan mingguan
+      {
+        const block = doc.createElement("div");
+        block.className = "section page-break-avoid";
+        block.innerHTML = `<div class="subhead">${weeklyTitle}</div>`;
+        const tbl = doc.createElement("table");
+        tbl.className = "table striped";
+        tbl.innerHTML = `<thead><tr><th>Prinsipal</th><th>Minggu 1</th><th>Minggu 2</th><th>Minggu 3</th><th>Minggu 4</th></tr></thead>`;
+        const tb = doc.createElement("tbody");
+
+        principals.forEach((pRaw) => {
+          const p = String(pRaw);
           const row =
-            (laporanSrc &&
-              (laporanSrc[p] ?? (laporanSrc as any)[p.toLowerCase()])) ??
-            {};
+            laporanSrc && typeof laporanSrc === "object"
+              ? (laporanSrc as any)[p] ?? (laporanSrc as any)[p.toLowerCase()]
+              : undefined;
           const weeks = toWeeks(row);
-          rbody.insertAdjacentHTML(
+          tb.insertAdjacentHTML(
             "beforeend",
-            `<tr><td>${p}</td>${weeks
-              .map((w) => `<td><span class="cbx ${w ? "on" : ""}"></span></td>`)
-              .join("")}</tr>`
+            `<tr>
+          <td>${principalLabelFromOv(tov, p)}</td>
+          ${weeks
+            .map((w) => `<td><span class="cbx ${w ? "on" : ""}"></span></td>`)
+            .join("")}
+        </tr>`
           );
         });
-        repTbl.appendChild(rbody);
-        reportBlock.appendChild(repTbl);
-        appendBlock(reportBlock);
-      } else {
-        // ---- Fallback generic
-        const tv = extractTarget(rawTarget);
 
-        const valueToHTML = (v: unknown): string => {
-          if (v == null || v === "") return "";
-          if (typeof v === "boolean") return v ? "Ya" : "–";
-          if (typeof v === "number") return String(v);
-          if (typeof v === "string") return escapeHtml(v);
-          if (Array.isArray(v)) {
-            if (isBoolArray(v)) {
-              const t = v.filter(Boolean).length;
-              return `${t}/${v.length} ✓`;
-            }
-            return escapeHtml(
-              v
-                .map((x) =>
-                  isPrimitive(x)
-                    ? String(x)
-                    : isRecord(x)
-                    ? JSON.stringify(x)
-                    : String(x)
-                )
-                .join(", ")
-            );
-          }
-          if (isRecord(v)) {
-            const rows = Object.entries(v)
-              .map(([k, val]) => {
-                if (isBoolArray(val)) {
-                  const t = val.filter(Boolean).length;
-                  return `<li>${escapeHtml(k)}: ${t}/${val.length} ✓</li>`;
-                }
-                if (typeof val === "boolean")
-                  return `<li>${escapeHtml(k)}: ${val ? "✓" : "–"}</li>`;
-                return `<li>${escapeHtml(k)}: ${escapeHtml(
-                  isPrimitive(val) ? String(val) : JSON.stringify(val)
-                )}</li>`;
-              })
-              .join("");
-            return `<ul class="ul-kv">${rows}</ul>`;
-          }
-          return escapeHtml(String(v));
-        };
+        tbl.appendChild(tb);
+        block.appendChild(tbl);
+        appendBlock(block);
+      }
 
-        if (tv.type === "empty") {
-          const tblWrap = doc.createElement("div");
-          tblWrap.className = "section page-break-avoid";
-          const tbl = doc.createElement("table");
-          tbl.className = "table striped";
-          tbl.innerHTML = `<thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead><tbody><tr><td></td><td></td><td>${labelStatusChip(
-            false
-          )}</td></tr></tbody>`;
-          tblWrap.appendChild(tbl);
-          appendBlock(tblWrap);
-        } else if (tv.type === "kpi") {
-          const tblWrap = doc.createElement("div");
-          tblWrap.className = "section page-break-avoid";
-          const tbl = doc.createElement("table");
-          tbl.className = "table striped";
-          tbl.innerHTML = `<thead><tr><th>KPI</th><th>Target</th><th>Realisasi</th><th>%</th><th>Catatan</th><th>Status</th></tr></thead>`;
-          const tb = doc.createElement("tbody");
-          tv.rows.forEach((r) => {
-            const filled =
-              hasAnyTruthy(r["target"]) ||
-              hasAnyTruthy(r["plan"]) ||
-              hasAnyTruthy(
-                r["actual"] ?? r["real"] ?? r["realisasi"] ?? r["achieved"]
-              ) ||
-              hasAnyTruthy(r["percent"] ?? r["persen"] ?? r["achievement"]) ||
-              hasAnyTruthy(r["notes"] ?? r["catatan"]);
+      // ===== FODKS (mengikuti tampilan input)
+      {
+        const list = (rawTarget as any).fodksList as
+          | Array<{ name?: string; note?: string }>
+          | undefined;
+        const rows = Array.isArray(list) ? list : [];
+
+        const block = doc.createElement("div");
+        block.className = "section page-break-avoid";
+        block.innerHTML = `<div class="subhead">${escapeHtml(
+          fodksTitle
+        )}</div>`;
+
+        const tbl = doc.createElement("table");
+        tbl.className = "table striped";
+        tbl.innerHTML = `<thead><tr><th style="width:40%">FODKS</th><th>Keterangan</th></tr></thead>`;
+        const tb = doc.createElement("tbody");
+
+        if (!rows.length) {
+          tb.insertAdjacentHTML("beforeend", `<tr><td></td><td></td></tr>`);
+        } else {
+          rows.forEach((it) => {
             tb.insertAdjacentHTML(
               "beforeend",
-              `<tr><td>${escapeHtml(
-                String(r["title"] ?? r["name"] ?? r["kpi"] ?? "")
-              )}</td>
-                   <td>${valueToHTML(r["target"] ?? r["plan"])}</td>
-                   <td>${valueToHTML(
-                     r["actual"] ?? r["real"] ?? r["realisasi"] ?? r["achieved"]
-                   )}</td>
-                   <td>${valueToHTML(
-                     r["percent"] ?? r["persen"] ?? r["achievement"]
-                   )}</td>
-                   <td>${escapeHtml(
-                     String(r["notes"] ?? r["catatan"] ?? "")
-                   )}</td>
-                   <td>${labelStatusChip(filled)}</td></tr>`
+              `<tr><td>${escapeHtml(it?.name || "")}</td><td>${escapeHtml(
+                it?.note || ""
+              )}</td></tr>`
             );
           });
-          tbl.appendChild(tb);
-          tblWrap.appendChild(tbl);
-          appendBlock(tblWrap);
-        } else if (tv.type === "table") {
-          const cols = tv.cols;
-          const tblWrap = doc.createElement("div");
-          tblWrap.className = "section page-break-avoid";
-          const tbl = doc.createElement("table");
-          tbl.className = "table striped";
-          const thead = doc.createElement("thead");
-          thead.innerHTML = `<tr>${cols
-            .map((c) => `<th>${c}</th>`)
-            .join("")}<th>Status</th></tr>`;
-          tbl.appendChild(thead);
-          const tb = doc.createElement("tbody");
-          tv.rows.forEach((row) => {
-            const filled = hasAnyTruthy(row);
-            tb.insertAdjacentHTML(
-              "beforeend",
-              `<tr>${cols
-                .map((c) => `<td>${valueToHTML((row as any)[c])}</td>`)
-                .join("")}<td>${labelStatusChip(filled)}</td></tr>`
-            );
-          });
-          tbl.appendChild(tb);
-          tblWrap.appendChild(tbl);
-          appendBlock(tblWrap);
-        } else if (tv.type === "kv") {
-          const kv = tv.kv;
-          const tblWrap = doc.createElement("div");
-          tblWrap.className = "section page-break-avoid";
-          const tbl = doc.createElement("table");
-          tbl.className = "table striped";
-          tbl.innerHTML = `<colgroup><col style="width:35%"><col style="width:45%"><col style="width:20%"></colgroup>
-            <thead><tr><th>Field</th><th>Nilai</th><th>Status</th></tr></thead>`;
-          const tb = doc.createElement("tbody");
-          const entries = Object.entries(kv);
-          if (entries.length === 0) {
-            tb.insertAdjacentHTML(
-              "beforeend",
-              `<tr><td></td><td></td><td>${labelStatusChip(false)}</td></tr>`
-            );
-          } else
-            entries.forEach(([k, v]) => {
-              const filled = hasAnyTruthy(v);
-              tb.insertAdjacentHTML(
-                "beforeend",
-                `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(
-                  isPrimitive(v) ? String(v) : JSON.stringify(v)
-                )}</td><td>${labelStatusChip(filled)}</td></tr>`
-              );
-            });
-          tbl.appendChild(tb);
-          tblWrap.appendChild(tbl);
-          appendBlock(tblWrap);
         }
+
+        tbl.appendChild(tb);
+        block.appendChild(tbl);
+        appendBlock(block);
       }
     }
 
