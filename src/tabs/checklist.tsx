@@ -12,7 +12,16 @@ type AddedRowMeta = {
   __added?: boolean;
   __delete?: boolean;
   order?: number;
-  extras?: { text?: boolean; currency?: boolean; number?: boolean };
+  // ⬇️ BOLEH tetap
+  extras?: {
+    text?: boolean;
+    currency?: boolean;
+    number?: boolean;
+    /** NEW: opsional – suffix untuk extra number */
+    numberSuffix?: string;
+    /** opsional – placeholder untuk extra number */
+    numberPlaceholder?: string;
+  };
   kind?: "options" | "number" | "score" | "compound";
 };
 
@@ -146,8 +155,12 @@ type RowDefScore = RowBase & { kind: "score" };
 type RowDefCompound = RowBase & {
   kind: "compound";
   options: string[];
-  extra?: { type: "text" | "currency" | "number"; placeholder?: string }[];
-  // NEW: jika true, kolom extra menjadi repeatable (+)
+  extra?: {
+    type: "text" | "currency" | "number";
+    placeholder?: string;
+    /** NEW: suffix khusus untuk extra number */
+    suffix?: string;
+  }[];
   list?: boolean;
   listLabels?: { text?: string; currency?: string; number?: string };
 };
@@ -1132,13 +1145,19 @@ export default function ChecklistArea({
               rn.options = p.options;
             }
             if (isCompound(rn) && p.extras) {
-              const extrasArr = [];
+              const extrasArr: NonNullable<RowDefCompound["extra"]> = [];
               if (p.extras.text) extrasArr.push({ type: "text" as const });
               if (p.extras.currency)
                 extrasArr.push({ type: "currency" as const });
-              if (p.extras.number) extrasArr.push({ type: "number" as const });
+              if (p.extras.number)
+                extrasArr.push({
+                  type: "number" as const,
+                  placeholder: p.extras.numberPlaceholder,
+                  suffix: p.extras.numberSuffix, // NEW
+                });
               rn.extra = extrasArr;
             }
+
             // NEW: support daftar (+)
             if (isCompound(rn)) {
               if (p.list !== undefined) rn.list = p.list;
@@ -1180,9 +1199,16 @@ export default function ChecklistArea({
                         ? [{ type: "currency" as const }]
                         : []),
                       ...(p.extras?.number
-                        ? [{ type: "number" as const }]
+                        ? [
+                            {
+                              type: "number" as const,
+                              placeholder: p.extras?.numberPlaceholder,
+                              suffix: p.extras?.numberSuffix, // NEW
+                            },
+                          ]
                         : []),
                     ],
+
                     // NEW:
                     list: Boolean(p.list),
                     listLabels: p.listLabels ? { ...p.listLabels } : undefined,
@@ -1967,15 +1993,28 @@ function ChecklistRow({
   const hasNumberExtra =
     isCompound(row) && row.extra?.some((e) => e.type === "number");
 
+  /** NEW: ambil meta untuk extra number (placeholder & suffix) */
+  type NumberExtraMeta = {
+    type: "number";
+    placeholder?: string;
+    suffix?: string;
+  };
+  const numberMeta: NumberExtraMeta | undefined = isCompound(row)
+    ? (row.extra?.find((e) => e.type === "number") as
+        | NumberExtraMeta
+        | undefined)
+    : undefined;
+
   const textPlaceholder = isCompound(row)
     ? row.extra?.find((e) => e.type === "text")?.placeholder
     : undefined;
   const currencyPlaceholder = isCompound(row)
     ? row.extra?.find((e) => e.type === "currency")?.placeholder
     : undefined;
-  const numberPlaceholder = isCompound(row)
-    ? row.extra?.find((e) => e.type === "number")?.placeholder
-    : undefined;
+  /** NEW: ganti sumber placeholder number ke numberMeta */
+  const numberPlaceholder = numberMeta?.placeholder;
+  /** NEW: suffix untuk NumberWithSuffix */
+  const numberSuffixExtra = numberMeta?.suffix;
 
   const valueJoined =
     value && (value.kind === "options" || value.kind === "compound")
@@ -2206,23 +2245,18 @@ function ChecklistRow({
 
                     {/* Number */}
                     {hasNumberExtra && (
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        value={it.number || ""}
-                        onChange={(e) => {
-                          const next = [...listItems];
-                          next[idx] = { ...next[idx], number: e.target.value };
-                          setListItems(next);
-                          syncListItems(next);
-                        }}
-                        className={INPUT_BASE + " md:col-span-1"}
-                        placeholder={
-                          row.listLabels?.number ||
-                          numberPlaceholder ||
-                          "Jumlah"
-                        }
-                      />
+                      <div className="md:col-span-1">
+                        <NumberWithSuffix
+                          suffix={numberSuffixExtra}
+                          value={String(it.number || "")}
+                          onChange={(v) => {
+                            const next = [...listItems];
+                            next[idx] = { ...next[idx], number: v };
+                            setListItems(next);
+                            syncListItems(next);
+                          }}
+                        />
+                      </div>
                     )}
 
                     {/* Hapus item */}
@@ -2247,12 +2281,10 @@ function ChecklistRow({
             // === cabang faktur-dibatalkan (yang lama) ===
             <div className="space-y-2">
               {hasNumberExtra && (
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  placeholder={numberPlaceholder || "Jumlah Faktur"}
-                  value={compExtras?.number ?? ""}
-                  onChange={(e) =>
+                <NumberWithSuffix
+                  suffix={numberSuffixExtra}
+                  value={String(compExtras?.number ?? "")}
+                  onChange={(v) =>
                     onChange({
                       kind: "compound",
                       value: compVal?.value ?? null,
@@ -2260,11 +2292,10 @@ function ChecklistRow({
                       extras: {
                         text: compExtras?.text,
                         currency: compExtras?.currency,
-                        number: e.target.value,
+                        number: v,
                       },
                     } as RVCompound)
                   }
-                  className={INPUT_BASE}
                 />
               )}
 
@@ -2360,12 +2391,10 @@ function ChecklistRow({
                 )}
 
                 {hasNumberExtra && (
-                  <input
-                    type="number"
-                    inputMode="numeric"
-                    placeholder={numberPlaceholder || "Jumlah"}
-                    value={compExtras?.number ?? ""}
-                    onChange={(e) =>
+                  <NumberWithSuffix
+                    suffix={numberSuffixExtra}
+                    value={String(compExtras?.number ?? "")}
+                    onChange={(v) =>
                       onChange({
                         kind: "compound",
                         value: compVal?.value ?? null,
@@ -2373,11 +2402,10 @@ function ChecklistRow({
                         extras: {
                           text: compExtras?.text,
                           currency: compExtras?.currency,
-                          number: e.target.value,
+                          number: v, // simpan string angka
                         },
                       } as RVCompound)
                     }
-                    className={INPUT_BASE}
                   />
                 )}
               </div>
