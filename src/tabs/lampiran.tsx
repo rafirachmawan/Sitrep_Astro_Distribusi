@@ -479,6 +479,21 @@ const principalLabelFromOv = (ov: TargetOverridesLite, p: string) =>
 
 const prettify = (s: string) => s.replace(/[-_]/g, " ");
 
+//
+// ==== Default judul section seperti di UI (BASE_MAP) ====
+const BASE_SECTION_TITLES: Record<string, string> = {
+  kas: "Kas Kecil",
+  buku: "Buku Penunjang",
+  ar: "AR",
+  klaim: "Klaim",
+  pengiriman: "Pengiriman",
+  setoran: "Setoran Bank",
+  pembelian: "Proses Pembelian", // <-- ini yang kamu butuh
+  faktur: "Penjualan",
+  retur: "Mutasi antar Depo",
+  marketing: "Marketing",
+};
+
 /* =========================
    Checklist → array text
    ========================= */
@@ -532,7 +547,9 @@ function renderChecklist(checklist: ChecklistState) {
 
     // >>> ambil judul section dari overrides (fallback: key yang dirapikan)
     const sectionTitle =
-      resolveSectionTitleFromOv(String(sec)) ?? prettify(String(sec));
+      resolveSectionTitleFromOv(String(sec)) ??
+      BASE_SECTION_TITLES[String(sec)] ??
+      prettify(String(sec));
 
     const lineItems: RowOut[] = [];
 
