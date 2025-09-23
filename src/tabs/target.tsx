@@ -270,19 +270,19 @@ const FodksRow = React.memo(function FodksRow({
           }}
         />
       </td>
-      {onDelete ? (
-        <td className="py-2 px-2 align-top">
+      <td className="py-2 px-2 align-top">
+        {onDelete ? (
           <button
             type="button"
             onClick={onDelete}
             className="px-2 py-2 rounded-md bg-rose-600 text-white hover:bg-rose-700 focus:outline-none focus:ring-4 focus:ring-rose-100"
             aria-label="Hapus item"
-            title="Hapus item (superadmin saja)"
+            title="Hapus item"
           >
             <Trash2 className="h-4 w-4" />
           </button>
-        </td>
-      ) : null}
+        ) : null}
+      </td>
     </tr>
   );
 });
@@ -619,8 +619,12 @@ export default function TargetAchievement({
       list.map((it) => (it.id === id ? { ...it, ...patch } : it))
     );
   const removeFodksItem = (id: string) => {
-    if (!isSuper) return;
-    setFodksListLocal((list) => list.filter((it) => it.id !== id));
+    setFodksListLocal((list) => {
+      const target = list.find((it) => it.id === id);
+      // hanya superadmin atau pembuat item yang boleh
+      if (!(isSuper || target?.createdBy === role)) return list;
+      return list.filter((it) => it.id !== id);
+    });
   };
 
   const showDebug =
@@ -758,8 +762,8 @@ export default function TargetAchievement({
                     )}
                   </th>
                   <th className="text-left py-2 px-2">Selesai</th>
-                  {isSuper && editMode ? (
-                    <th className="py-2 px-2">Aksi</th>
+                  {editMode ? (
+                    <th className="text-left py-2 px-2 w-[80px]">Aksi</th>
                   ) : null}
                 </tr>
               </thead>
@@ -1018,7 +1022,7 @@ export default function TargetAchievement({
               {fodksListLocal.length === 0 && (
                 <tr>
                   <td
-                    colSpan={isSuper && editMode ? 3 : 2}
+                    colSpan={editMode ? 3 : 2}
                     className="py-6 px-2 text-center text-slate-500"
                   >
                     Belum ada input FODKS. Klik{" "}
@@ -1029,7 +1033,7 @@ export default function TargetAchievement({
               )}
 
               {fodksListLocal.map((it) => {
-                const editable = canEditItem(it) && editMode;
+                const editable = canEditItem(it) && editMode; // canEditItem sudah: isSuper || it.createdBy === role
                 return (
                   <FodksRow
                     key={it.id}
@@ -1037,9 +1041,7 @@ export default function TargetAchievement({
                     canEdit={editable}
                     onChange={(patch) => patchFodksItem(it.id, patch)}
                     onDelete={
-                      isSuper && editMode
-                        ? () => removeFodksItem(it.id)
-                        : undefined
+                      editable ? () => removeFodksItem(it.id) : undefined
                     }
                   />
                 );
