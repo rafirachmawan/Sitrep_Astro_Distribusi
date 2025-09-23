@@ -1515,7 +1515,6 @@ export default function ChecklistArea({
           {toast.msg}
         </div>
       )}
-
       <div className="px-3 sm:px-6 py-4 border-b bg-slate-50 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <ClipboardList className="h-5 w-5 text-blue-600" />
@@ -1583,8 +1582,21 @@ export default function ChecklistArea({
             )}
           </div>
         )}
-      </div>
-
+      </div>{" "}
+      {/* ini menutup header saja */}
+      {/* Add Section Inline — DIPINDAH KE ATAS */}
+      {isSuper && editMode && showAddSection && (
+        <div className="px-3 sm:px-6 mt-3">
+          <AddSectionInline
+            onCancel={() => setShowAddSection(false)}
+            onAdd={(k, t) => {
+              addSection(k, t);
+              setShowAddSection(false);
+              requestAnimationFrame(() => scrollToSectionAnchor(16));
+            }}
+          />
+        </div>
+      )}
       {/* Info */}
       <div className="px-3 sm:px-6 py-4">
         <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl p-3">
@@ -1604,7 +1616,6 @@ export default function ChecklistArea({
           </p>
         </div>
       </div>
-
       {/* Sub tabs */}
       <div className="px-3 sm:px-6 pb-3">
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 flex flex-wrap gap-2 gap-y-2">
@@ -1640,10 +1651,8 @@ export default function ChecklistArea({
           ))}
         </div>
       </div>
-
       {/* ANCHOR SCROLL */}
       <div ref={sectionAnchorRef} />
-
       {/* Section header & super controls */}
       <div className="px-3 sm:px-6 pb-4">
         <div className="mb-3 flex items-center gap-2">
@@ -1764,24 +1773,9 @@ export default function ChecklistArea({
           </button>
         </div>
       </div>
-
-      {/* Add Section Inline */}
-      {isSuper && editMode && showAddSection && (
-        <div className="px-3 sm:px-6 pb-4">
-          <AddSectionInline
-            onCancel={() => setShowAddSection(false)}
-            onAdd={(k, t) => {
-              addSection(k, t);
-              setShowAddSection(false);
-              requestAnimationFrame(() => scrollToSectionAnchor(16));
-            }}
-          />
-        </div>
-      )}
     </div>
   );
 }
-
 /* ================= RowValue Helpers ================= */
 type RVOptions = Extract<RowValue, { kind: "options" }>;
 type RVNumber = Extract<RowValue, { kind: "number" }>;
