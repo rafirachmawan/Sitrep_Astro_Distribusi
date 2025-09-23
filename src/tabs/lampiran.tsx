@@ -375,6 +375,61 @@ function SignaturePad({
     </div>
   );
 }
+// tambahan
+/* ====== Checklist label/title resolver (ambil dari overrides) ====== */
+type ChecklistOverridesLite = {
+  sections?: Record<string, { title?: string }>;
+  rows?: Record<string, Record<string, { label?: string }>>;
+  extraSections?: Record<string, { title?: string }>;
+};
+
+const OV_KEY = "sitrep-checklist-copy-v3";
+
+// superadmin sering ngedit untuk role lain → baca beberapa role sekaligus
+const OV_ROLES = ["admin", "sales", "gudang", "superadmin"] as const;
+
+function readOv(role: string): ChecklistOverridesLite {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(`${OV_KEY}:${role}`) || "";
+    return raw ? (JSON.parse(raw) as ChecklistOverridesLite) : {};
+  } catch {
+    return {};
+  }
+}
+
+function getAllOverrides(): ChecklistOverridesLite[] {
+  return OV_ROLES.map(readOv);
+}
+
+function resolveSectionTitleFromOv(
+  secKey: string,
+  ovs = getAllOverrides()
+): string | null {
+  for (const ov of ovs) {
+    if (secKey.startsWith("x_") && ov.extraSections?.[secKey]?.title) {
+      return ov.extraSections[secKey]!.title!;
+    }
+    if (!secKey.startsWith("x_") && ov.sections?.[secKey]?.title) {
+      return ov.sections[secKey]!.title!;
+    }
+  }
+  return null;
+}
+
+function resolveRowLabelFromOv(
+  secKey: string,
+  rowKey: string,
+  ovs = getAllOverrides()
+): string | null {
+  for (const ov of ovs) {
+    const lbl = ov.rows?.[secKey]?.[rowKey]?.label;
+    if (lbl) return lbl;
+  }
+  return null;
+}
+
+const prettify = (s: string) => s.replace(/[-_]/g, " ");
 
 /* =========================
    Checklist → array text
@@ -389,10 +444,7 @@ function renderChecklist(checklist: ChecklistState) {
       const reason =
         it.reason ?? it.alasan ?? it.keterangan ?? it.ket ?? it.desc ?? "";
 
-      if (Array.isArray(it)) {
-        // gabungkan array menjadi baris (tanpa prefix '-')
-        return it.map(String).join("\n");
-      }
+      if (Array.isArray(it)) return it.map(String).join("\n");
       const joined = [rj, reason].filter(Boolean).join(" - ");
       return joined || JSON.stringify(it);
     }
@@ -416,7 +468,7 @@ function renderChecklist(checklist: ChecklistState) {
       }
       return s;
     }
-    if (Array.isArray(x)) return x.map(itemToStr).filter(Boolean).join("\n"); // baris
+    if (Array.isArray(x)) return x.map(itemToStr).filter(Boolean).join("\n");
     if (typeof x === "object") return itemToStr(x);
     return String(x);
   };
@@ -430,6 +482,11 @@ function renderChecklist(checklist: ChecklistState) {
   for (const sec of sectionKeys) {
     const rows = checklist[sec];
     if (!rows) continue;
+
+    // >>> ambil judul section dari overrides (fallback: key yang dirapikan)
+    const sectionTitle =
+      resolveSectionTitleFromOv(String(sec)) ?? prettify(String(sec));
+
     const lineItems: Array<{ label: string; value: string; note?: string }> =
       [];
 
@@ -458,27 +515,28 @@ function renderChecklist(checklist: ChecklistState) {
           .join(" | ");
         noteOut = [noteOut, extraNote]
           .filter((s) => String(s).trim().length > 0)
-          .join("\n"); // baris, nanti jadi <li> saat render
+          .join("\n");
       }
 
-      lineItems.push({
-        label: key.replace(/[-_]/g, " "),
-        value,
-        note: noteOut,
-      });
+      // >>> ambil label baris dari overrides (fallback: key yang dirapikan)
+      const label =
+        resolveRowLabelFromOv(String(sec), key) ?? prettify(String(key));
+
+      lineItems.push({ label, value, note: noteOut });
     }
 
     if (lineItems.length === 0)
       lineItems.push({ label: "", value: "", note: "" });
-    out.push({ section: String(sec), rows: lineItems });
+
+    out.push({ section: sectionTitle, rows: lineItems });
   }
 
-  if (out.length === 0) {
+  if (out.length === 0)
     out.push({
       section: "Checklist",
       rows: [{ label: "", value: "", note: "" }],
     });
-  }
+
   return out;
 }
 
