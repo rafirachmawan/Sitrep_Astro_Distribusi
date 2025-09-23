@@ -17,11 +17,11 @@ type AddedRowMeta = {
     text?: boolean;
     currency?: boolean;
     number?: boolean;
-    /** NEW: opsional – suffix untuk extra number */
+    // ADD ↓
     numberSuffix?: string;
-    /** opsional – placeholder untuk extra number */
     numberPlaceholder?: string;
   };
+
   kind?: "options" | "number" | "score" | "compound";
 };
 
@@ -30,6 +30,7 @@ type RowOverride = AddedRowMeta & {
   options?: string[];
   suffix?: string;
   // NEW: aktifkan mode daftar (+) generik untuk compound
+  // ADD ↓
   list?: boolean;
   listLabels?: { text?: string; currency?: string; number?: string };
 };
@@ -158,9 +159,10 @@ type RowDefCompound = RowBase & {
   extra?: {
     type: "text" | "currency" | "number";
     placeholder?: string;
-    /** NEW: suffix khusus untuk extra number */
+    // ADD ↓
     suffix?: string;
   }[];
+  // ADD ↓
   list?: boolean;
   listLabels?: { text?: string; currency?: string; number?: string };
 };
@@ -591,7 +593,7 @@ export default function ChecklistArea({
               key: "voucher-individual",
               label: "Voucher Individual",
               options: ["Clear", "Tidak Beres"],
-              extra: [{ type: "number", placeholder: "pcs" }],
+              extra: [{ type: "number", placeholder: "Jumlah", suffix: "pcs" }],
             },
             {
               kind: "options",
@@ -1152,12 +1154,14 @@ export default function ChecklistArea({
               if (p.extras.number)
                 extrasArr.push({
                   type: "number" as const,
-                  placeholder: p.extras.numberPlaceholder,
+                  placeholder: p.extras.numberPlaceholder, // NEW
                   suffix: p.extras.numberSuffix, // NEW
                 });
+
               rn.extra = extrasArr;
             }
 
+            // NEW: support daftar (+)
             // NEW: support daftar (+)
             if (isCompound(rn)) {
               if (p.list !== undefined) rn.list = p.list;
@@ -2559,6 +2563,10 @@ function InlineAddRow({
   const [exCurr, setExCurr] = useState(false);
   const [exNum, setExNum] = useState(false);
 
+  // NEW: konfigurasi extra number
+  const [exNumSuffix, setExNumSuffix] = useState("");
+  const [exNumPlaceholder, setExNumPlaceholder] = useState("");
+
   const submit = () => {
     onAdd({
       key,
@@ -2566,7 +2574,14 @@ function InlineAddRow({
       kind,
       optionsCsv,
       suffix,
-      extras: { text: exText, currency: exCurr, number: exNum },
+      extras: {
+        text: exText,
+        currency: exCurr,
+        number: exNum,
+        numberSuffix: exNumSuffix || undefined,
+        numberPlaceholder: exNumPlaceholder || undefined,
+      },
+
       // NEW:
       list: repeatable,
       listLabels: {
@@ -2648,6 +2663,22 @@ function InlineAddRow({
 
         {kind === "compound" && (
           <div className="md:col-span-5 grid grid-cols-1 md:grid-cols-5 gap-2 items-center">
+            {exNum && (
+              <>
+                <input
+                  value={exNumSuffix}
+                  onChange={(e) => setExNumSuffix(e.target.value)}
+                  className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2"
+                  placeholder="Number suffix (mis. pcs/faktur)"
+                />
+                <input
+                  value={exNumPlaceholder}
+                  onChange={(e) => setExNumPlaceholder(e.target.value)}
+                  className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2"
+                  placeholder="Number placeholder (opsional)"
+                />
+              </>
+            )}
             <label className="flex items-center gap-2 text-xs">
               <input
                 type="checkbox"
@@ -2821,6 +2852,9 @@ function AddRowPanel({
   const [exCurr, setExCurr] = useState(false);
   const [exNum, setExNum] = useState(false);
 
+  const [exNumSuffix, setExNumSuffix] = useState("");
+  const [exNumPlaceholder, setExNumPlaceholder] = useState("");
+
   const submit = () => {
     onAdd({
       key,
@@ -2828,7 +2862,14 @@ function AddRowPanel({
       kind,
       optionsCsv,
       suffix,
-      extras: { text: exText, currency: exCurr, number: exNum },
+      extras: {
+        text: exText,
+        currency: exCurr,
+        number: exNum,
+        numberSuffix: exNumSuffix || undefined,
+        numberPlaceholder: exNumPlaceholder || undefined,
+      },
+
       // NEW:
       list: repeatable,
       listLabels: {
@@ -2967,12 +3008,20 @@ function AddRowPanel({
                   />
                 )}
                 {exNum && (
-                  <input
-                    value={lblNum}
-                    onChange={(e) => setLblNum(e.target.value)}
-                    className="rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
-                    placeholder="Label Number (opsional)"
-                  />
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <input
+                      value={exNumSuffix}
+                      onChange={(e) => setExNumSuffix(e.target.value)}
+                      className="rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2"
+                      placeholder="Number suffix (mis. pcs/faktur)"
+                    />
+                    <input
+                      value={exNumPlaceholder}
+                      onChange={(e) => setExNumPlaceholder(e.target.value)}
+                      className="rounded-xl border-2 border-slate-300 bg-white text-sm px-3 py-2"
+                      placeholder="Number placeholder (opsional)"
+                    />
+                  </div>
                 )}
               </div>
             )}
