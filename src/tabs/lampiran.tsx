@@ -429,12 +429,27 @@ function resolveRowLabelFromOv(
   return null;
 }
 
+//
+function resolveRowOrderFromOv(
+  secKey: string,
+  rowKey: string,
+  ovs = getAllOverrides()
+): number | null {
+  for (const ov of ovs) {
+    const ord = ov.rows?.[secKey]?.[rowKey] as any;
+    if (ord && typeof ord.order === "number") return ord.order;
+  }
+  return null;
+}
+
 const prettify = (s: string) => s.replace(/[-_]/g, " ");
 
 /* =========================
    Checklist → array text
    ========================= */
 function renderChecklist(checklist: ChecklistState) {
+  type RowOut = { label: string; value: string; note?: string; ord?: number };
+
   const itemToStr = (it: any): string => {
     if (it == null) return "";
     if (typeof it === "string" || typeof it === "number") return String(it);
@@ -473,10 +488,7 @@ function renderChecklist(checklist: ChecklistState) {
     return String(x);
   };
 
-  const out: {
-    section: string;
-    rows: Array<{ label: string; value: string; note?: string }>;
-  }[] = [];
+  const out: { section: string; rows: RowOut[] }[] = [];
 
   const sectionKeys = Object.keys(checklist) as Array<keyof ChecklistState>;
   for (const sec of sectionKeys) {
@@ -487,8 +499,7 @@ function renderChecklist(checklist: ChecklistState) {
     const sectionTitle =
       resolveSectionTitleFromOv(String(sec)) ?? prettify(String(sec));
 
-    const lineItems: Array<{ label: string; value: string; note?: string }> =
-      [];
+    const lineItems: RowOut[] = [];
 
     for (const key of Object.keys(rows)) {
       const v = rows[key] as RowValue | undefined;
@@ -522,11 +533,10 @@ function renderChecklist(checklist: ChecklistState) {
       const label =
         resolveRowLabelFromOv(String(sec), key) ?? prettify(String(key));
 
-      lineItems.push({ label, value, note: noteOut });
+      lineItems.sort((a, b) => (a.ord ?? 9999) - (b.ord ?? 9999));
     }
 
-    if (lineItems.length === 0)
-      lineItems.push({ label: "", value: "", note: "" });
+    (lineItems as any[]).sort((a, b) => (a.ord ?? 9999) - (b.ord ?? 9999));
 
     out.push({ section: sectionTitle, rows: lineItems });
   }
@@ -1452,7 +1462,10 @@ export default function Lampiran({ data }: { data: AppState }) {
       checklistBlocks.forEach((sec) => {
         const secEl = doc.createElement("div");
         secEl.className = "section page-break-avoid";
-        secEl.innerHTML = `<div class="subhead">${sec.section.toUpperCase()}</div>`;
+        secEl.innerHTML = `<div class="subhead">${escapeHtml(
+          sec.section
+        )}</div>`;
+
         const tbl = doc.createElement("table");
         tbl.className = "table striped checklist";
         tbl.innerHTML = `<colgroup><col style="width:26%"><col style="width:18%"><col style="width:56%"></colgroup>
