@@ -1977,7 +1977,11 @@ function ChecklistRow({
     ? row.extra?.find((e) => e.type === "number")?.placeholder
     : undefined;
 
-  const optVal = value?.kind === "options" ? value.value : null;
+  const valueJoined =
+    value && (value.kind === "options" || value.kind === "compound")
+      ? value.value
+      : null;
+
   const numStr = value?.kind === "number" ? String(value.value ?? "") : "";
   const scoreVal = value?.kind === "score" ? value.value : 3;
 
@@ -2061,17 +2065,34 @@ function ChecklistRow({
           )}
 
           {/* Options */}
-          {isOptions(row) && (
+          {/* Checkbox untuk options & compound */}
+          {(isOptions(row) || isCompound(row)) && (
             <MultiCheckGroup
               options={row.options}
-              valueJoined={optVal}
-              onChangeJoined={(joined) =>
-                onChange({
-                  kind: "options",
-                  value: joined,
-                  note,
-                } as RVOptions)
-              }
+              valueJoined={valueJoined}
+              onChangeJoined={(joined) => {
+                if (isOptions(row)) {
+                  // mode lama: pure checkbox
+                  onChange({
+                    kind: "options",
+                    value: joined,
+                    note,
+                  } as RVOptions);
+                } else {
+                  // mode baru: checkbox + extras (text / currency / number)
+                  onChange({
+                    kind: "compound",
+                    value: joined, // simpan pilihan checkbox di sini
+                    note,
+                    // pertahankan extras yang sudah ada
+                    extras: {
+                      text: compExtras?.text ?? null,
+                      currency: compExtras?.currency ?? null,
+                      number: compExtras?.number ?? null,
+                    },
+                  } as RVCompound);
+                }
+              }}
             />
           )}
 
