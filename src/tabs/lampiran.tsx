@@ -1382,10 +1382,24 @@ export default function Lampiran({ data }: { data: AppState }) {
       if (page.scrollHeight > PAGE_MAX_PX) {
         if (el.querySelector("table")) {
           page.removeChild(el);
+
+          // Coba dulu: kalau seluruh section muat di halaman baru, pindahkan saja (tanpa split)
+          const test = makePage();
+          test.appendChild(el);
+          const fits = test.scrollHeight <= PAGE_MAX_PX;
+          test.removeChild(el);
+          root.removeChild(test);
+
+          if (fits) {
+            page = makePage();
+            page.appendChild(el);
+            return;
+          }
+
+          // Baru split kalau memang lebih dari satu halaman
           splitTableSection(el);
           return;
         }
-
         page.removeChild(el);
         page = makePage();
         page.appendChild(el);
