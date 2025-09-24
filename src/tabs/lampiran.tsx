@@ -477,6 +477,21 @@ function readTargetOv(role: string): TargetOverridesLite {
 const principalLabelFromOv = (ov: TargetOverridesLite, p: string) =>
   ov.principals?.[p]?.label ?? ov.extraPrincipals?.[p]?.label ?? p;
 
+//
+/* ===== Aliasing/penyingkat label baris untuk PDF ===== */
+function aliasRowLabel(secKey: string, rowKey: string, label: string): string {
+  const s = label.trim().toLowerCase();
+  // "Faktur Tagihan Sales disiapkan H-2" → "Faktur H2"
+  if (
+    /faktur/.test(s) &&
+    /(tagihan|sales)/.test(s) &&
+    /\bh\s*-\s*?2\b|\bh-?2\b/.test(s)
+  ) {
+    return "Faktur H2";
+  }
+  return label;
+}
+
 const prettify = (s: string) => s.replace(/[-_]/g, " ");
 
 //
@@ -638,8 +653,9 @@ function renderChecklist(checklist: ChecklistState) {
       }
 
       // >>> ambil label baris dari overrides (fallback: key yang dirapikan)
-      const label =
+      const baseLabel =
         resolveRowLabelFromOv(String(sec), key) ?? prettify(String(key));
+      const label = aliasRowLabel(String(sec), key, baseLabel);
 
       // ⬇️ TAMBAHKAN 2 BARIS INI DI SINI:
       const ord = resolveRowOrderFromOv(String(sec), key) ?? undefined;
@@ -1448,13 +1464,8 @@ export default function Lampiran({ data }: { data: AppState }) {
   .label{line-height:1.35}
   .done .label{text-decoration:line-through;color:#6b7280}
 
-/* kotak centang seperti UI */
-.cbx{display:inline-block;width:14px;height:14px;border-radius:4px;border:2px solid #cbd5e1;background:#fff;vertical-align:middle}
-.cbx.on{background:#2563eb;border-color:#2563eb}
-.opts{display:flex;gap:18px;align-items:center}
-.optlabel{font-size:13px;color:#0f172a}
-.placeholder{color:#94a3b8;font-style:italic}
-
+  .cbx{display:inline-block;width:14px;height:14px;border-radius:999px;border:2px solid #cbd5e1;background:#fff;vertical-align:middle}
+  .cbx.on{background:#2563eb;border-color:#2563eb}
 
   .ul-kv{margin:0;padding-left:18px}
   .ul-kv li{margin:0;padding:0}
@@ -1695,51 +1706,6 @@ export default function Lampiran({ data }: { data: AppState }) {
 `;
     appendBlock(info);
 
-    //
-    // Render status seperti UI (checkbox inline)
-    function renderStatusCell(label: string, value: string): string {
-      const v = (value || "").toString().trim().toLowerCase();
-
-      // deteksi opsi berdasarkan label/value yang umum di form kamu
-      let opts: string[] = [];
-      if (
-        /(penyerahan|kirim|antar|delivery)/i.test(label) ||
-        ["on time", "terlambat"].includes(v)
-      ) {
-        opts = ["On Time", "Terlambat"];
-      } else if (
-        /(laporan|report|mingguan)/i.test(label) ||
-        ["sudah", "belum"].includes(v)
-      ) {
-        opts = ["Sudah", "Belum"];
-      } else if (
-        /(kembali|pengembalian|admin)/i.test(label) ||
-        [
-          "kembali lengkap",
-          "kembali belum lengkap",
-          "lengkap",
-          "belum lengkap",
-        ].includes(v)
-      ) {
-        opts = ["Kembali Lengkap", "Kembali Belum Lengkap"];
-      } else {
-        // default paling sering
-        opts = ["Dilakukan", "Tidak Dilakukan"];
-      }
-
-      const isOn = (name: string) => v === name.toLowerCase();
-      return `<div class="opts">
-    ${opts
-      .map(
-        (o) =>
-          `<span class="cbx ${
-            isOn(o) ? "on" : ""
-          }"></span><span class="optlabel">${o}</span>`
-      )
-      .join('<span style="width:16px;display:inline-block"></span>')}
-  </div>`;
-    }
-
     /* ========= Rangkuman Checklist ========= */
     {
       const head = doc.createElement("div");
@@ -1757,47 +1723,39 @@ export default function Lampiran({ data }: { data: AppState }) {
 
         const tbl = doc.createElement("table");
         tbl.className = "table striped checklist";
-        tbl.innerHTML = `<colgroup>
-        <col style="width:26%">
-        <col style="width:28%">
-        <col style="width:46%">
-      </colgroup>
-      <thead>
-        <tr>
-          <th>Tanggung Jawab</th>
-          <th>Hasil Kontrol</th>
-          <th>Keterangan</th>
-        </tr>
-      </thead>`;
+        // di buildPrintLayout → bagian Rangkuman Checklist
+        tbl.innerHTML = `<colgroup><col style="width:26%"><col style="width:18%"><col style="width:56%"></colgroup>
+  <thead><tr>
+    <th>Tanggung Jawab</th>
+    <th>Hasil Kontrol</th>
+    <th>Keterangan</th>
+  </tr></thead>`;
 
-        const tb = doc.createElement("tbody"); // ← deklarasi DULU
+        const tb = doc.createElement("tbody");
 
         if (!sec.rows || sec.rows.length === 0) {
+          // tampilkan satu baris kosong agar section terlihat
           tb.insertAdjacentHTML(
             "beforeend",
             `<tr><td></td><td></td><td></td></tr>`
           );
         } else {
           sec.rows.forEach((r) => {
-            const statusHtml = renderStatusCell(
-              r.label || "",
+            const cls = classifyStatus(r.value);
+            const valueHtml = `<span class="status-badge ${cls}">${escapeHtml(
               String(r.value || "")
-            );
-            const catatanHtml =
-              noteToHTML(r.note) ||
-              `<span class="placeholder">Keterangan…</span>`;
+            )}</span>`;
             tb.insertAdjacentHTML(
               "beforeend",
-              `<tr>
-            <td>${toTitleCase(r.label || "")}</td>
-            <td>${statusHtml}</td>
-            <td>${catatanHtml}</td>
-          </tr>`
+              `<tr><td>${toTitleCase(
+                r.label || ""
+              )}</td><td>${valueHtml}</td><td>${noteToHTML(r.note)}</td></tr>`
             );
           });
         }
 
         tbl.appendChild(tb);
+
         secEl.appendChild(tbl);
         appendBlock(secEl);
       });
