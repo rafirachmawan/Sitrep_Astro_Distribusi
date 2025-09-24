@@ -1757,50 +1757,47 @@ export default function Lampiran({ data }: { data: AppState }) {
 
         const tbl = doc.createElement("table");
         tbl.className = "table striped checklist";
-        sec.rows.forEach((r) => {
-          const statusHtml = renderStatusCell(
-            r.label || "",
-            String(r.value || "")
-          );
-          const catatanHtml =
-            noteToHTML(r.note) ||
-            `<span class="placeholder">Keterangan…</span>`;
+        tbl.innerHTML = `<colgroup>
+        <col style="width:26%">
+        <col style="width:28%">
+        <col style="width:46%">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Tanggung Jawab</th>
+          <th>Hasil Kontrol</th>
+          <th>Keterangan</th>
+        </tr>
+      </thead>`;
 
-          tb.insertAdjacentHTML(
-            "beforeend",
-            `<tr>
-       <td>${toTitleCase(r.label || "")}</td>
-       <td>${statusHtml}</td>
-       <td>${catatanHtml}</td>
-     </tr>`
-          );
-        });
-
-        const tb = doc.createElement("tbody");
+        const tb = doc.createElement("tbody"); // ← deklarasi DULU
 
         if (!sec.rows || sec.rows.length === 0) {
-          // tampilkan satu baris kosong agar section terlihat
           tb.insertAdjacentHTML(
             "beforeend",
             `<tr><td></td><td></td><td></td></tr>`
           );
         } else {
           sec.rows.forEach((r) => {
-            const cls = classifyStatus(r.value);
-            const valueHtml = `<span class="status-badge ${cls}">${escapeHtml(
+            const statusHtml = renderStatusCell(
+              r.label || "",
               String(r.value || "")
-            )}</span>`;
+            );
+            const catatanHtml =
+              noteToHTML(r.note) ||
+              `<span class="placeholder">Keterangan…</span>`;
             tb.insertAdjacentHTML(
               "beforeend",
-              `<tr><td>${toTitleCase(
-                r.label || ""
-              )}</td><td>${valueHtml}</td><td>${noteToHTML(r.note)}</td></tr>`
+              `<tr>
+            <td>${toTitleCase(r.label || "")}</td>
+            <td>${statusHtml}</td>
+            <td>${catatanHtml}</td>
+          </tr>`
             );
           });
         }
 
         tbl.appendChild(tb);
-
         secEl.appendChild(tbl);
         appendBlock(secEl);
       });
