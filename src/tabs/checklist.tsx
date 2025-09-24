@@ -634,6 +634,34 @@ export default function ChecklistArea({
     };
   }, [viewRole]);
 
+  // tambahan useeffect
+  useEffect(() => {
+    if (!isSuper) return;
+    const FLAG = "mig-faktur-h2-v1";
+    if (typeof window === "undefined" || localStorage.getItem(FLAG)) return;
+    (async () => {
+      try {
+        for (const r of ROLES) {
+          let cur: ChecklistOverrides = {};
+          try {
+            cur = await fetchOverridesFromServer(r);
+          } catch {
+            cur = readRoleOverrides(r);
+          }
+          const next = mergeRowOverride(cur, "ar", "faktur-h2", {
+            label: "Faktur H2",
+          });
+          writeRoleOverrides(r, next);
+          try {
+            await saveOverridesToServer(r, next, role);
+          } catch {}
+        }
+        localStorage.setItem(FLAG, "1");
+        setRev((x) => x + 1);
+      } catch {}
+    })();
+  }, [isSuper, role]);
+
   /* ===== BASE (fixed) ===== */
   const BASE_MAP: Record<SectionKey, { title: string; rows: RowDef[] }> =
     useMemo(
@@ -765,7 +793,8 @@ export default function ChecklistArea({
             {
               kind: "options",
               key: "faktur-h2",
-              label: "Faktur Tagihan Sales disiapkan H-2",
+              label: "Faktur H2",
+
               options: ["Dilakukan", "Tidak Dilakukan"],
             },
             {
