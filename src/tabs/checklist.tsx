@@ -538,6 +538,67 @@ export default function ChecklistArea({
     window.scrollTo({ top, behavior: "smooth" });
   };
 
+  //
+  const setRowOrder = (sec: AnySectionKey, rowKey: string, ord: number) => {
+    if (!isSuper) return;
+    const cur = readRoleOverrides(viewRole);
+    const next = mergeRowOverride(cur, sec, rowKey, { order: ord });
+    writeRoleOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next, role).catch(console.error);
+    setRev((x) => x + 1);
+  };
+
+  //
+  const updateRowExtras = (
+    sec: AnySectionKey,
+    rowKey: string,
+    extras: {
+      text?: boolean;
+      currency?: boolean;
+      number?: boolean;
+      numberSuffix?: string;
+      numberPlaceholder?: string;
+    }
+  ) => {
+    if (!isSuper) return;
+    const cur = readRoleOverrides(viewRole);
+    const next = mergeRowOverride(cur, sec, rowKey, { extras });
+    writeRoleOverrides(viewRole, next);
+    void saveOverridesToServer(viewRole, next, role).catch(console.error);
+    setRev((x) => x + 1);
+  };
+
+  // naik / turun satu langkah
+  const moveRow = (sec: AnySectionKey, rowKey: string, dir: -1 | 1) => {
+    if (!isSuper) return;
+    const secRows = (FINAL_MAP[sec]?.rows || []).map((r) => r.key);
+    const cur = readRoleOverrides(viewRole).rows?.[sec] || {};
+    // Ambil urutan sekarang (fallback ke index)
+    const withOrder = secRows
+      .map((k, idx) => ({
+        key: k,
+        ord: (cur[k]?.order ?? idx) as number,
+      }))
+      .sort(
+        (a, b) =>
+          a.ord - b.ord || secRows.indexOf(a.key) - secRows.indexOf(b.key)
+      );
+
+    const idx = withOrder.findIndex((x) => x.key === rowKey);
+    if (idx < 0) return;
+    const swapIdx = idx + dir;
+    if (swapIdx < 0 || swapIdx >= withOrder.length) return;
+
+    // Tukar order dua item
+    const a = withOrder[idx],
+      b = withOrder[swapIdx];
+    const nextA = b.ord,
+      nextB = a.ord;
+
+    setRowOrder(sec, a.key, nextA);
+    setRowOrder(sec, b.key, nextB);
+  };
+
   useEffect(() => {
     // Perbaiki override lama yang bikin opsi Dropping kosong
     const cur = readRoleOverrides(viewRole);
@@ -1778,6 +1839,8 @@ export default function ChecklistArea({
                   }
                   onDelete={() => deleteRow(secActive, row.key)}
                   onChange={(v) => patchData(secActive, row.key, v)}
+                  onMoveUp={() => moveRow(secActive, row.key, -1)}
+                  onMoveDown={() => moveRow(secActive, row.key, +1)}
                 />
               );
             })}
@@ -1870,6 +1933,8 @@ function ChecklistRow({
   onEditOptions,
   onEditSuffix,
   onDelete,
+  onMoveUp, // ⬅️ tambah
+  onMoveDown, // ⬅️ tambah
 }: {
   row: RowDef;
   value?: RowValue;
@@ -1879,6 +1944,8 @@ function ChecklistRow({
   onEditSuffix: (suffix: string) => void;
   onDelete: () => void;
   onChange: (v: RowValue) => void;
+  onMoveUp?: () => void; // ⬅️ tambah
+  onMoveDown?: () => void; // ⬅️ tambah
 }) {
   const [note, setNote] = useState(value?.note || "");
   const taRef = useRef<HTMLTextAreaElement | null>(null);
@@ -2092,6 +2159,24 @@ function ChecklistRow({
             >
               <Trash2 className="h-3.5 w-3.5" /> Hapus
             </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={onMoveUp}
+                className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-slate-200 hover:bg-slate-50"
+                title="Naikkan urutan"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                onClick={onMoveDown}
+                className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-md border border-slate-200 hover:bg-slate-50"
+                title="Turunkan urutan"
+              >
+                ↓
+              </button>
+            </div>
           </div>
         ) : (
           row.label
@@ -2643,7 +2728,10 @@ function InlineAddRow({
               setKey(slug);
             }
           }}
-        ></input>
+          className="rounded-lg border-2 border-blue-200 bg-white text-xs px-3 py-2 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+          placeholder="Label pertanyaan (mis. Saldo Kas Kecil)"
+        />
+
         <select
           value={kind}
           onChange={(e) => setKind(e.target.value as AddedRowMeta["kind"])}
