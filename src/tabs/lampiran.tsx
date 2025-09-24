@@ -503,16 +503,44 @@ function renderChecklist(checklist: ChecklistState) {
   const itemToStr = (it: any): string => {
     if (it == null) return "";
     if (typeof it === "string" || typeof it === "number") return String(it);
-    if (typeof it === "object") {
-      const rj =
-        it.rj ?? it.RJ ?? it.no ?? it.nomor ?? it.kode ?? it.id ?? it.doc ?? "";
-      const reason =
-        it.reason ?? it.alasan ?? it.keterangan ?? it.ket ?? it.desc ?? "";
 
-      if (Array.isArray(it)) return it.map(String).join("\n");
+    // array of items → render tiap item pakai aturan di bawah
+    if (Array.isArray(it)) return it.map(itemToStr).filter(Boolean).join("\n");
+
+    if (typeof it === "object") {
+      // ✅ dukung bentuk repeatable list: { text, currency, number }
+      const t = (it as any).text ?? "";
+      const curr = (it as any).currency ?? "";
+      const num = (it as any).number ?? "";
+      const partsTCN = [
+        String(t || "").trim(),
+        curr !== "" && curr != null ? `Rp ${fmtIDR(curr)}` : "",
+        String(num || "").trim(),
+      ].filter(Boolean);
+      if (partsTCN.length) return partsTCN.join(" - ");
+
+      // dukung bentuk lama: { rj / reason / ... }
+      const rj =
+        (it as any).rj ??
+        (it as any).RJ ??
+        (it as any).no ??
+        (it as any).nomor ??
+        (it as any).kode ??
+        (it as any).id ??
+        (it as any).doc ??
+        "";
+      const reason =
+        (it as any).reason ??
+        (it as any).alasan ??
+        (it as any).keterangan ??
+        (it as any).ket ??
+        (it as any).desc ??
+        "";
+
       const joined = [rj, reason].filter(Boolean).join(" - ");
-      return joined || JSON.stringify(it);
+      return joined || JSON.stringify(it); // terakhir banget: fallback
     }
+
     return String(it);
   };
 
