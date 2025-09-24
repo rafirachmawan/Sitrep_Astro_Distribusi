@@ -479,18 +479,18 @@ const principalLabelFromOv = (ov: TargetOverridesLite, p: string) =>
 
 //
 /* ===== Aliasing/penyingkat label baris untuk PDF ===== */
-function aliasRowLabel(secKey: string, rowKey: string, label: string): string {
-  const s = label.trim().toLowerCase();
-  // "Faktur Tagihan Sales disiapkan H-2" → "Faktur H2"
-  if (
-    /faktur/.test(s) &&
-    /(tagihan|sales)/.test(s) &&
-    /\bh\s*-\s*?2\b|\bh-?2\b/.test(s)
-  ) {
-    return "Faktur H2";
-  }
-  return label;
-}
+// function aliasRowLabel(secKey: string, rowKey: string, label: string): string {
+//   const s = label.trim().toLowerCase();
+//   // "Faktur Tagihan Sales disiapkan H-2" → "Faktur H2"
+//   if (
+//     /faktur/.test(s) &&
+//     /(tagihan|sales)/.test(s) &&
+//     /\bh\s*-\s*?2\b|\bh-?2\b/.test(s)
+//   ) {
+//     return "Faktur H2";
+//   }
+//   return label;
+// }
 
 const prettify = (s: string) => s.replace(/[-_]/g, " ");
 
@@ -653,9 +653,8 @@ function renderChecklist(checklist: ChecklistState) {
       }
 
       // >>> ambil label baris dari overrides (fallback: key yang dirapikan)
-      const baseLabel =
+      const label =
         resolveRowLabelFromOv(String(sec), key) ?? prettify(String(key));
-      const label = aliasRowLabel(String(sec), key, baseLabel);
 
       // ⬇️ TAMBAHKAN 2 BARIS INI DI SINI:
       const ord = resolveRowOrderFromOv(String(sec), key) ?? undefined;
