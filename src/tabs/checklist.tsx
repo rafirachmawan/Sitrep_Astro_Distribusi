@@ -469,6 +469,40 @@ function toTidyRowsForSection(
   });
   return out;
 }
+// ==== BEGIN: UI schema helper untuk export PDF ikut tampilan UI =====
+type ExportRow = {
+  key: string;
+  label: string;
+  kind: RowDef["kind"];
+  options?: string[];
+  suffix?: string;
+  extra?: RowDefCompound["extra"];
+  list?: boolean;
+  listLabels?: RowDefCompound["listLabels"];
+};
+
+function schemaForSection(
+  sectionKey: AnySectionKey,
+  FINAL_MAP: Record<string, { title: string; rows: RowDef[] }>
+) {
+  const def = FINAL_MAP[sectionKey];
+  return {
+    key: String(sectionKey),
+    title: def?.title || "",
+    rows: (def?.rows || []).map((r) => {
+      const base: ExportRow = { key: r.key, label: r.label, kind: r.kind };
+      if (isOptions(r) || isCompound(r)) base.options = r.options;
+      if (isNumber(r)) base.suffix = r.suffix;
+      if (isCompound(r)) {
+        base.extra = r.extra;
+        base.list = r.list;
+        base.listLabels = r.listLabels;
+      }
+      return base;
+    }),
+  };
+}
+// ==== END: UI schema helper =====
 
 // URL GAS
 const FALLBACK_GAS_URL: string =
@@ -635,32 +669,32 @@ export default function ChecklistArea({
   }, [viewRole]);
 
   // tambahan useeffect
-  useEffect(() => {
-    if (!isSuper) return;
-    const FLAG = "mig-faktur-h2-v1";
-    if (typeof window === "undefined" || localStorage.getItem(FLAG)) return;
-    (async () => {
-      try {
-        for (const r of ROLES) {
-          let cur: ChecklistOverrides = {};
-          try {
-            cur = await fetchOverridesFromServer(r);
-          } catch {
-            cur = readRoleOverrides(r);
-          }
-          const next = mergeRowOverride(cur, "ar", "faktur-h2", {
-            label: "Faktur H2",
-          });
-          writeRoleOverrides(r, next);
-          try {
-            await saveOverridesToServer(r, next, role);
-          } catch {}
-        }
-        localStorage.setItem(FLAG, "1");
-        setRev((x) => x + 1);
-      } catch {}
-    })();
-  }, [isSuper, role]);
+  // useEffect(() => {
+  //   if (!isSuper) return;
+  //   const FLAG = "mig-faktur-h2-v1";
+  //   if (typeof window === "undefined" || localStorage.getItem(FLAG)) return;
+  //   (async () => {
+  //     try {
+  //       for (const r of ROLES) {
+  //         let cur: ChecklistOverrides = {};
+  //         try {
+  //           cur = await fetchOverridesFromServer(r);
+  //         } catch {
+  //           cur = readRoleOverrides(r);
+  //         }
+  //         const next = mergeRowOverride(cur, "ar", "faktur-h2", {
+  //           label: "Faktur H2",
+  //         });
+  //         writeRoleOverrides(r, next);
+  //         try {
+  //           await saveOverridesToServer(r, next, role);
+  //         } catch {}
+  //       }
+  //       localStorage.setItem(FLAG, "1");
+  //       setRev((x) => x + 1);
+  //     } catch {}
+  //   })();
+  // }, [isSuper, role]);
 
   /* ===== BASE (fixed) ===== */
   const BASE_MAP: Record<SectionKey, { title: string; rows: RowDef[] }> =
@@ -1552,25 +1586,32 @@ export default function ChecklistArea({
 
   // ======== Submit section AKTIF (non-blocking) ========
   const submitCurrentSectionAndNext = () => {
+    // data baris yang diisi user (nilai, note, dll)
     const rows = toTidyRowsForSection(
       data as ExtendedChecklistState,
       secActive,
       FINAL_MAP as Record<string, { title: string; rows: RowDef[] }>
     );
+
+    // 🆕 definisi tampilan UI (judul & label yang sedang terlihat di layar)
+    const uiSchema = schemaForSection(secActive, FINAL_MAP);
+
     const payload = {
       module: "checklist-area",
       submittedAt: new Date().toISOString(),
       submittedBy: name || "Unknown",
       role: role || "unknown",
+
       sectionSubmitted: String(secActive),
       sectionTitle: section?.title || "",
-      rows,
+      rows, // tetap kirim nilai yang diisi user
+      uiSchema, // 🆕 kirim juga definisi UI agar PDF ikut UI
     };
 
+    // pindah tab ke berikutnya + scroll
     const idx = SECTION_TABS.findIndex((t) => t.key === secActive);
     const nextKey = SECTION_TABS[(idx + 1) % SECTION_TABS.length].key;
     setSecActive(nextKey);
-
     requestAnimationFrame(() => {
       scrollToSectionAnchor(16);
     });
