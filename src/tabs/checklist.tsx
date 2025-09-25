@@ -1585,43 +1585,15 @@ export default function ChecklistArea({
   };
 
   // ======== Submit section AKTIF (non-blocking) ========
+  // ======== Submit section AKTIF (sekarang: cuma geser tab) ========
   const submitCurrentSectionAndNext = () => {
-    // data baris yang diisi user (nilai, note, dll)
-    const rows = toTidyRowsForSection(
-      data as ExtendedChecklistState,
-      secActive,
-      FINAL_MAP as Record<string, { title: string; rows: RowDef[] }>
-    );
-
-    // 🆕 definisi tampilan UI (judul & label yang sedang terlihat di layar)
-    const uiSchema = schemaForSection(secActive, FINAL_MAP);
-
-    const payload = {
-      module: "checklist-area",
-      submittedAt: new Date().toISOString(),
-      submittedBy: name || "Unknown",
-      role: role || "unknown",
-
-      sectionSubmitted: String(secActive),
-      sectionTitle: section?.title || "",
-      rows, // tetap kirim nilai yang diisi user
-      uiSchema, // 🆕 kirim juga definisi UI agar PDF ikut UI
-    };
-
-    // pindah tab ke berikutnya + scroll
+    // pindah tab ke berikutnya + scroll ke konten
     const idx = SECTION_TABS.findIndex((t) => t.key === secActive);
     const nextKey = SECTION_TABS[(idx + 1) % SECTION_TABS.length].key;
     setSecActive(nextKey);
     requestAnimationFrame(() => {
       scrollToSectionAnchor(16);
     });
-
-    void postToGAS(gasUrl || FALLBACK_GAS_URL, payload)
-      .then(() => showToast("Terkirim ✅", "ok"))
-      .catch((e) => {
-        console.error("Gagal mengirim ke Spreadsheet:", e);
-        showToast("Gagal kirim. Cek koneksi/log.", "err");
-      });
   };
 
   const isHiddenActive = useMemo(() => {
@@ -1922,9 +1894,9 @@ export default function ChecklistArea({
           <button
             onClick={submitCurrentSectionAndNext}
             className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 shadow"
-            title="Kirim section aktif, lanjut ke berikutnya"
+            title="Pindah ke section berikutnya"
           >
-            Submit Section →
+            Next Section →
           </button>
         </div>
       </div>
