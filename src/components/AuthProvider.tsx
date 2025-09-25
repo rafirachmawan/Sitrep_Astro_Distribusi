@@ -41,7 +41,6 @@ async function tryFetchMe(): Promise<{
   name: string;
   role: Role;
 } | null> {
-  // Coba beberapa jalur agar kompatibel dengan rute yang kamu pakai
   const candidates = ["/api/auth/me", "/api/accounts/me"];
   for (const url of candidates) {
     try {
@@ -50,7 +49,6 @@ async function tryFetchMe(): Promise<{
         credentials: "include",
       });
       if (res.ok) {
-        // 204 → no content / belum login
         if (res.status === 204) return null;
         const data = await res.json();
         if (data && data.id && data.name && data.role) {
@@ -66,7 +64,7 @@ async function tryFetchMe(): Promise<{
         }
       }
     } catch {
-      // diam saja; lanjut kandidat berikutnya
+      /* ignore */
     }
   }
   return null;
@@ -84,7 +82,22 @@ async function tryServerLogout() {
   }
 }
 
-/** ----------------------------------------------------------------- */
+/* ===== Cookie helpers (fallback agar API server tahu role saat login demo) ===== */
+const setCookie = (
+  name: string,
+  value: string,
+  maxAgeSec = 60 * 60 * 24 * 7
+) => {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=${encodeURIComponent(
+    value
+  )}; Path=/; Max-Age=${maxAgeSec}; SameSite=Lax`;
+};
+const delCookie = (name: string) => {
+  if (typeof document === "undefined") return;
+  document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
+};
+/* ----------------------------------------------------------------- */
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   // 1) Hydrate dari localStorage (tetap seperti logic awalmu)
@@ -104,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       const serverAcc = await tryFetchMe();
       if (!alive || !serverAcc) return;
+
       const next: AuthState = {
         role: serverAcc.role,
         user: {
@@ -113,6 +127,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       };
       setState(next);
+
       try {
         localStorage.setItem(LS_KEY, JSON.stringify(next));
         // sinkron fallback keys yang dipakai modul lain (PDF, dll)
@@ -120,6 +135,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem("sitrep-user-name", serverAcc.name);
         localStorage.removeItem("sitrep-force-account-id");
       } catch {}
+
+      // NEW: set cookie fallback juga, supaya /api/users bisa membaca role
+      setCookie("sitrep-role", serverAcc.role);
+      setCookie("sitrep-name", serverAcc.name);
+      setCookie("sitrep-userid", String(serverAcc.id));
     })();
     return () => {
       alive = false;
@@ -138,12 +158,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
     };
     setState(next);
+
     if (typeof window !== "undefined") {
       localStorage.setItem(LS_KEY, JSON.stringify(next));
       // sinkron fallback agar modul lain membacanya juga
       localStorage.setItem("sitrep-user-role", role);
       localStorage.setItem("sitrep-user-name", name);
       localStorage.removeItem("sitrep-force-account-id");
+
+      // NEW: cookie fallback untuk dipakai rute server (mis. /api/users)
+      setCookie("sitrep-role", role);
+      setCookie("sitrep-name", name);
+      setCookie("sitrep-userid", `demo:${key}`);
     }
   };
 
@@ -151,12 +177,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = () => {
     const next: AuthState = { role: null, user: null };
     setState(next);
+
     if (typeof window !== "undefined") {
       localStorage.setItem(LS_KEY, JSON.stringify(next));
       localStorage.removeItem("sitrep-user-role");
       localStorage.removeItem("sitrep-user-name");
+
+      // NEW: bersihkan cookie fallback
+      delCookie("sitrep-role");
+      delCookie("sitrep-name");
+      delCookie("sitrep-userid");
     }
-    // fire & forget: kalau tidak ada endpoint, tidak akan error ke UI
+
+    // fire & forget
     tryServerLogout();
   };
 

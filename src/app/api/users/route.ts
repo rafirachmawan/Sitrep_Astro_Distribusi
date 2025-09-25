@@ -4,9 +4,10 @@ import { getSupabaseServer, supabaseServer } from "@/lib/supabaseServer";
 
 type Role = "superadmin" | "admin" | "sales" | "gudang";
 
-// pastikan route ini selalu dinamis (jangan diprerender saat build)
+// Pastikan route ini selalu dinamis (jangan diprerender saat build)
 export const dynamic = "force-dynamic";
 
+/** Normalisasi email internal dari username */
 function toEmail(input: string) {
   const s = input.trim();
   if (s.includes("@")) return s.toLowerCase();
@@ -18,25 +19,48 @@ function toEmail(input: string) {
   return `${slug}@app.local`;
 }
 
-async function assertSuperadmin() {
-  // cek session supabase via SSR client (anon)
-  const s = await supabaseServer();
-  const {
-    data: { user },
-  } = await s.auth.getUser();
-  if (!user) return null;
+/**
+ * Cek superadmin:
+ * 1) Cabang utama: pakai session Supabase (SSR client) + profiles.role.
+ * 2) Fallback (mode demo): baca cookie yang diset AuthProvider (sitrep-role, sitrep-userid).
+ */
+async function assertSuperadmin(req?: NextRequest): Promise<string | null> {
+  // 1) Coba sesi Supabase dulu (logika asli tidak diubah)
+  try {
+    const s = await supabaseServer();
+    const {
+      data: { user },
+    } = await s.auth.getUser();
 
-  const { data: prof } = await s
-    .from("profiles")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+    if (user) {
+      const { data: prof } = await s
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
 
-  return prof?.role === "superadmin" ? user.id : null;
+      if (prof?.role === "superadmin") return user.id;
+    }
+  } catch {
+    // diam: lanjut fallback cookie
+  }
+
+  // 2) Fallback cookie (mode demo): AuthProvider akan set cookie ini saat signIn
+  if (req) {
+    const role = (req.cookies.get("sitrep-role")?.value || "").toLowerCase();
+    if (role === "superadmin") {
+      const id = req.cookies.get("sitrep-userid")?.value || "demo:superadmin";
+      return id;
+    }
+  }
+
+  return null;
 }
 
-export async function GET() {
-  const ok = await assertSuperadmin();
+/* ========================= HANDLERS ========================= */
+
+export async function GET(req: NextRequest) {
+  const ok = await assertSuperadmin(req);
   if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   // SERVICE client dibuat saat handler dipanggil (bukan di module scope)
@@ -53,7 +77,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const ok = await assertSuperadmin();
+  const ok = await assertSuperadmin(req);
   if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
   const body = await req.json();
