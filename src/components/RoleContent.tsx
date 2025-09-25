@@ -1,10 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
 "use client";
 
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useAuth } from "@/components/AuthProvider";
 import type { Role } from "@/components/AuthProvider";
+import { useAuth } from "@/components/AuthProvider";
 import type { TabDef } from "@/lib/types";
 import { getRoleTabContent, setRoleTabContent } from "@/lib/roleContent";
 
@@ -51,9 +51,38 @@ export function RoleContentViewer({ role, tab }: { role: Role; tab: TabDef }) {
   );
 }
 
+/* ===== Helper: fallback baca role dari localStorage ===== */
+function readRoleFromStorage(): Role | null {
+  try {
+    // 1) format yang disimpan oleh AuthProvider
+    const raw =
+      typeof window !== "undefined"
+        ? localStorage.getItem("sitrep-auth")
+        : null;
+    if (raw) {
+      const obj = JSON.parse(raw || "{}");
+      const r: string | undefined = obj?.role || obj?.user?.role;
+      if (r && ["superadmin", "admin", "sales", "gudang"].includes(r)) {
+        return r as Role;
+      }
+    }
+    // 2) fallback yang diset dari halaman login
+    const r2 =
+      typeof window !== "undefined"
+        ? localStorage.getItem("sitrep-user-role")
+        : null;
+    if (r2 && ["superadmin", "admin", "sales", "gudang"].includes(r2)) {
+      return r2 as Role;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 /* ====== Editor: hanya superadmin ====== */
 const EDITABLE_ROLES: Role[] = ["sales", "gudang"];
-const TAB_OPTIONS: { key: TabDef; label: string }[] = [
+const TAB_OPTIONS: Array<{ key: TabDef; label: string }> = [
   { key: "checklist", label: TAB_LABELS.checklist },
   { key: "evaluasi", label: TAB_LABELS.evaluasi },
   { key: "target", label: TAB_LABELS.target },
@@ -61,22 +90,18 @@ const TAB_OPTIONS: { key: TabDef; label: string }[] = [
   { key: "agenda", label: TAB_LABELS.agenda },
   { key: "lampiran", label: TAB_LABELS.lampiran },
   { key: "achievement", label: TAB_LABELS.achievement },
-] as any;
+];
 
 export function RoleContentEditor() {
   const { role: authRole } = useAuth();
 
-  // ✅ Fallback: kalau AuthContext belum terisi saat render pertama,
-  // ambil dari localStorage supaya tombol "User Manager" tetap muncul.
-  const [myRole, setMyRole] = useState<Role | null>(authRole);
+  // simpan role-ku (mengandalkan AuthProvider, lalu fallback ke localStorage)
+  const [myRole, setMyRole] = useState<Role | null>(authRole ?? null);
   useEffect(() => {
     if (authRole) {
       setMyRole(authRole);
-      return;
-    }
-    if (typeof window !== "undefined") {
-      const r = (localStorage.getItem("sitrep-user-role") || "") as Role | "";
-      setMyRole(r || null);
+    } else {
+      setMyRole(readRoleFromStorage());
     }
   }, [authRole]);
 
@@ -102,19 +127,18 @@ export function RoleContentEditor() {
     <div className="mb-6 bg-white border rounded-2xl shadow-sm overflow-hidden">
       <div className="px-4 sm:px-6 py-3 bg-blue-50 border-b flex flex-wrap items-center justify-between gap-3">
         <div className="font-semibold text-slate-800">Role Copy Manager</div>
-
         <div className="flex items-center gap-2">
           <div className="text-xs text-slate-600">
             Superadmin dapat mengubah teks per role
           </div>
           {myRole === "superadmin" && (
-            <Link
+            <a
               href="/superadmin/users"
               className="rounded-lg border px-3 py-1.5 text-sm hover:bg-white"
               title="Kelola akun & role"
             >
               User Manager
-            </Link>
+            </a>
           )}
         </div>
       </div>
