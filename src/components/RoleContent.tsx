@@ -3,9 +3,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import type { Role } from "@/components/AuthProvider";
 import type { TabDef } from "@/lib/types";
 import { getRoleTabContent, setRoleTabContent } from "@/lib/roleContent";
+import { useAuth } from "@/components/AuthProvider";
 
 /* ====== Label tab supaya rapi ====== */
 const TAB_LABELS: Record<string, string> = {
@@ -67,6 +69,9 @@ export function RoleContentEditor() {
   const [tab, setTab] = useState<TabDef>("checklist");
   const [value, setValue] = useState("");
 
+  // hanya untuk menampilkan tombol "User Manager" jika benar-benar superadmin
+  const { role: myRole } = useAuth();
+
   useEffect(() => {
     setValue(getRoleTabContent(role, tab) || "");
   }, [role, tab]);
@@ -85,7 +90,19 @@ export function RoleContentEditor() {
     <div className="mb-6 bg-white border rounded-2xl shadow-sm overflow-hidden">
       <div className="px-4 sm:px-6 py-3 bg-blue-50 border-b flex flex-wrap items-center justify-between gap-3">
         <div className="font-semibold text-slate-800">Role Content Manager</div>
-        <div className="text-xs text-slate-600">Hanya untuk superadmin</div>
+
+        <div className="flex items-center gap-2">
+          <div className="text-xs text-slate-600">Hanya untuk superadmin</div>
+          {myRole === "superadmin" && (
+            <Link
+              href="/superadmin/users"
+              className="rounded-lg border px-3 py-1.5 text-sm hover:bg-white"
+              title="Kelola akun & role"
+            >
+              User Manager
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="p-4 sm:p-6 space-y-4">
