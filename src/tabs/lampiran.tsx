@@ -1260,6 +1260,8 @@ export default function Lampiran({ data }: { data: AppState }) {
 
     const st = doc.createElement("style");
     st.textContent = `
+    --sigbox-w: 360px;   /* lebar kotak tanda tangan */
+
   .page{width:794px;min-height:1123px;box-sizing:border-box;padding:24px;}
   .section{margin-top:18px;}
   .title{font-weight:800;color:#0f172a;margin-bottom:10px;letter-spacing:.2px;font-size:18px;}
@@ -1417,32 +1419,56 @@ export default function Lampiran({ data }: { data: AppState }) {
 
   .status-badge{display:inline-block;padding:2px 0;background:transparent;color:#0f172a;font-size:14px;font-weight:400}
 
-  .sigwrap{page-break-inside:avoid;margin-top:18px;}
-  .sigtitle{text-align:right;margin:0 0 6px 0;}
-  .sigrow{display:flex;justify-content:flex-end;}
-  .sigbox{position:relative;width:360px;margin-top:6px;border:1px dashed #cbd5e1;border-radius:12px;padding:12px;height:140px;display:flex;align-items:center;justify-content:center;background:#fcfdff;}
+/* ====== Area Tanda Tangan (perbarui) ====== */
+.sigwrap{page-break-inside:avoid;margin-top:18px;}
+
+.sigtitle{
+  /* title "Tanda Tangan" tepat di atas kotak dan TENGAH */
+  width: var(--sigbox-w);
+  margin: 0 0 6px auto;     /* dorong ke kanan agar sejajar kotak */
+  text-align: center;       /* center text */
+}
+
+.sigrow{display:flex;justify-content:flex-end;}
+
+.sigbox{
+  position:relative;
+  width: var(--sigbox-w);   /* pakai variabel biar konsisten */
+  margin-top:6px;
+  border:1px dashed #cbd5e1;
+  border-radius:12px;
+  padding:12px;
+  height:140px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:#fcfdff;
+}
+
 .sigbox img{
-  max-height:82px;    /* sebelumnya 84/96, turunkan sedikit */
+  max-height:82px;
   display:block;
   margin:auto;
   object-fit:contain;
 }
 
-
-  .sigline{position:absolute;left:12px;right:12px;bottom:12px;height:2px;background:#0f172a;opacity:.85;}
-.sigcap{
+.sigline{
   position:absolute;
-  left:14px;
-  right:auto;
-  bottom:26px;     /* dari 18px → naik 8px biar ga mepet garis */
-  text-align:left;
-  font-size:13px;  /* dari 11px → sedikit lebih besar */
-  line-height:1;
-  color:#334155;
-  font-weight:600;
-  z-index:2;
-  pointer-events:none;
+  left:12px; right:12px; bottom:12px;
+  height:2px; background:#0f172a; opacity:.85;
 }
+
+.sigcap{
+  /* NAMA (mis. Yessi) di TENGAH, tetap DI DALAM kotak, di atas garis */
+  position:absolute;
+  left:12px; right:12px;
+  bottom:26px;
+  text-align:center;        /* <— ini yang bikin tengah */
+  font-size:13px; line-height:1;
+  color:#334155; font-weight:600;
+  z-index:2; pointer-events:none;
+}
+
 
 
 
