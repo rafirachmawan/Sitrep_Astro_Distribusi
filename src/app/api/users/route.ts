@@ -45,7 +45,7 @@ async function assertSuperadmin(req?: NextRequest): Promise<string | null> {
     // diam: lanjut fallback cookie
   }
 
-  // 2) Fallback cookie (mode demo): AuthProvider akan set cookie ini saat signIn
+  // 2) Fallback cookie (mode demo)
   if (req) {
     const role = (req.cookies.get("sitrep-role")?.value || "").toLowerCase();
     if (role === "superadmin") {
@@ -124,4 +124,52 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, id: userId });
+}
+
+/** ========================= HAPUS USER =========================
+ * Hapus user berdasarkan id.
+ * - id bisa lewat query ?id=... atau body JSON { id: "..." }
+ * - cegah hapus diri sendiri.
+ * - urutan: hapus profile → hapus auth user.
+ */
+export async function DELETE(req: NextRequest) {
+  const me = await assertSuperadmin(req);
+  if (!me) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+
+  const url = new URL(req.url);
+  const fromQuery = url.searchParams.get("id") || "";
+  let id = fromQuery;
+
+  if (!id) {
+    try {
+      const body = await req.json();
+      if (body && typeof body.id === "string") id = body.id;
+    } catch {
+      // no body
+    }
+  }
+
+  if (!id) {
+    return NextResponse.json({ error: "id wajib" }, { status: 400 });
+  }
+  if (id === me) {
+    return NextResponse.json(
+      { error: "Tidak boleh menghapus akun diri sendiri." },
+      { status: 400 }
+    );
+  }
+
+  const admin = getSupabaseServer();
+
+  // Hapus profile dulu
+  const { error: perr } = await admin.from("profiles").delete().eq("id", id);
+  if (perr) return NextResponse.json({ error: perr.message }, { status: 500 });
+
+  // Baru hapus user auth
+  const del = await admin.auth.admin.deleteUser(id);
+  if (del.error) {
+    return NextResponse.json({ error: del.error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
 }

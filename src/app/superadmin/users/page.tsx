@@ -26,6 +26,9 @@ export default function UsersPage() {
   const [formRole, setFormRole] = useState<Role>("admin");
   const [password, setPassword] = useState("");
 
+  // status hapus (row-level)
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   async function load() {
     setLoading(true);
     try {
@@ -39,7 +42,7 @@ export default function UsersPage() {
       }
       setList(json.items || []);
       setMsg(null);
-    } catch (e) {
+    } catch {
       setLoading(false);
       setMsg("Gagal memuat");
     }
@@ -72,8 +75,38 @@ export default function UsersPage() {
       setDisplayName("");
       setPassword("");
       await load();
-    } catch (e) {
+    } catch {
       setMsg("Gagal menambah user");
+    }
+  }
+
+  async function onDelete(targetId: string, targetName: string) {
+    setMsg(null);
+
+    // Cegah hapus diri sendiri
+    const isSelf = user?.id === targetId; // <- boolean murni
+    if (isSelf) {
+      setMsg("Tidak bisa menghapus akun sendiri.");
+      return;
+    }
+
+    const ok = window.confirm(`Hapus user "${targetName}"?`);
+    if (!ok) return;
+
+    try {
+      setDeletingId(targetId);
+      const res = await fetch(`/api/users/${targetId}`, { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      setDeletingId(null);
+      if (!res.ok) {
+        setMsg(json?.error || "Gagal menghapus user");
+        return;
+      }
+      setMsg("User terhapus.");
+      await load();
+    } catch {
+      setDeletingId(null);
+      setMsg("Gagal menghapus user");
     }
   }
 
@@ -160,21 +193,45 @@ export default function UsersPage() {
                 <th className="text-left p-2">Nama</th>
                 <th className="text-left p-2">Role</th>
                 <th className="text-left p-2">Dibuat</th>
+                <th className="text-left p-2">Aksi</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {list.map((u) => (
-                <tr key={u.id}>
-                  <td className="p-2">{u.display_name}</td>
-                  <td className="p-2">{u.role}</td>
-                  <td className="p-2">
-                    {new Date(u.created_at).toLocaleString()}
-                  </td>
-                </tr>
-              ))}
+              {list.map((u) => {
+                const isSelf = user?.id === u.id; // boolean murni
+                const isBusy = deletingId === u.id;
+                return (
+                  <tr key={u.id}>
+                    <td className="p-2">{u.display_name}</td>
+                    <td className="p-2">{u.role}</td>
+                    <td className="p-2">
+                      {new Date(u.created_at).toLocaleString()}
+                    </td>
+                    <td className="p-2">
+                      <button
+                        onClick={() => onDelete(u.id, u.display_name)}
+                        disabled={Boolean(isBusy || isSelf)}
+                        className={[
+                          "rounded-md border px-2 py-1 text-xs",
+                          isBusy || isSelf
+                            ? "text-slate-400 border-slate-200 cursor-not-allowed"
+                            : "text-rose-700 border-rose-300 hover:bg-rose-50",
+                        ].join(" ")}
+                        title={
+                          isSelf
+                            ? "Tidak bisa menghapus akun sendiri"
+                            : "Hapus user"
+                        }
+                      >
+                        {isBusy ? "Menghapus…" : "Hapus"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
               {list.length === 0 && (
                 <tr>
-                  <td className="p-2 text-slate-500" colSpan={3}>
+                  <td className="p-2 text-slate-500" colSpan={4}>
                     Belum ada data.
                   </td>
                 </tr>
