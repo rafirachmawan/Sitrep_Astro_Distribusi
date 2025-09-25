@@ -1436,11 +1436,19 @@ export default function Lampiran({ data }: { data: AppState }) {
 
   .sigline{position:absolute;left:12px;right:12px;bottom:12px;height:2px;background:#0f172a;opacity:.85;}
 .sigcap{
-  left:12px;        /* boleh biarkan 14px juga, yang penting ada kiri & kanan */
-  right:12px;       /* tambahkan right agar lebarnya penuh */
-  text-align:center;/* dari left -> center supaya posisinya pas di tengah */
-
+  position:absolute;     /* penting: supaya nempel di posisi yg kita set */
+  left:12px;             /* lebar penuh di dalam kotak */
+  right:12px;
+  bottom:26px;           /* tepat di atas garis tanda tangan */
+  text-align:center;     /* center pas di bawah ttd */
+  font-size:13px;
+  line-height:1;
+  color:#334155;
+  font-weight:600;
+  z-index:2;
+  pointer-events:none;
 }
+
 
 
 
