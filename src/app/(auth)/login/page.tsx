@@ -31,18 +31,34 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  function findAccount(inputName: string) {
+    const raw = inputName.trim();
+    const keyLower = raw.toLowerCase();
+    const firstToken = raw.split(/\s+/)[0]?.toLowerCase() || "";
+
+    // 1) coba username persis (mis. "yessi")
+    // 2) coba token pertama (mis. "yessi" dari "Yessi Aprilliana")
+    // 3) coba cocokkan displayName penuh (mis. "Yessi Aprilliana")
+    return (
+      ACCOUNTS[keyLower] ??
+      ACCOUNTS[firstToken] ??
+      Object.values(ACCOUNTS).find(
+        (a) => a.displayName.toLowerCase() === keyLower
+      ) ??
+      null
+    );
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
-    const key = name.trim().toLowerCase();
-    const acc = ACCOUNTS[key];
+    const acc = findAccount(name);
     if (!acc) return setError("Nama tidak ditemukan.");
     if (pass !== acc.password) return setError("Password salah.");
 
     setSubmitting(true);
     try {
-      // Simpan ke AuthProvider
       // Simpan ke AuthProvider
       signIn({ name: acc.displayName, role: acc.role });
 
