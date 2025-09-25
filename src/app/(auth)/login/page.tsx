@@ -8,9 +8,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { Lock, LogIn } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 
-/* =========================
-   Akun DEMO (tetap ada)
-   ========================= */
+// Demo accounts (mock). Di produksi ganti via API.
 const ACCOUNTS: Record<
   string,
   { password: string; role: Role; displayName: string }
@@ -25,9 +23,30 @@ const ACCOUNTS: Record<
   budi: { password: "gudang321", role: "gudang", displayName: "Budi" },
 };
 
-/* =========================
-   Supabase browser client
-   ========================= */
+/** Optional: coba set session di server (Supabase/Next API) */
+async function tryServerLogin(payload: {
+  name: string;
+  password: string;
+  role: Role;
+}) {
+  const candidates = ["/api/auth/login", "/api/accounts/login"];
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) return true;
+    } catch {
+      /* ignore */
+    }
+  }
+  return false;
+}
+
+/* ========== Supabase (tambahan) ========== */
 const supabase =
   typeof window !== "undefined" &&
   process.env.NEXT_PUBLIC_SUPABASE_URL &&
@@ -38,7 +57,6 @@ const supabase =
       )
     : null;
 
-/* Helper */
 function toEmail(input: string) {
   const s = input.trim();
   if (!s) return "";
@@ -50,13 +68,61 @@ function toEmail(input: string) {
       .slice(0, 40) || "user";
   return `${slug}@app.local`;
 }
-function setCookie(name: string, value: string, days = 7) {
-  const d = new Date();
-  d.setTime(d.getTime() + days * 24 * 60 * 60 * 1000);
-  document.cookie = `${name}=${encodeURIComponent(
-    value
-  )}; expires=${d.toUTCString()}; path=/; SameSite=Lax`;
+
+// Aman tanpa `any`: ambil display_name dari profile/user_metadata
+function pickDisplayName(
+  profileName: unknown,
+  userMeta: unknown,
+  fallback: string
+): string {
+  if (typeof profileName === "string" && profileName.trim()) return profileName;
+
+  if (userMeta && typeof userMeta === "object") {
+    const meta = userMeta as Record<string, unknown>;
+    const dn = meta["display_name"];
+    if (typeof dn === "string" && dn.trim()) return dn;
+  }
+  return fallback;
 }
+
+async function trySupabaseLogin(
+  name: string,
+  pass: string
+): Promise<
+  | { ok: true; displayName: string; role: Role; userId: string }
+  | { ok: false; msg?: string }
+> {
+  if (!supabase) return { ok: false };
+
+  const email = toEmail(name);
+  if (!email || !pass) return { ok: false };
+
+  const { data, error } = await supabase.auth.signInWithPassword({
+    email,
+    password: pass,
+  });
+  if (error || !data.user) {
+    return { ok: false, msg: error?.message || "Login gagal" };
+  }
+
+  const uid = data.user.id;
+  const { data: prof } = await supabase
+    .from("profiles")
+    .select("display_name, role")
+    .eq("id", uid)
+    .maybeSingle();
+
+  const displayName = pickDisplayName(
+    prof?.display_name,
+    data.user.user_metadata,
+    email.split("@")[0]
+  );
+
+  const role = ((prof?.role as Role | undefined) || "admin") as Role;
+
+  return { ok: true, displayName, role, userId: uid };
+}
+/* ========================================= */
 
 export default function LoginPage() {
   const router = useRouter();
@@ -71,7 +137,6 @@ export default function LoginPage() {
     const raw = inputName.trim();
     const keyLower = raw.toLowerCase();
     const firstToken = raw.split(/\s+/)[0]?.toLowerCase() || "";
-
     return (
       ACCOUNTS[keyLower] ??
       ACCOUNTS[firstToken] ??
@@ -82,71 +147,32 @@ export default function LoginPage() {
     );
   }
 
-  async function trySupabaseLogin(): Promise<
-    | { ok: true; displayName: string; role: Role; userId: string }
-    | { ok: false; msg?: string }
-  > {
-    if (!supabase) return { ok: false };
-
-    const email = toEmail(name);
-    if (!email || !pass) return { ok: false };
-
-    // 1) auth
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password: pass,
-    });
-    if (error || !data.user) {
-      return { ok: false, msg: error?.message || "Login gagal" };
-    }
-
-    // 2) ambil profile → display_name & role
-    const uid = data.user.id;
-    const { data: prof } = await supabase
-      .from("profiles")
-      .select("display_name, role")
-      .eq("id", uid)
-      .maybeSingle();
-
-    const displayName =
-      prof?.display_name ||
-      (data.user.user_metadata as any)?.display_name ||
-      email.split("@")[0];
-
-    const role = ((prof?.role as Role | undefined) || "admin") as Role;
-
-    // 3) set cookie supaya API superadmin bisa jalan (fallback yang kita pakai)
-    setCookie("sitrep-role", role);
-    setCookie("sitrep-userid", uid);
-    setCookie("sitrep-name", displayName);
-
-    return { ok: true, displayName, role, userId: uid };
-  }
-
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     setSubmitting(true);
-
     try {
-      // === 1) Coba login via Supabase dulu ===
-      const sup = await trySupabaseLogin();
+      // 1) Coba login Supabase dulu
+      const sup = await trySupabaseLogin(name, pass);
       if (sup.ok) {
-        // sinkron ke state lokal sesuai logic-mu
         signIn({ name: sup.displayName, role: sup.role });
-
-        // persist fallback keys (dipakai fitur PDF, dll)
-        try {
+        if (typeof window !== "undefined") {
           localStorage.setItem("sitrep-user-role", sup.role);
           localStorage.setItem("sitrep-user-name", sup.displayName);
           localStorage.removeItem("sitrep-force-account-id");
+        }
+        try {
+          await tryServerLogin({
+            name: sup.displayName,
+            password: pass,
+            role: sup.role,
+          });
         } catch {}
-
         router.push("/" as Route);
         return;
       }
 
-      // === 2) Fallback ke akun DEMO (logika lama) ===
+      // 2) Fallback ke akun demo (logika lamamu)
       const acc = findAccount(name);
       if (!acc) {
         setError(sup.msg || "Nama tidak ditemukan.");
@@ -157,21 +183,19 @@ export default function LoginPage() {
         return;
       }
 
-      // Simpan ke AuthProvider (logic awal)
       signIn({ name: acc.displayName, role: acc.role });
-
-      // Persist agar fitur lain bisa baca
-      try {
+      if (typeof window !== "undefined") {
         localStorage.setItem("sitrep-user-role", acc.role);
         localStorage.setItem("sitrep-user-name", acc.displayName);
         localStorage.removeItem("sitrep-force-account-id");
+      }
+      try {
+        await tryServerLogin({
+          name: acc.displayName,
+          password: pass,
+          role: acc.role,
+        });
       } catch {}
-
-      // Cookie kecil agar API superadmin juga tetap jalan saat demo
-      setCookie("sitrep-role", acc.role);
-      setCookie("sitrep-userid", `demo:${acc.displayName.toLowerCase()}`);
-      setCookie("sitrep-name", acc.displayName);
-
       router.push("/" as Route);
     } finally {
       setSubmitting(false);
@@ -219,10 +243,11 @@ export default function LoginPage() {
                 Masuk untuk melanjutkan
               </h2>
               <p className="mt-1 text-sm text-slate-600">
-                Masukkan <span className="font-medium">Nama</span> dan{" "}
-                <span className="font-medium">Password</span>. Sistem akan
-                mencoba login ke Supabase terlebih dahulu (akun yang dibuat di
-                halaman superadmin). Jika tidak ada, akan pakai akun demo.
+                Akunmu memiliki role yang sudah dipatenkan. Masukkan{" "}
+                <span className="font-medium">Nama</span> dan{" "}
+                <span className="font-medium">Password</span>. Setelah berhasil,
+                header dashboard otomatis menampilkan <b>Nama</b>, <b>Role</b>,
+                dan <b>Depo TULUNGAGUNG</b>.
               </p>
 
               <ul className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
@@ -254,7 +279,7 @@ export default function LoginPage() {
               <form onSubmit={onSubmit} className="mt-4 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Nama / Username
+                    Nama
                   </label>
                   <input
                     value={name}
@@ -310,9 +335,10 @@ export default function LoginPage() {
                 </button>
 
                 <p className="text-xs text-slate-500">
-                  * Jika akun dibuat dari halaman superadmin, pakai{" "}
-                  <code>{`<username>`}</code> yang kamu input di sana (email
-                  internal otomatis <code>{`<username>@app.local`}</code>).
+                  * Bisa login dengan akun yang dibuat di halaman superadmin
+                  (username = email internal{" "}
+                  <code>{`<username>@app.local`}</code>). Jika tidak ditemukan,
+                  otomatis pakai akun demo di atas.
                 </p>
               </form>
             </div>
