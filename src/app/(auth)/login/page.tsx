@@ -22,6 +22,29 @@ const ACCOUNTS: Record<
   budi: { password: "gudang321", role: "gudang", displayName: "Budi" },
 };
 
+/** Optional: coba set session di server (Supabase/Next API) */
+async function tryServerLogin(payload: {
+  name: string;
+  password: string;
+  role: Role;
+}) {
+  const candidates = ["/api/auth/login", "/api/accounts/login"];
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) return true; // sesi ke-set di server
+    } catch {
+      // diam saja; lanjut kandidat lain
+    }
+  }
+  return false;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { signIn } = useAuth();
@@ -36,9 +59,9 @@ export default function LoginPage() {
     const keyLower = raw.toLowerCase();
     const firstToken = raw.split(/\s+/)[0]?.toLowerCase() || "";
 
-    // 1) coba username persis (mis. "yessi")
-    // 2) coba token pertama (mis. "yessi" dari "Yessi Aprilliana")
-    // 3) coba cocokkan displayName penuh (mis. "Yessi Aprilliana")
+    // 1) username persis (mis. "yessi")
+    // 2) token pertama (mis. "yessi" dari "Yessi Aprilliana")
+    // 3) displayName penuh (mis. "Yessi Aprilliana")
     return (
       ACCOUNTS[keyLower] ??
       ACCOUNTS[firstToken] ??
@@ -59,14 +82,26 @@ export default function LoginPage() {
 
     setSubmitting(true);
     try {
-      // Simpan ke AuthProvider
+      // Simpan ke AuthProvider (tetap seperti logic lamamu)
       signIn({ name: acc.displayName, role: acc.role });
 
-      // Persist agar bisa di-pickup PDF (kalau context belum sempat terisi)
+      // Persist agar bisa di-pickup PDF / modul lain
       if (typeof window !== "undefined") {
         localStorage.setItem("sitrep-user-role", acc.role);
         localStorage.setItem("sitrep-user-name", acc.displayName);
         localStorage.removeItem("sitrep-force-account-id");
+      }
+
+      // Opsional: coba set cookie session di server (supaya lintas device)
+      // Tidak mempengaruhi alur bila gagal.
+      try {
+        await tryServerLogin({
+          name: acc.displayName,
+          password: pass,
+          role: acc.role,
+        });
+      } catch {
+        /* ignore */
       }
 
       router.push("/" as Route);
