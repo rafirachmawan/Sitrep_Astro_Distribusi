@@ -1418,7 +1418,12 @@ export default function Lampiran({ data }: { data: AppState }) {
   .status-badge{display:inline-block;padding:2px 0;background:transparent;color:#0f172a;font-size:14px;font-weight:400}
 
   .sigwrap{page-break-inside:avoid;margin-top:18px;}
-  .sigtitle{text-align:right;margin:0 0 6px 0;}
+.sigtitle{
+  width:360px;           /* lebar sama seperti .sigbox */
+  margin:0 0 6px auto;   /* blok selebar 360px nempel kanan */
+  text-align:center;     /* teksnya di tengah blok tsb -> geser dari pojok kanan */
+}
+
   .sigrow{display:flex;justify-content:flex-end;}
   .sigbox{position:relative;width:360px;margin-top:6px;border:1px dashed #cbd5e1;border-radius:12px;padding:12px;height:140px;display:flex;align-items:center;justify-content:center;background:#fcfdff;}
 .sigbox img{
@@ -1431,17 +1436,10 @@ export default function Lampiran({ data }: { data: AppState }) {
 
   .sigline{position:absolute;left:12px;right:12px;bottom:12px;height:2px;background:#0f172a;opacity:.85;}
 .sigcap{
-  position:absolute;
-  left:14px;
-  right:auto;
-  bottom:26px;     /* dari 18px → naik 8px biar ga mepet garis */
-  text-align:left;
-  font-size:13px;  /* dari 11px → sedikit lebih besar */
-  line-height:1;
-  color:#334155;
-  font-weight:600;
-  z-index:2;
-  pointer-events:none;
+  left:12px;        /* boleh biarkan 14px juga, yang penting ada kiri & kanan */
+  right:12px;       /* tambahkan right agar lebarnya penuh */
+  text-align:center;/* dari left -> center supaya posisinya pas di tengah */
+
 }
 
 
