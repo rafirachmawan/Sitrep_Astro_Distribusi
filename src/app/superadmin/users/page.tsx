@@ -1,3 +1,4 @@
+// src/app/superadmin/users/page.tsx
 "use client";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
@@ -11,9 +12,7 @@ type Item = {
 type Role = "superadmin" | "admin" | "sales" | "gudang";
 
 export default function UsersPage() {
-  // ⬇️ ambil role terpisah dari user
-  const { user, role } = useAuth();
-
+  const { user, role } = useAuth(); // ⬅️ ambil role dari context
   const [list, setList] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
@@ -21,7 +20,7 @@ export default function UsersPage() {
   // form
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [roleForm, setRoleForm] = useState<Role>("admin");
+  const [urole, setUrole] = useState<Role>("admin");
   const [password, setPassword] = useState("");
 
   async function load() {
@@ -42,7 +41,7 @@ export default function UsersPage() {
     const res = await fetch("/api/users", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ username, displayName, role: roleForm, password }),
+      body: JSON.stringify({ username, displayName, role: urole, password }),
     });
     const json = await res.json();
     if (!res.ok) {
@@ -56,8 +55,7 @@ export default function UsersPage() {
     await load();
   }
 
-  if (!user) return <div className="p-6">Harap login.</div>;
-  // ⬇️ cek role dari context, bukan dari user
+  if (!user || !role) return <div className="p-6">Harap login.</div>;
   if (role !== "superadmin")
     return <div className="p-6">Hanya superadmin.</div>;
 
@@ -82,8 +80,8 @@ export default function UsersPage() {
           />
           <select
             className="border rounded-md px-2 py-2"
-            value={roleForm}
-            onChange={(e) => setRoleForm(e.target.value as Role)}
+            value={urole}
+            onChange={(e) => setUrole(e.target.value as Role)}
           >
             <option value="admin">admin</option>
             <option value="sales">sales</option>
@@ -106,8 +104,7 @@ export default function UsersPage() {
         </button>
         {msg && <div className="mt-2 text-sm text-slate-600">{msg}</div>}
         <div className="mt-2 text-xs text-slate-500">
-          Email internal akan otomatis menjadi{" "}
-          <code>{`<username>@app.local`}</code>.
+          Email internal otomatis menjadi <code>{`<username>@app.local`}</code>.
         </div>
       </div>
 

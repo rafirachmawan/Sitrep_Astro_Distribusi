@@ -1,9 +1,11 @@
 // src/app/api/users/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase";
-import { supabaseServer } from "@/lib/supabaseServer";
+import { getSupabaseServer, supabaseServer } from "@/lib/supabaseServer";
 
 type Role = "superadmin" | "admin" | "sales" | "gudang";
+
+// pastikan route ini selalu dinamis (jangan diprerender saat build)
+export const dynamic = "force-dynamic";
 
 function toEmail(input: string) {
   const s = input.trim();
@@ -17,7 +19,8 @@ function toEmail(input: string) {
 }
 
 async function assertSuperadmin() {
-  const s = await supabaseServer(); // ⬅️ penting: await
+  // cek session supabase via SSR client (anon)
+  const s = await supabaseServer();
   const {
     data: { user },
   } = await s.auth.getUser();
@@ -36,7 +39,10 @@ export async function GET() {
   const ok = await assertSuperadmin();
   if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const { data, error } = await supabaseAdmin
+  // SERVICE client dibuat saat handler dipanggil (bukan di module scope)
+  const admin = getSupabaseServer();
+
+  const { data, error } = await admin
     .from("profiles")
     .select("id, display_name, role, created_at")
     .order("created_at", { ascending: false });
@@ -67,9 +73,10 @@ export async function POST(req: NextRequest) {
   }
 
   const email = toEmail(username);
+  const admin = getSupabaseServer();
 
   // 1) buat user auth
-  const created = await supabaseAdmin.auth.admin.createUser({
+  const created = await admin.auth.admin.createUser({
     email,
     password,
     email_confirm: true,
@@ -82,13 +89,13 @@ export async function POST(req: NextRequest) {
   const userId = created.data.user!.id;
 
   // 2) insert profile
-  const { error: perr } = await supabaseAdmin
+  const { error: perr } = await admin
     .from("profiles")
     .insert({ id: userId, display_name: displayName, role });
 
   if (perr) {
-    // rollback kalau gagal bikin profile
-    await supabaseAdmin.auth.admin.deleteUser(userId);
+    // rollback kalau profile gagal
+    await admin.auth.admin.deleteUser(userId);
     return NextResponse.json({ error: perr.message }, { status: 500 });
   }
 
