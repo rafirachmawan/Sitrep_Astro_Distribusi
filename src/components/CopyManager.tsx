@@ -1,60 +1,143 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 "use client";
-// import React, { useEffect } from "react";
-import React from "react";
-import { useEffect, useMemo, useState } from "react";
-import { useCopy } from "@/components/CopyProvider";
-import type { Role } from "@/components/AuthProvider";
-import type { TabDef } from "@/lib/types";
 
+import { useEffect, useMemo, useState } from "react";
+import type { Role } from "@/components/AuthProvider";
+import { useAuth } from "@/components/AuthProvider";
+import type { TabDef } from "@/lib/types";
+import { getRoleTabContent, setRoleTabContent } from "@/lib/roleContent";
+
+/* ===== Label tab ===== */
+const TAB_LABELS: Record<string, string> = {
+  checklist: "Checklist Area",
+  evaluasi: "Evaluasi Tim",
+  target: "Target & Achievement",
+  sparta: "Project Tracking (SPARTA)",
+  agenda: "Agenda & Jadwal",
+  lampiran: "Lampiran",
+  achievement: "Achievement",
+};
+
+/* ===== Helper: fallback baca role dari localStorage (untuk first paint) ===== */
+function readRoleFromStorage(): Role | null {
+  try {
+    const raw =
+      typeof window !== "undefined"
+        ? localStorage.getItem("sitrep-auth")
+        : null;
+    if (raw) {
+      const obj = JSON.parse(raw || "{}");
+      const r: string | undefined = obj?.role || obj?.user?.role;
+      if (r && ["superadmin", "admin", "sales", "gudang"].includes(r)) {
+        return r as Role;
+      }
+    }
+    const r2 =
+      typeof window !== "undefined"
+        ? localStorage.getItem("sitrep-user-role")
+        : null;
+    if (r2 && ["superadmin", "admin", "sales", "gudang"].includes(r2)) {
+      return r2 as Role;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/* ===== Viewer (dipakai oleh role non-superadmin bila perlu) ===== */
+export function RoleContentViewer({ role, tab }: { role: Role; tab: TabDef }) {
+  const label = TAB_LABELS[tab] ?? tab;
+  const [content, setContent] = useState("");
+
+  useEffect(() => {
+    setContent(getRoleTabContent(role, tab));
+  }, [role, tab]);
+
+  if (!content) {
+    return (
+      <div className="bg-white border rounded-2xl shadow-sm p-6">
+        <h3 className="text-lg font-semibold text-slate-800 mb-2">{label}</h3>
+        <div className="border rounded-xl p-4 text-center text-slate-600 bg-slate-50">
+          Belum ada konten untuk role ini pada tab{" "}
+          <span className="font-medium">{label}</span>. Silakan hubungi{" "}
+          <span className="font-medium">superadmin</span> untuk mengisi.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white border rounded-2xl shadow-sm p-6">
+      <h3 className="text-lg font-semibold text-slate-800 mb-3">{label}</h3>
+      <article className="prose prose-sm max-w-none text-slate-800 whitespace-pre-wrap">
+        {content}
+      </article>
+    </div>
+  );
+}
+
+/* ====== Editor: hanya superadmin ====== */
 const EDITABLE_ROLES: Role[] = ["sales", "gudang"];
-const TAB_OPTIONS: { key: TabDef; label: string }[] = [
-  { key: "checklist", label: "Checklist Area" },
-  { key: "evaluasi", label: "Evaluasi Tim" },
-  { key: "target", label: "Target & Achievement" },
-  { key: "sparta", label: "Project Tracking (SPARTA)" },
-  { key: "agenda", label: "Agenda & Jadwal" },
-  { key: "lampiran", label: "Lampiran" },
-  { key: "achievement", label: "Achievement" },
-] as any;
+const TAB_OPTIONS: Array<{ key: TabDef; label: string }> = [
+  { key: "checklist", label: TAB_LABELS.checklist },
+  { key: "evaluasi", label: TAB_LABELS.evaluasi },
+  { key: "target", label: TAB_LABELS.target },
+  { key: "sparta", label: TAB_LABELS.sparta },
+  { key: "agenda", label: TAB_LABELS.agenda },
+  { key: "lampiran", label: TAB_LABELS.lampiran },
+  { key: "achievement", label: TAB_LABELS.achievement },
+];
 
 export default function CopyManager() {
-  const { copy, setCopy } = useCopy();
+  const { role: authRole } = useAuth();
+
+  // role saya (ambil dari AuthProvider, lalu fallback ke localStorage agar tidak "miss" saat hydration)
+  const [myRole, setMyRole] = useState<Role | null>(authRole ?? null);
+  useEffect(() => {
+    if (authRole) {
+      setMyRole(authRole);
+    } else {
+      setMyRole(readRoleFromStorage());
+    }
+  }, [authRole]);
+
   const [role, setRole] = useState<Role>("sales");
   const [tab, setTab] = useState<TabDef>("checklist");
-  const [title, setTitle] = useState("");
-  const [instruction, setInstruction] = useState("");
+  const [value, setValue] = useState("");
 
-  // Defaultnya: mulai dari teks admin (via default copy)
   useEffect(() => {
-    const cur = copy[tab] ?? {};
-    // cur itu hasil merge default admin + override role aktif login.
-    // Tapi editor ini untuk menimpa role lain, jadi awalnya ambil dari cur sebagai baseline.
-    setTitle(cur.title ?? "");
-    setInstruction(cur.instruction ?? "");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+    setValue(getRoleTabContent(role, tab) || "");
+  }, [role, tab]);
 
-  const header = useMemo(
-    () => `${role} • ${TAB_OPTIONS.find((t) => t.key === tab)?.label ?? tab}`,
+  const title = useMemo(
+    () => `${role} • ${TAB_LABELS[tab] ?? tab}`,
     [role, tab]
   );
 
-  const onSave = () => {
-    setCopy(role, tab, {
-      title: title.trim(),
-      instruction: instruction.trim(),
-    });
-    alert(`Teks disimpan untuk ${header}`);
+  const save = () => {
+    setRoleTabContent(role, tab, value.trim());
+    alert(`Konten disimpan untuk ${title}`);
   };
 
   return (
     <div className="mb-6 bg-white border rounded-2xl shadow-sm overflow-hidden">
       <div className="px-4 sm:px-6 py-3 bg-blue-50 border-b flex flex-wrap items-center justify-between gap-3">
         <div className="font-semibold text-slate-800">Role Copy Manager</div>
-        <div className="text-xs text-slate-600">
-          Superadmin dapat mengubah teks per role
+        <div className="flex items-center gap-2">
+          <div className="text-xs text-slate-600">
+            Superadmin dapat mengubah teks per role
+          </div>
+          {myRole === "superadmin" && (
+            <a
+              href="/superadmin/users"
+              className="rounded-lg border px-3 py-1.5 text-sm hover:bg-white"
+              title="Kelola akun & role"
+            >
+              User Manager
+            </a>
+          )}
         </div>
       </div>
 
@@ -95,34 +178,22 @@ export default function CopyManager() {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Judul
-            </label>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full rounded-lg border-slate-300 text-sm bg-white focus:ring-2 focus:ring-blue-500"
-              placeholder="mis. Checklist Area (Sales)"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Instruksi
-            </label>
-            <input
-              value={instruction}
-              onChange={(e) => setInstruction(e.target.value)}
-              className="w-full rounded-lg border-slate-300 text-sm bg-white focus:ring-2 focus:ring-blue-500"
-              placeholder="Instruksi singkat di header tab"
-            />
-          </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1">
+            Konten ({title})
+          </label>
+          <textarea
+            rows={6}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="Tulis instruksi/SOP/catatan untuk role ini. Dukungan baris baru tampil apa adanya."
+            className="w-full rounded-lg border-slate-300 text-sm placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+          />
         </div>
 
         <div className="flex items-center justify-end">
           <button
-            onClick={onSave}
+            onClick={save}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
           >
             Simpan
