@@ -1,12 +1,23 @@
-import { NextRequest, NextResponse } from "next/server";
+// src/app/api/users/[id]/route.ts
+import { NextResponse } from "next/server";
 import { getSupabaseServer, supabaseServer } from "@/lib/supabaseServer";
-
-type Role = "superadmin" | "admin" | "sales" | "gudang";
 
 export const dynamic = "force-dynamic";
 
-/** Sama seperti di /api/users/route.ts (disalin agar mandiri) */
-async function assertSuperadmin(req?: NextRequest): Promise<string | null> {
+/** Cookie parser kecil (fallback mode demo) */
+function parseCookie(header: string | null): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!header) return out;
+  for (const part of header.split(";")) {
+    const [k, ...rest] = part.trim().split("=");
+    if (!k) continue;
+    out[k] = decodeURIComponent(rest.join("=") || "");
+  }
+  return out;
+}
+
+/** Cek superadmin via Supabase; fallback ke cookie demo */
+async function assertSuperadmin(request?: Request): Promise<string | null> {
   try {
     const s = await supabaseServer();
     const {
@@ -21,55 +32,52 @@ async function assertSuperadmin(req?: NextRequest): Promise<string | null> {
       if (prof?.role === "superadmin") return user.id;
     }
   } catch {
-    /* fallback di bawah */
+    /* ignore */
   }
 
-  if (req) {
-    const role = (req.cookies.get("sitrep-role")?.value || "").toLowerCase();
-    if (role === "superadmin") {
-      const id = req.cookies.get("sitrep-userid")?.value || "demo:superadmin";
-      return id;
+  if (request) {
+    const ck = parseCookie(request.headers.get("cookie"));
+    if ((ck["sitrep-role"] || "").toLowerCase() === "superadmin") {
+      return ck["sitrep-userid"] || "demo:superadmin";
     }
   }
   return null;
 }
 
-export async function DELETE(
-  req: NextRequest,
-  ctx: { params: { id?: string } }
-) {
-  const requesterId = await assertSuperadmin(req);
+/** Bentuk context supaya tidak pakai any */
+type CtxShape = { params?: { id?: string } };
+
+export async function DELETE(request: Request, ctx: unknown) {
+  const { params } = (ctx ?? {}) as CtxShape;
+  const id = params?.id;
+
+  const requesterId = await assertSuperadmin(request);
   if (!requesterId) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-
-  const id = ctx.params.id || "";
   if (!id) {
-    return NextResponse.json({ error: "Missing id" }, { status: 400 });
+    return NextResponse.json({ error: "id wajib" }, { status: 400 });
   }
-
-  // Cegah superadmin menghapus dirinya sendiri
-  if (requesterId === id) {
+  if (id === requesterId) {
     return NextResponse.json(
-      { error: "Tidak bisa menghapus akun sendiri." },
+      { error: "Tidak boleh menghapus akun diri sendiri." },
       { status: 400 }
     );
   }
 
   const admin = getSupabaseServer();
 
-  // 1) Hapus profile terlebih dahulu (abaikan jika tidak ada)
+  // 1) Hapus profile (abaikan 'no rows' = PGRST116)
   const { error: perr } = await admin.from("profiles").delete().eq("id", id);
   if (perr && perr.code !== "PGRST116") {
-    // PGRST116 = row not found → boleh diabaikan
     return NextResponse.json({ error: perr.message }, { status: 500 });
   }
 
-  // 2) Hapus user di Auth
+  // 2) Hapus auth user
   const del = await admin.auth.admin.deleteUser(id);
   if (del.error) {
     return NextResponse.json({ error: del.error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true }, { status: 200 });
 }

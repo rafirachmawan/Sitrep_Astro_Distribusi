@@ -3,11 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServer, supabaseServer } from "@/lib/supabaseServer";
 
 type Role = "superadmin" | "admin" | "sales" | "gudang";
-
-// Pastikan route ini selalu dinamis (jangan diprerender saat build)
 export const dynamic = "force-dynamic";
 
-/** Normalisasi email internal dari username */
 function toEmail(input: string) {
   const s = input.trim();
   if (s.includes("@")) return s.toLowerCase();
@@ -19,53 +16,35 @@ function toEmail(input: string) {
   return `${slug}@app.local`;
 }
 
-/**
- * Cek superadmin:
- * 1) Cabang utama: pakai session Supabase (SSR client) + profiles.role.
- * 2) Fallback (mode demo): baca cookie yang diset AuthProvider (sitrep-role, sitrep-userid).
- */
 async function assertSuperadmin(req?: NextRequest): Promise<string | null> {
-  // 1) Coba sesi Supabase dulu (logika asli tidak diubah)
   try {
     const s = await supabaseServer();
     const {
       data: { user },
     } = await s.auth.getUser();
-
     if (user) {
       const { data: prof } = await s
         .from("profiles")
         .select("role")
         .eq("id", user.id)
         .maybeSingle();
-
       if (prof?.role === "superadmin") return user.id;
     }
-  } catch {
-    // diam: lanjut fallback cookie
-  }
-
-  // 2) Fallback cookie (mode demo)
+  } catch {}
   if (req) {
     const role = (req.cookies.get("sitrep-role")?.value || "").toLowerCase();
     if (role === "superadmin") {
-      const id = req.cookies.get("sitrep-userid")?.value || "demo:superadmin";
-      return id;
+      return req.cookies.get("sitrep-userid")?.value || "demo:superadmin";
     }
   }
-
   return null;
 }
-
-/* ========================= HANDLERS ========================= */
 
 export async function GET(req: NextRequest) {
   const ok = await assertSuperadmin(req);
   if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  // SERVICE client dibuat saat handler dipanggil (bukan di module scope)
   const admin = getSupabaseServer();
-
   const { data, error } = await admin
     .from("profiles")
     .select("id, display_name, role, created_at")
@@ -118,58 +97,9 @@ export async function POST(req: NextRequest) {
     .insert({ id: userId, display_name: displayName, role });
 
   if (perr) {
-    // rollback kalau profile gagal
     await admin.auth.admin.deleteUser(userId);
     return NextResponse.json({ error: perr.message }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true, id: userId });
-}
-
-/** ========================= HAPUS USER =========================
- * Hapus user berdasarkan id.
- * - id bisa lewat query ?id=... atau body JSON { id: "..." }
- * - cegah hapus diri sendiri.
- * - urutan: hapus profile → hapus auth user.
- */
-export async function DELETE(req: NextRequest) {
-  const me = await assertSuperadmin(req);
-  if (!me) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const url = new URL(req.url);
-  const fromQuery = url.searchParams.get("id") || "";
-  let id = fromQuery;
-
-  if (!id) {
-    try {
-      const body = await req.json();
-      if (body && typeof body.id === "string") id = body.id;
-    } catch {
-      // no body
-    }
-  }
-
-  if (!id) {
-    return NextResponse.json({ error: "id wajib" }, { status: 400 });
-  }
-  if (id === me) {
-    return NextResponse.json(
-      { error: "Tidak boleh menghapus akun diri sendiri." },
-      { status: 400 }
-    );
-  }
-
-  const admin = getSupabaseServer();
-
-  // Hapus profile dulu
-  const { error: perr } = await admin.from("profiles").delete().eq("id", id);
-  if (perr) return NextResponse.json({ error: perr.message }, { status: 500 });
-
-  // Baru hapus user auth
-  const del = await admin.auth.admin.deleteUser(id);
-  if (del.error) {
-    return NextResponse.json({ error: del.error.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true });
 }

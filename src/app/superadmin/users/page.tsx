@@ -13,21 +13,17 @@ type Item = {
 };
 
 export default function UsersPage() {
-  // role user aktif ambil dari context (bukan user.role)
   const { user, role } = useAuth();
-
   const [list, setList] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [msg, setMsg] = useState<string | null>(null);
 
-  // form states
+  // form
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [formRole, setFormRole] = useState<Role>("admin");
   const [password, setPassword] = useState("");
-
-  // status hapus (row-level)
-  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -47,7 +43,6 @@ export default function UsersPage() {
       setMsg("Gagal memuat");
     }
   }
-
   useEffect(() => {
     load();
   }, []);
@@ -55,6 +50,7 @@ export default function UsersPage() {
   async function onCreate() {
     setMsg(null);
     try {
+      setBusy(true);
       const res = await fetch("/api/users", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -77,47 +73,36 @@ export default function UsersPage() {
       await load();
     } catch {
       setMsg("Gagal menambah user");
+    } finally {
+      setBusy(false);
     }
   }
 
-  async function onDelete(targetId: string, targetName: string) {
-    setMsg(null);
-
-    // Cegah hapus diri sendiri
-    const isSelf = user?.id === targetId; // <- boolean murni
-    if (isSelf) {
-      setMsg("Tidak bisa menghapus akun sendiri.");
-      return;
-    }
-
-    const ok = window.confirm(`Hapus user "${targetName}"?`);
-    if (!ok) return;
-
+  async function onDelete(id: string, name: string) {
+    if (!confirm(`Hapus user "${name}"?`)) return;
     try {
-      setDeletingId(targetId);
-      const res = await fetch(`/api/users/${targetId}`, { method: "DELETE" });
+      setBusy(true);
+      const res = await fetch(`/api/users/${id}`, { method: "DELETE" });
       const json = await res.json().catch(() => ({}));
-      setDeletingId(null);
       if (!res.ok) {
         setMsg(json?.error || "Gagal menghapus user");
         return;
       }
-      setMsg("User terhapus.");
+      setMsg("User dihapus.");
       await load();
     } catch {
-      setDeletingId(null);
       setMsg("Gagal menghapus user");
+    } finally {
+      setBusy(false);
     }
   }
 
-  // Guard akses
   if (!user) return <div className="p-6">Harap login.</div>;
   if (role !== "superadmin")
     return <div className="p-6">Hanya superadmin.</div>;
 
   return (
     <div className="max-w-3xl mx-auto p-6">
-      {/* Header + tombol kembali */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-xl font-bold">User Management</h1>
         <Link
@@ -128,7 +113,6 @@ export default function UsersPage() {
         </Link>
       </div>
 
-      {/* Form tambah user */}
       <div className="rounded-lg border p-4">
         <div className="font-semibold mb-2">Tambah User</div>
 
@@ -145,7 +129,6 @@ export default function UsersPage() {
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
           />
-
           <select
             className="border rounded-md px-2 py-2"
             value={formRole}
@@ -156,7 +139,6 @@ export default function UsersPage() {
             <option value="gudang">gudang</option>
             <option value="superadmin">superadmin</option>
           </select>
-
           <input
             type="password"
             className="border rounded-md px-2 py-2"
@@ -168,22 +150,20 @@ export default function UsersPage() {
 
         <button
           onClick={onCreate}
-          className="mt-3 rounded-md bg-blue-600 text-white px-3 py-2"
+          disabled={busy}
+          className="mt-3 rounded-md bg-blue-600 text-white px-3 py-2 disabled:opacity-50"
         >
           Buat User
         </button>
 
         {msg && <div className="mt-2 text-sm text-slate-600">{msg}</div>}
-
         <div className="mt-2 text-xs text-slate-500">
           Email internal otomatis menjadi <code>{`<username>@app.local`}</code>.
         </div>
       </div>
 
-      {/* Daftar user */}
       <div className="mt-6 rounded-lg border p-4">
         <div className="font-semibold mb-2">Daftar User</div>
-
         {loading ? (
           "Memuat…"
         ) : (
@@ -198,8 +178,7 @@ export default function UsersPage() {
             </thead>
             <tbody className="divide-y">
               {list.map((u) => {
-                const isSelf = user?.id === u.id; // boolean murni
-                const isBusy = deletingId === u.id;
+                const isSelf = user?.id === u.id;
                 return (
                   <tr key={u.id}>
                     <td className="p-2">{u.display_name}</td>
@@ -210,20 +189,18 @@ export default function UsersPage() {
                     <td className="p-2">
                       <button
                         onClick={() => onDelete(u.id, u.display_name)}
-                        disabled={Boolean(isBusy || isSelf)}
+                        disabled={busy || isSelf}
                         className={[
                           "rounded-md border px-2 py-1 text-xs",
-                          isBusy || isSelf
+                          busy || isSelf
                             ? "text-slate-400 border-slate-200 cursor-not-allowed"
-                            : "text-rose-700 border-rose-300 hover:bg-rose-50",
+                            : "text-rose-600 border-rose-300 hover:bg-rose-50",
                         ].join(" ")}
                         title={
-                          isSelf
-                            ? "Tidak bisa menghapus akun sendiri"
-                            : "Hapus user"
+                          isSelf ? "Tidak bisa hapus diri sendiri" : "Hapus"
                         }
                       >
-                        {isBusy ? "Menghapus…" : "Hapus"}
+                        Hapus
                       </button>
                     </td>
                   </tr>
@@ -231,7 +208,7 @@ export default function UsersPage() {
               })}
               {list.length === 0 && (
                 <tr>
-                  <td className="p-2 text-slate-500" colSpan={4}>
+                  <td colSpan={4} className="p-2 text-slate-500">
                     Belum ada data.
                   </td>
                 </tr>
