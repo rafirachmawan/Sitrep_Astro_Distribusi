@@ -1408,7 +1408,7 @@ export default function Lampiran({ data }: { data: AppState }) {
   .table.checklist{border:2px solid #cbd5e1;border-radius:12px;overflow:hidden;box-shadow:0 1px 0 rgba(16,24,40,.03);background:#fff;}
   .table.checklist td:first-child{font-weight:700;color:#0f172a;}
 
-  .subhead{font-weight:800;margin:6px 0 8px;color:#0f172a;text-transform:uppercase;letter-spacing:.2px;border-left:5px solid #0f172a;padding-left:10px;font-size:16px;}
+  .subhead{font-weight:800;margin:6px 0 8px;color:#0f172a;letter-spacing:.2px;border-left:5px solid #0f172a;padding-left:10px;font-size:16px;}
   .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef2ff;color:#3730a3;font-size:11px;font-weight:700;}
   .chip{display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 10px;border-radius:999px;border:1px solid #e5e7eb;background:#fff;font-size:11px;font-weight:700;line-height:1;}
   .chip.ok{background:#ecfdf5;border-color:#86efac;color:#065f46;}
@@ -1752,7 +1752,7 @@ export default function Lampiran({ data }: { data: AppState }) {
             )}</span>`;
             tb.insertAdjacentHTML(
               "beforeend",
-              `<tr><td>${toTitleCase(
+              `<tr><td>${escapeHtml(
                 r.label || ""
               )}</td><td>${valueHtml}</td><td>${noteToHTML(r.note)}</td></tr>`
             );
